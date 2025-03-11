@@ -65,6 +65,8 @@ requirements:
     - conda-forge::fftw       =*=mpi_mpich*
     # exclude buggy versions of other tools
     - setuptools              !=71.0.0, !=71.0.1, !=71.0.2  # buggy with `importlib_metadata`
+    # for reading uvfits (and ms)
+    - pyuvdata[casa]          <=2.4.1
 
 test:
   imports:

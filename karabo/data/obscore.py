@@ -30,10 +30,13 @@ import rfc3986
 import rfc3986.validators
 from astropy import constants as const
 from astropy import units as u
+from astropy.coordinates import SkyCoord
 from astropy.io.fits.header import Header
+from astropy.time import Time
 from astropy.units.core import UnitBase
 from astropy.units.quantity import Quantity
 from oskar import VisHeader
+from pyuvdata import UVData
 from typing_extensions import Self, TypeGuard, assert_never
 
 from karabo.data.casa import MSMainTable, MSMeta, MSPolarizationTable
@@ -479,9 +482,8 @@ class ObsCoreMeta:
         is no possibility to fill all mandatory fields because there is just no
         information available. Thus, you have to take care of some fields by yourself.
 
-        Supported formats: CASA Measurement Sets & OSKAR-vis binary. CASA MS format
-            is preferred since it provides more metadata information compared to
-            OSKAR binaries.
+        Supported formats: CASA Measurement Sets, OSKAR-vis binary, UVFITS & UVH5.
+        CASA MS format is preferred over OSKAR binaries since it provides more metadata.
 
         Args:
             vis: `Visibility` instance.
@@ -542,7 +544,11 @@ class ObsCoreMeta:
                     nrow=300000000,  # to avoid memory & time issues, should be repres
                 )
             )
-            ocm.t_xel = MSMainTable.nrows(ms_path=vis_inode)
+            ocm.t_xel = len(np.unique(MSMainTable.get_col(
+                ms_path=vis_inode,
+                col="TIME",
+                nrow=300000000
+            )))
             spectral_window = ms_meta.spectral_window
             ocm.em_min = c / np.min(
                 spectral_window.chan_freq - spectral_window.chan_width / 2
@@ -606,6 +612,66 @@ class ObsCoreMeta:
                 end_freq_hz = min_freq_hz + freq_inc_hz * obs.number_of_channels
                 b = float(tel.max_baseline())
                 ocm.s_resolution = tel.ang_res(freq=end_freq_hz, b=b)
+        elif vis.format in ["UVFITS", "MS", "UVH5", "MIR"]:
+            uvd = UVData()
+            uvd.read(vis_inode)
+            if tel is not None or obs is not None:
+                wmsg = (
+                    "Providing `tel` or `obs` in `ObsCoreMeta.from_visibility` for "
+                    + f"{vis.format} visibility file has no effect!"
+                )
+                warn(wmsg, category=UserWarning, stacklevel=2)
+
+            # phase center
+            phase_center_ids = np.unique(uvd.phase_center_id_array)
+            if len(phase_center_ids) > 1:
+                err_msg = (
+                    f"Multiple phase-centers found in {vis_inode}: {phase_center_ids=}"
+                )
+                raise NotImplementedError(err_msg)
+            phase_center = uvd.phase_center_catalog[phase_center_ids[0]]
+            phase_center = SkyCoord(
+                phase_center['cat_lon'],
+                phase_center['cat_lat'],
+                frame=phase_center['cat_frame'],
+                unit='rad'
+            )
+            ocm.s_ra = phase_center.ra.deg
+            ocm.s_dec = phase_center.dec.deg
+
+            # times
+            times = Time(np.sort(np.unique(uvd.time_array)), format='jd')
+            ocm.t_min = times[0].mjd
+            ocm.t_max = times[-1].mjd
+            ocm.t_resolution = np.median(np.diff(times.gps))
+            ocm.t_xel = len(times)
+            ocm.t_exptime = ocm.t_xel * ocm.t_resolution
+
+            # frequencies
+            freqs = np.unique(uvd.freq_array)
+            ocm.em_min = c / np.min(freqs) # em sorted by frequency
+            ocm.em_max = c / np.max(freqs)
+            ocm.em_res_power = np.mean(np.diff(freqs) / freqs[:-1])
+            ocm.em_xel = len(freqs)
+            # delimited truthy and unique values for instrument name
+            ocm.instrument_name = ",".join(filter(None, np.unique([
+                uvd.instrument,
+                uvd.telescope_name,
+            ])))
+
+            # spatial resolution
+            b_max = np.max(np.linalg.norm(uvd.uvw_array, axis=1))
+            ocm.s_resolution = Telescope.ang_res(
+                freq=float(np.max(freqs)),
+                b=b_max,
+            )
+
+            # polarizations
+            corr_types = [*map(str.upper, uvd.get_pols())]
+            ocm.set_pol_states(pol_states=corr_types)
+            pol_states = ocm.get_pol_states()
+            if pol_states is not None:
+                ocm.pol_xel = len(pol_states)
         else:
             assert_never(vis.format)
         ocm.access_estsize = int(getsize(inode=vis_inode) / 1e3)  # B -> KB
@@ -616,7 +682,17 @@ class ObsCoreMeta:
                 ocm.calib_level = 2
             else:
                 ocm.calib_level = 1
-        # as far as I know, there's no MIME type for .ms or .vis, but for `.fits`
+
+        # Set access format based on visibility format
+        format_to_mime = {
+            # "MS": "application/x-casa-measurement-set",
+            # "OSKAR_VIS": "application/x-oskar-visibility",
+            "UVFITS": "application/fits", # mime exists but fits viewers won't support reading visibilties
+            "UVH5": "application/x-hdf5",
+        }
+        if vis.format in format_to_mime:
+            ocm.access_format = format_to_mime[vis.format]
+
         if tel is not None and (tel_name := tel.name) is not None:
             ocm.instrument_name = tel_name
         if tel is not None and obs is not None:
