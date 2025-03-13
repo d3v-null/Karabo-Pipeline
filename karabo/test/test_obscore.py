@@ -8,6 +8,7 @@ from typing import Any
 import numpy as np
 import pytest
 from astropy import units as u
+from astropy.time import Time
 from pytest import FixtureRequest
 from rfc3986.exceptions import InvalidComponentsError
 
@@ -111,6 +112,9 @@ class TestObsCoreMeta:
         request: FixtureRequest,
     ) -> None:
         visibility: Visibility = request.getfixturevalue(vis_fixture_name)
+
+        expected_start = datetime(2024, 3, 15, 10, 46, 0)
+        expected_timesteps = 24
         if visibility.format == "OSKAR_VIS":
             telescope = Telescope.constructor("ASKAP", backend=SimulatorBackend.OSKAR)
             observation = Observation(  # original settings for `minimal_oskar_vis`
@@ -120,7 +124,7 @@ class TestObsCoreMeta:
                 phase_centre_dec_deg=-80.0,
                 number_of_channels=16,
                 frequency_increment_hz=1e6,
-                number_of_time_steps=24,
+                number_of_time_steps=expected_timesteps,
             )
         else:
             telescope = None
@@ -134,11 +138,12 @@ class TestObsCoreMeta:
         assert ocm.dataproduct_type == "visibility"
         assert ocm.s_ra is not None and np.allclose(ocm.s_ra, 250.0)
         assert ocm.s_dec is not None and np.allclose(ocm.s_dec, -80.0)
-        assert ocm.t_min is not None
+        assert ocm.t_min is not None and np.isclose(ocm.t_min, Time(expected_start).mjd)
         assert ocm.t_max is not None and ocm.t_max > ocm.t_min
         assert ocm.t_exptime is not None and ocm.t_exptime > 0.0
         assert ocm.t_resolution is not None and ocm.t_resolution > 0.0
-        assert ocm.t_xel is not None
+        assert ocm.t_exptime >= ocm.t_resolution
+        assert ocm.t_xel is not None and ocm.t_xel == expected_timesteps
         assert ocm.em_min is not None and ocm.em_min > 0.0
         assert (
             ocm.em_max is not None and ocm.em_max > 0.0 and ocm.em_max <= ocm.em_min
@@ -151,7 +156,7 @@ class TestObsCoreMeta:
         assert ocm.instrument_name is not None
         assert ocm.s_resolution is not None and ocm.s_resolution > 0.0
 
-        if visibility.format == "MS":
+        if visibility.format in ["MS", "UVFITS"]:
             assert ocm.pol_xel is not None and ocm.pol_xel > 0
             assert ocm.pol_states is not None and len(ocm.pol_states) > 0
 
