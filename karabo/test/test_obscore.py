@@ -211,13 +211,9 @@ class TestObsCoreMeta:
     def test_from_visibility_mwa(
         self,
         vis_fixture_name: str,
+        request: FixtureRequest,
     ) -> None:
-        vis_path = {
-            "mwa_ms": "/cygnus/dev/1061312152/birli_1061312152_ants0-2_ch154_2s.ms",
-            "mwa_uvfits":
-                "/cygnus/dev/1061312152/birli_1061312152_ants0-2_ch154_2s.uvfits",
-        }
-        visibility = Visibility(vis_path[vis_fixture_name])
+        visibility: Visibility = request.getfixturevalue(vis_fixture_name)
         exp_time_start, exp_ntimes = datetime(2013, 8, 23, 16, 57, 28), 56
         exp_time_res = 2.0
         exp_nfreqs = 32
