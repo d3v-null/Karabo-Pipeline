@@ -201,6 +201,95 @@ class TestObsCoreMeta:
             _ = ocm.to_dict(fpath=meta_path)
             assert os.path.exists(meta_path)
 
+    @pytest.mark.parametrize(
+        "vis_fixture_name",
+        [
+            "mwa_ms",
+            "mwa_uvfits",
+        ],
+    )
+    def test_from_visibility_mwa(
+        self,
+        vis_fixture_name: str,
+    ) -> None:
+        vis_path = {
+            "mwa_ms": "/cygnus/dev/1061312152/birli_1061312152_ants0-2_ch154_2s.ms",
+            "mwa_uvfits":
+                "/cygnus/dev/1061312152/birli_1061312152_ants0-2_ch154_2s.uvfits",
+        }
+        visibility = Visibility(vis_path[vis_fixture_name])
+        exp_time_start, exp_ntimes = datetime(2013, 8, 23, 16, 57, 28), 56
+        exp_time_res = 2.0
+        exp_nfreqs = 32
+        exp_ra, exp_dec = 0.0, -27.0
+        ocm = ObsCoreMeta.from_visibility(
+            vis=visibility,
+            calibrated=False,
+            tel=None,
+            obs=None,
+        )
+        assert ocm.dataproduct_type == "visibility"
+        assert ocm.s_ra is not None and np.allclose(ocm.s_ra, exp_ra)
+        assert ocm.s_dec is not None and np.allclose(ocm.s_dec, exp_dec)
+        assert ocm.t_min is not None and np.isclose(ocm.t_min, Time(exp_time_start).mjd)
+        assert ocm.t_max is not None and ocm.t_max > ocm.t_min
+        assert ocm.t_exptime is not None and ocm.t_exptime > 0.0
+        assert ocm.t_resolution is not None and ocm.t_resolution > 0.0
+        assert ocm.t_exptime >= ocm.t_resolution
+        assert np.isclose(ocm.t_resolution, exp_time_res)
+        assert np.isclose(ocm.t_exptime, exp_ntimes * exp_time_res)
+        assert ocm.t_xel is not None and ocm.t_xel == exp_ntimes
+        assert ocm.em_min is not None and ocm.em_min > 0.0
+        assert ocm.em_max is not None and ocm.em_max > 0.0
+        assert ocm.em_max > ocm.em_min
+        assert ocm.em_min == const.c.value / 197.755e6
+        assert ocm.em_max == const.c.value / 196.475e6
+        assert ocm.em_xel is not None and ocm.em_xel == exp_nfreqs
+        assert ocm.access_estsize is not None and ocm.access_estsize > 0.0
+        assert ocm.em_ucd is not None
+        assert ocm.o_ucd is not None
+        assert ocm.calib_level == 1  # because `calibrated` flag set to False
+        assert ocm.instrument_name is not None
+        assert ocm.s_resolution is not None and ocm.s_resolution > 0.0
+        assert ocm.em_res_power is not None and ocm.em_res_power > 1.0  # λ/δλ>1
+
+        allowed_pols = [
+            "I",
+            "Q",
+            "U",
+            "V",
+            "RR",
+            "LL",
+            "RL",
+            "LR",
+            "XX",
+            "YY",
+            "XY",
+            "YX",
+            "POLI",
+            "POLA",
+        ]
+        if visibility.format != "OSKAR_VIS":
+            assert ocm.pol_xel is not None and ocm.pol_xel > 0
+            assert ocm.pol_states is not None and len(ocm.pol_states) > 0
+            assert ocm.pol_states.startswith("/")
+            assert ocm.pol_states.endswith("/")
+            pols = [*filter(None, ocm.pol_states.split("/"))]
+            assert len(pols) == ocm.pol_xel
+            for pol in pols:
+                assert pol in allowed_pols
+
+        # test serialization
+        with tempfile.TemporaryDirectory() as tmpdir:
+            meta_path = os.path.join(tmpdir, "obscore-vis.json")
+            with pytest.warns(UserWarning):  # mandatory fields not set
+                _ = ocm.to_dict()
+            ocm.obs_collection = "<obs-collection>"
+            ocm.obs_id = "<obs-id>"
+            ocm.obs_publisher_did = "<obs-publisher-did>"
+            _ = ocm.to_dict(fpath=meta_path)
+            assert os.path.exists(meta_path)
+
     def test_from_image(self, minimal_fits_restored: Image) -> None:
         axes = FitsHeaderAxes(freq=FitsHeaderAxis(axis=4, unit=u.Hz))
         ocm = ObsCoreMeta.from_image(img=minimal_fits_restored, fits_axes=axes)
