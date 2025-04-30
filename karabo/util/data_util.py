@@ -26,9 +26,10 @@ def get_module_absolute_path() -> str:
     Returns:
         The absolute path to the Karabo module.
     """
-    path_elements = os.path.abspath(karabo.__file__).split(os.path.sep)
-    path_elements.pop()
-    return os.path.sep.join(path_elements)
+    # path_elements = os.path.abspath(karabo.__file__).split(os.path.sep)
+    # path_elements.pop()
+    # return os.path.sep.join(path_elements)
+    return "/app/karabo"
 
 
 def get_module_path_of_module(module: ModuleType) -> str:

@@ -1,0 +1,14 @@
+{
+    "name": "Jupyter Container",
+    "build": {
+        "dockerfile": "../sp5327demo.Dockerfile",
+        "context": ".."
+    },
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-toolsai.jupyter"
+            ]
+        }
+    }
+}
