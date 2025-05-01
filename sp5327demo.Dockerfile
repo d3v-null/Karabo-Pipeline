@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.2
 # docker build . -f sp5327demo.Dockerfile --tag=d3vnull0/sp5327demo:latest --push
 
 # ---------------------------
@@ -216,9 +217,10 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 # ---------------------------
 # Final Stage: Create a lean runtime image
 # ---------------------------
-FROM images.canfar.net/skaha/base-notebook:latest AS runtime
+FROM rucio/jupyterlab:v1.2.0 AS runtime
 
 # Install minimal dependencies needed to bootstrap spack env
+USER root
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && apt-get --no-install-recommends install -y \
@@ -229,23 +231,23 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 RUN ln -sf /usr/bin/python3 /usr/bin/python
 
 # Copy necessary files from builder
-COPY --from=builder /opt/software /opt/software
-COPY --from=builder /opt/view /opt/view
-COPY --from=builder /opt/spack_env /opt/spack_env
-COPY --from=builder /opt/spack /opt/spack
-COPY --from=builder /opt/ska-sdp-spack /opt/ska-sdp-spack
+COPY --from=builder --chown=jovyan:users --chmod=755 /opt/software /opt/software
+COPY --from=builder --chown=jovyan:users --chmod=755 /opt/view /opt/view
+COPY --from=builder --chown=jovyan:users --chmod=755 /opt/spack_env /opt/spack_env
+COPY --from=builder --chown=jovyan:users --chmod=755 /opt/spack /opt/spack
+COPY --from=builder --chown=jovyan:users --chmod=755 /opt/ska-sdp-spack /opt/ska-sdp-spack
 
-# Setup Spack environment
-ENV SPACK_ROOT=/opt/spack \
-    PATH=/opt/view/bin:/opt/software/bin:/usr/local/bin:/usr/bin:/bin
+# Create system-wide environment setup
 RUN . /opt/spack/share/spack/setup-env.sh && \
     spack repo add /opt/ska-sdp-spack && \
-    spack env activate /opt/spack_env && \
-    echo ". /opt/spack/share/spack/setup-env.sh" >> /etc/profile.d/spack.sh && \
+    echo ". /opt/spack/share/spack/setup-env.sh" > /etc/profile.d/spack.sh && \
     echo "spack env activate /opt/spack_env" >> /etc/profile.d/spack.sh && \
-    . /etc/profile.d/spack.sh
+    chmod +x /etc/profile.d/spack.sh
 
 # Copy only the needed Karabo code, not the entire repo
+RUN mkdir -p /app && \
+    chown -R jovyan:users /app && \
+    chmod -R 755 /app
 COPY karabo /app/karabo
 COPY setup.py /app/
 COPY requirements.txt /app/
@@ -258,11 +260,9 @@ WORKDIR /app
 RUN . /etc/profile.d/spack.sh && \
     python -m pip install versioneer setuptools wheel pytest && \
     python -m pip install -r requirements.txt && \
-    python -m pip install --no-deps /app
-
-# Install jupyter and friends
-RUN . /etc/profile.d/spack.sh && \
-    python -m pip install notebook ipykernel jupyterlab
+    python -m pip install --no-deps /app && \
+    python -m pip install notebook ipykernel jupyterlab && \
+    python -m pip install rucio-clients==35.6.0
 
 # Create a startup script that activates the environment
 RUN echo '#!/bin/bash' > /usr/local/bin/entrypoint.sh && \
@@ -277,3 +277,39 @@ CMD ["/bin/bash", "-l"]
 
 # TEST ME :
 # docker build -f spack.Dockerfile . --tag runtime && docker run --rm -it $_ python -m pytest
+
+# Create Rucio configuration directories
+RUN mkdir -p /opt/rucio/etc/ /opt/rucio/etc/certs/ /home/jovyan/ && \
+    wget -O/opt/rucio/etc/rucio.cfg "https://gitlab.com/ska-telescope/src/src-dm/ska-src-dm-da-rucio-client/-/raw/master/etc/rucio/rucio.cfg.ska.j2" && \
+    wget -O/opt/rucio/etc/certs/ISRG_Root_X1.pem https://letsencrypt.org/certs/isrgrootx1.pem && \
+    chown -R jovyan:users /opt/rucio/ && \
+    chown -R jovyan:users /home/jovyan/
+
+# Setup Spack environment in PATH
+ENV SPACK_ROOT=/opt/spack \
+    PATH=/opt/cargo/bin:/opt/rucio/bin:/opt/view/bin:/opt/software/bin:/usr/local/bin:/usr/bin:/bin
+
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get --no-install-recommends install -y \
+    build-essential \
+    && apt-get clean
+
+ARG RUST_VERSION=stable
+ENV RUSTUP_HOME=/opt/rust CARGO_HOME=/opt/cargo
+ENV PATH="${CARGO_HOME}/bin:${PATH}"
+RUN mkdir -m755 $RUSTUP_HOME $CARGO_HOME && ( \
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | env RUSTUP_HOME=$RUSTUP_HOME CARGO_HOME=$CARGO_HOME sh -s -- -y \
+    --profile=minimal \
+    --default-toolchain=${RUST_VERSION} \
+    )
+RUN cargo install mwa_giant_squid
+
+# Switch to jovyan for remaining operations
+USER jovyan
+ENV SPACK_ROOT=/opt/spack \
+    PATH=/opt/cargo/bin:/opt/rucio/bin:/opt/view/bin:/opt/software/bin:/usr/local/bin:/usr/bin:/bin
+
+# test the environment
+# RUN . /etc/profile.d/spack.sh && \
+#     python -m pytest .
