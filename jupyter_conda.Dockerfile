@@ -1,10 +1,13 @@
+# syntax=docker/dockerfile:1.6
 FROM quay.io/jupyter/minimal-notebook:notebook-7.2.2
 
 # Install Karabo via conda
 USER root
 
 # Create new environment with Python 3.10 and install dependencies using libmamba solver (faster)
-RUN conda install -y -n base conda-libmamba-solver && \
+RUN --mount=type=cache,target=/opt/conda/pkgs \
+    --mount=type=cache,target=/root/.cache/pip \
+    conda install -y -n base conda-libmamba-solver && \
     conda config --set solver libmamba && \
     conda create -y -n karabo python=3.10 && \
     conda install -y -n karabo -c i4ds -c conda-forge -c "nvidia/label/cuda-11.7.1" karabo-pipeline && \
