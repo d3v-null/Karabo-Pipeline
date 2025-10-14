@@ -9,6 +9,9 @@ import os
 from spack.package import *
 
 
+from spack.build_systems.python import PythonPipBuilder
+
+
 class PyAstropy(PythonPackage):
     """The Astropy Project is a community effort to develop a single core
     package for Astronomy in Python and foster interoperability between
@@ -130,12 +133,15 @@ class PyAstropy(PythonPackage):
     depends_on("cfitsio@:3")
     depends_on("expat")
 
+    # Allow explicit pip-based build to inject flags like --no-build-isolation
+    build_system("python_pip", "python_setuptools")
+
     def setup_build_environment(self, env):
         # Avoid PEP 517 build isolation fetching deps; Spack provides them.
         env.set("PIP_NO_BUILD_ISOLATION", "1")
         # Ensure pyerfa is built from source within Spack, not as a wheel
         # that might not match ABI and would try to be pulled by pip.
-        env.set("PIP_NO_BINARY", "pyerfa")
+        env.set("PIP_NO_BINARY", "pyerfa,numpy")
         # Provide deterministic version to setuptools_scm.
         env.set("SETUPTOOLS_SCM_PRETEND_VERSION_FOR_ASTROPY", self.spec.version.string)
 
@@ -164,6 +170,17 @@ class PyAstropy(PythonPackage):
         if os.path.exists("astropy/cython_version.py"):
             os.remove("astropy/cython_version.py")
 
+        # Work around NumPy ufunc const signature mismatch in stats fast path
+        # by adding an explicit cast for the function pointer to the expected
+        # PyUFuncGenericFunction type. This avoids pointer type errors across
+        # NumPy header variants while keeping behavior unchanged.
+        target = "astropy/stats/src/fast_sigma_clip.c"
+        if os.path.exists(target):
+            try:
+                filter_file("&_sigma_clip_fast", "(PyUFuncGenericFunction)&_sigma_clip_fast", target, string=True)
+            except Exception:
+                pass
+
     def install_options(self, spec, prefix):
         # For modern Astropy (5.x+ with pyproject), passing --install-option
         # flags via pip is not supported and causes failures. Rely on Spack's
@@ -178,6 +195,29 @@ class PyAstropy(PythonPackage):
             "--use-system-cfitsio",
             "--use-system-expat",
         ]
+
+    def install(self, spec, prefix):
+        # Mirror py-bdsf approach: force pip to avoid build isolation so it uses
+        # Spack-provided NumPy (1.x) headers and dependencies, preventing any
+        # accidental NumPy 2 pulls during the build of Astropy 5.1.1.
+        pip = spec["python"].command
+        pip.add_default_arg("-m", "pip")
+
+        args = PythonPipBuilder.std_args(self)
+        if "--no-build-isolation" not in args:
+            args.append("--no-build-isolation")
+
+        # Avoid binary wheels that might bring mismatched ABI deps
+        # (numpy/pyerfa). Build from source within Spack environment.
+        env = spack.util.environment.EnvironmentModifications()
+        env.set("PIP_NO_BINARY", "numpy,pyerfa")
+        # Spack 0.23: EnvironmentModifications is not a context manager
+        # Apply directly to process env before invoking pip
+        env.apply_modifications()
+        args.append(f"--prefix={prefix}")
+        args.append(".")
+        with working_dir(self.stage.source_path):
+            pip(*args)
 
     @run_after("install")
     @on_package_attributes(run_tests=True)

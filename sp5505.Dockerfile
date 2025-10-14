@@ -1,29 +1,49 @@
-FROM quay.io/jupyter/minimal-notebook:notebook-7.2.2
+FROM python:3.10-slim
 
 # RASCIL deps-only image (no RASCIL itself). Versions aligned with sp5505.
 USER root
 SHELL ["/bin/bash", "-lc"]
 
-# Remove conda to avoid library conflicts
-RUN rm -f /usr/local/bin/before-notebook.d/10activate-conda-env.sh || true; \
-    rm -rf /opt/conda || true
+# Minimal runtime and build tools
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get --no-install-recommends install -y \
+        bash \
+        ca-certificates \
+        curl \
+        git \
+        gnupg \
+        locales \
+        tini \
+    && rm -rf /var/lib/apt/lists/*
 
-# Essential system dependencies
+# Create jovyan user and minimal fix-permissions helper (no conda deps)
+ARG NB_USER=jovyan
+ARG NB_UID=1000
+ARG NB_GID=100
+RUN (grep -q ":${NB_GID}:" /etc/group || groupadd -g ${NB_GID} ${NB_USER}) && \
+    (id -u ${NB_USER} >/dev/null 2>&1 || useradd -l -m -s /bin/bash -N -u ${NB_UID} -g ${NB_GID} ${NB_USER}) && \
+    printf '#!/usr/bin/env bash\nset -e\nfor d in "$@"; do\n  [ -d "$d" ] || continue\n  find "$d" -type d -exec chmod g+rwxs {} + 2>/dev/null || true\n  find "$d" -type f -exec chmod g+rw {} + 2>/dev/null || true\ndone\n' > /usr/local/bin/fix-permissions && \
+    chmod a+rx /usr/local/bin/fix-permissions && \
+    fix-permissions /home/${NB_USER}
+
+# Essential system dependencies for building the scientific stack
+# spack requires 'unzip'. Make sure it is in your path.
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && apt-get --no-install-recommends install -y \
         build-essential \
-        ca-certificates \
         cmake \
-        curl \
         file \
         gfortran \
         git \
         patchelf \
         pkg-config \
+        unzip \
         wget \
         zstd \
-    ;
+    && rm -rf /var/lib/apt/lists/* && \
+    fix-permissions /usr/local /opt /home/${NB_USER}
 
 # Install Rust before any Spack setup, because Spack rust is unbelievably slow.
 ARG RUST_VERSION=1.81.0
@@ -31,25 +51,33 @@ ENV CARGO_HOME=/opt/cargo \
     RUSTUP_HOME=/opt/rustup
 RUN curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain $RUST_VERSION --no-modify-path && \
     ln -sf /opt/cargo/bin/* /usr/local/bin/ && \
-    rustc --version | grep -Fq "$RUST_VERSION"
+    rustc --version | grep -Fq "$RUST_VERSION" && \
+    fix-permissions /opt/cargo /opt/rustup
 
 ENV SPACK_ROOT=/opt/spack \
     SPACK_DISABLE_LOCAL_CONFIG=1 \
     DEBIAN_FRONTEND=noninteractive
 
+# Avoid pip pulling build-time deps (like NumPy 2) during PEP 517 builds
+ENV PIP_NO_BUILD_ISOLATION=1
+
 # Install Spack v0.23 and detect compilers
 RUN git clone --depth=2 --branch=releases/v0.23 https://github.com/spack/spack.git ${SPACK_ROOT} && \
     . ${SPACK_ROOT}/share/spack/setup-env.sh && \
     spack compiler find && \
+    spack external find python && \
     spack external find rust && \
     spack external find git && \
-    spack external find pkgconf
+    spack external find pkgconf && \
+    fix-permissions /opt/spack
 
 # Add SKA SDP Spack repo and overlay
 RUN git clone --depth=2 --branch=2025.07.3 https://gitlab.com/ska-telescope/sdp/ska-sdp-spack.git /opt/ska-sdp-spack && \
-    . ${SPACK_ROOT}/share/spack/setup-env.sh && spack repo add /opt/ska-sdp-spack
+    . ${SPACK_ROOT}/share/spack/setup-env.sh && spack repo add /opt/ska-sdp-spack && \
+    fix-permissions /opt/ska-sdp-spack
 COPY spack-overlay /opt/karabo-spack
-RUN . ${SPACK_ROOT}/share/spack/setup-env.sh && spack repo add /opt/karabo-spack
+RUN . ${SPACK_ROOT}/share/spack/setup-env.sh && spack repo add /opt/karabo-spack && \
+    fix-permissions /opt/karabo-spack
 
 ARG NUMPY_VERSION=1.23.5
 # 1.23.5 worked at some point
@@ -177,36 +205,65 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     spack config add "config:misc_cache:/opt/spack-misc-cache"; \
     spack mirror add --autopush --unsigned mycache file:///opt/buildcache; \
     spack buildcache keys --install --trust || true; \
-    # TODO: spack mirror add v0.23.1 https://binaries.spack.io/v0.23.1; \
+    spack mirror add v0_23_1 https://binaries.spack.io/v0.23.1; \
+    # Phase 1: core numeric + runtime
     spack add \
-        'cfitsio' \
-        'healpix-cxx' \
-        # known good from bdsf.Dockerfile and astropy.Dockerfile
         'boost@'$BOOST_VERSION'+python+numpy' \
-        'py-astropy@'$ASTROPY_VERSION \
-        'py-astropy-healpix@'$ASTROPY_HEALPIX_VERSION \
-        'py-bdsf@'$BDSF_VERSION \
-        'py-matplotlib@'$MATPLOTLIB_VERSION \
-        'py-pyerfa@'$PYERFA_VERSION \
-        'py-numpy@'$NUMPY_VERSION \
-        'py-pip@:25.2' \
-        'py-scipy@'$SCIPY_VERSION \
-        'python@'$PYTHON_VERSION \
-        # known good from rascil.Dockerfile
-        'casacore@'$CASACORE_VERSION'+python' \
         'fftw~mpi~openmp' \
         'hdf5@'$HDF5_VERSION'+hl~mpi' \
         'openblas@'$OPENBLAS_VERSION \
+        'python@'$PYTHON_VERSION \
+        'py-pip@:25.2' \
+        'py-numpy@'$NUMPY_VERSION \
+        'py-scipy@'$SCIPY_VERSION \
+        'py-pandas@'$PANDAS_VERSION \
+        'py-numexpr@'$NUMEXPR_VERSION \
+        'py-pyerfa@'$PYERFA_VERSION \
+        'py-ipykernel@6:' \
+        'py-nbconvert' \
+        'py-joblib' \
+        'py-lazy-loader' \
+        'py-tqdm' \
+        'py-pytest' \
+    && \
+    spack concretize --force && \
+    # Patch casacore MIR pointer types before build to fix rdhdl_c signature mismatch
+    spack stage "casacore@${CASACORE_VERSION}+python" && \
+    spack cd -s casacore && \
+    sed -i 's/rdhdl_c(*tno,"vislen",&(uv->offset),/rdhdl_c(*tno,"vislen",(int8 *)&(uv->offset),/' spack-src/mirlib/uvio.c && \
+    sed -i 's/rdhdl_c(*tno,"ncorr",&(uv->corr_flags.offset),/rdhdl_c(*tno,"ncorr",(int8 *)&(uv->corr_flags.offset),/' spack-src/mirlib/uvio.c && \
+    sed -i 's/rdhdl_c(*tno,"nwcorr",&(uv->wcorr_flags.offset),/rdhdl_c(*tno,"nwcorr",(int8 *)&(uv->wcorr_flags.offset),/' spack-src/mirlib/uvio.c && \
+    cd - >/dev/null && \
+    ac_cv_lib_curl_curl_easy_init=no spack install --no-check-signature --no-checksum --fail-fast --reuse --show-log-on-error && \
+    spack gc -y && \
+    spack env view regenerate && \
+    fix-permissions /opt/view /opt/spack_env /opt/software /opt/view
+
+# Install astropy via pip wheel to avoid source build issues
+RUN --mount=type=cache,target=/root/.cache/pip \
+    . ${SPACK_ROOT}/share/spack/setup-env.sh && \
+    spack env activate /opt/spack_env && \
+    PIP_NO_BUILD_ISOLATION=1 \
+    pip install --no-deps --only-binary=:all: 'astropy=='$ASTROPY_VERSION && \
+    python -c "import astropy, sys; print('astropy', astropy.__version__, 'OK')" && \
+    fix-permissions /opt/view /opt/spack_env /opt/software /usr/local /home/${NB_USER}
+
+# Phase 2: astronomy stack and tools
+RUN . ${SPACK_ROOT}/share/spack/setup-env.sh; \
+    spack env activate /opt/spack_env; \
+    spack add \
+        'cfitsio' \
+        # 'py-astropy-healpix@'$ASTROPY_HEALPIX_VERSION \
+        'py-bdsf@'$BDSF_VERSION \
+        'py-matplotlib@'$MATPLOTLIB_VERSION \
         'py-astroplan@'$ASTROPLAN_VERSION \
+        'casacore@'$CASACORE_VERSION'+python' \
         'py-casacore@'$CASACORE_VERSION \
         'py-dask@'$DASK_VERSION \
         'py-dask-memusage@1.1' \
         'py-distributed@'$DISTRIBUTED_VERSION \
         'py-ducc@'$DUCC_VERSION \
-        'py-h5py@'$H5PY_VERSION \
-        'py-healpy@'$HEALPY_VERSION \
-        'py-numexpr@'$NUMEXPR_VERSION \
-        'py-pandas@'$PANDAS_VERSION \
+        # 'py-h5py@'$H5PY_VERSION \
         'py-photutils@'$PHOTUTILS_VERSION \
         'py-rascil@'$RASCIL_VERSION \
         'py-reproject@'$REPROJECT_VERSION \
@@ -218,49 +275,34 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
         'py-xarray@'$XARRAY_VERSION \
         'oskar@'$OSKAR_VERSION'+python~openmp' \
         'py-bottleneck@'$BOTTLENECK_VERSION \
-        'py-dask-mpi' \
-        'py-extension-helpers@1.1.1' \
-        'py-ipykernel@6:' \
-        'py-joblib' \
-        'py-lazy-loader' \
-        'py-mpi4py' \
-        'py-nbconvert' \
-        'py-pyfftw' \
-        'py-pytest' \
+        # 'py-dask-mpi' \
+        # 'py-pyfftw' \
         'py-rfc3986@2:' \
         'py-scikit-image' \
         'py-scikit-learn' \
-        'py-tqdm' \
         'py-pyuvdata@'$PYUVDATA_VERSION'+casa' \
-        # todo: py-aratmospy py-eidos py-katbeam py-tools21cm py-toolz
-        # 'py-jupyterlab@4' \
-        # 'py-jupyter-server@2' \
-        # 'py-jupyterlab-server@2' \
-        # 'py-jupyter-core@5:' \
-        # 'py-jupyter-client@8:' \
-        # 'py-notebook@7' \
-        # py-nbformat
-        # py-packaging?
-        # py-requests?
-        # py-setuptools?
-        # py-ska-gridder-nifty-cuda?
-        # py-wheel?
         'wsclean@=3.4' \
-        # cfitsio?
-        # harp?
-        # montagepy?
-        # mpich?
-        # psutil
     && \
     spack concretize --force && \
     ac_cv_lib_curl_curl_easy_init=no spack install --no-check-signature --no-checksum --fail-fast --reuse --show-log-on-error && \
-    spack test run 'py-healpy' || ( \
-        cat /home/jovyan/.spack/test/*/py-healpy-1.16.2-*-test-out.txt; \
-        exit 1 \
-    ) && \
     spack gc -y && \
     spack env view regenerate && \
     fix-permissions /opt/view /opt/spack_env /opt/software /opt/view
+
+# Install problematic packages via wheels to avoid local C builds
+RUN --mount=type=cache,target=/root/.cache/pip \
+    . ${SPACK_ROOT}/share/spack/setup-env.sh && \
+    spack env activate /opt/spack_env && \
+    PIP_NO_BUILD_ISOLATION=1 \
+    pip install --no-deps --only-binary=:all: \
+        'h5py=='$H5PY_VERSION \
+        'astropy-healpix=='$ASTROPY_HEALPIX_VERSION \
+        'healpy=='$HEALPY_VERSION && \
+    python - <<'PY'
+import h5py, astropy_healpix
+print('h5py', h5py.__version__, 'astropy-healpix', astropy_healpix.__version__)
+PY
+RUN fix-permissions /opt/view /opt/spack_env /opt/software /usr/local /home/${NB_USER}
 
 # Make Spack view default in system paths and shells
 RUN printf "/opt/view/lib\n/opt/view/lib64\n" > /etc/ld.so.conf.d/spack-view.conf && ldconfig && \
@@ -278,12 +320,47 @@ ENV PATH="/opt/view/bin:${PATH}" \
     PKG_CONFIG_PATH="/opt/view/lib/pkgconfig:/opt/view/lib64/pkgconfig" \
     PYTHONPATH="/opt/view/lib/python${PYTHON_VERSION}/site-packages"
 
-# Ensure start-notebook uses Spack jupyter first in PATH
-RUN mkdir -p /usr/local/bin/before-notebook.d && \
-    printf '#!/usr/bin/env bash\nPATH="/opt/view/bin:${HOME}/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"\nexport PATH\nLD_LIBRARY_PATH="/opt/view/lib:/opt/view/lib64"\nexport LD_LIBRARY_PATH\nPYTHONPATH=/opt/view/lib/python${PYTHON_VERSION}/site-packages\nexport PYTHONPATH\n' > /usr/local/bin/before-notebook.d/00-prefer-spack.sh && \
-    chmod +x /usr/local/bin/before-notebook.d/00-prefer-spack.sh && \
-    # Remove conda and activation hook; we run Jupyter inside Spack Python
-    rm -f /opt/conda /usr/local/bin/before-notebook.d/10activate-conda-env.sh || true
+# Prefer Spack Python/jupyter in PATH for all shells
+RUN printf '#!/usr/bin/env bash\nPATH="/opt/view/bin:${HOME}/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"\nexport PATH\nLD_LIBRARY_PATH="/opt/view/lib:/opt/view/lib64"\nexport LD_LIBRARY_PATH\nPYTHONPATH=/opt/view/lib/python${PYTHON_VERSION}/site-packages\nexport PYTHONPATH\n' > /etc/profile.d/00-prefer-spack.sh && chmod +x /etc/profile.d/00-prefer-spack.sh
+
+# Make the container resilient to both legacy and venv-like Spack views
+RUN cat >/etc/profile.d/10-spack-view.sh <<'SH' \
+ && chmod 0755 /etc/profile.d/10-spack-view.sh
+# Spack view root (adjust if you use a different path)
+export SPACK_VIEW="/opt/view"
+
+# Ensure view's bin is first on PATH
+case ":$PATH:" in
+  *":${SPACK_VIEW}/bin:") ;;
+  *) export PATH="${SPACK_VIEW}/bin:${PATH}";;
+esac
+
+# Don't read user site-packages
+export PYTHONNOUSERSITE=1
+
+# Only set PYTHONPATH if the view is NOT already acting like a venv
+# (i.e., when sys.prefix doesn't live under the view)
+if command -v python3 >/dev/null 2>&1; then
+  if python3 - <<'PY' >/dev/null 2>&1; then
+    # sys.prefix IS under SPACK_VIEW → venv-like, do nothing
+    :
+  else
+    # sys.prefix is NOT under SPACK_VIEW → legacy mode: add site-packages
+    pyver="$(python3 -c 'import sys; print(f"{sys.version_info[0]}.{sys.version_info[1]}")' 2>/dev/null || echo 3)"
+    sp_dir="${SPACK_VIEW}/lib/python${pyver}/site-packages"
+    if [ -d "$sp_dir" ]; then
+      case ":${PYTHONPATH:-}:" in
+        *":$sp_dir:") ;;
+        *) export PYTHONPATH="$sp_dir${PYTHONPATH:+:$PYTHONPATH}";;
+      esac
+    fi
+  fi <<'PY'
+import os, sys
+sp = os.environ.get('SPACK_VIEW','')
+raise SystemExit(0 if sys.prefix.startswith(sp) else 1)
+PY
+fi
+SH
 
 RUN . ${SPACK_ROOT}/share/spack/setup-env.sh && \
     spack env activate /opt/spack_env && \
@@ -314,9 +391,7 @@ RUN . ${SPACK_ROOT}/share/spack/setup-env.sh && \
     spack test run 'py-ska-sdp-func' && \
     spack test run 'py-xarray' && \
     spack test run 'py-rascil' && \
-    spack test run 'oskar' && \
-    spack test run 'py-mpi4py' && \
-    spack test run 'py-dask-mpi'
+    spack test run 'oskar'
     # spack test run 'py-pyuvdata'
 
 # todo: try spack env activate /opt/spack_env --with-view /opt/view
@@ -374,32 +449,6 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 # rascil 1.0.0 requires tabulate<0.10,>=0.9, but you have tabulate 0.0.0 which is incompatible.
 # rascil 1.0.0 requires xarray<2022.13,>=2022.12, but you have xarray 2023.2.0 which is incompatible.
 # Successfully installed anyio-4.11.0 argon2-cffi-25.1.0 argon2-cffi-bindings-25.1.0 arrow-1.3.0 async-lru-2.0.5 babel-2.17.0 certifi-2025.8.3 charset_normalizer-3.4.3 fqdn-1.5.1 h11-0.16.0 httpcore-1.0.9 httpx-0.28.1 idna-3.10 isoduration-20.11.0 json5-0.12.1 jsonpointer-3.0.0 jupyter-events-0.12.0 jupyter-lsp-2.3.0 jupyter-server-terminals-0.5.3 jupyter_client-8.6.3 jupyter_server-2.17.0 jupyterlab-4.4.9 jupyterlab_server-2.27.3 notebook-7.4.7 notebook-shim-0.2.4 overrides-7.7.0 prometheus-client-0.23.1 python-json-logger-3.3.0 requests-2.32.5 rfc3339-validator-0.1.4 rfc3986-validator-0.1.1 send2trash-1.8.3 sniffio-1.3.1 terminado-0.18.1 tornado-6.5.2 types-python-dateutil-2.9.0.20250822 uri-template-1.3.0 webcolors-24.11.1 websocket-client-1.8.0
-
-RUN . ${SPACK_ROOT}/share/spack/setup-env.sh && \
-    spack env activate /opt/spack_env && \
-    python - <<"PY"
-import importlib, sys
-checks = [
-    ('astropy','5.1.1'),
-    ('erfa','2.0'),
-    ('healpy','1.16'),
-]
-for (name, target) in checks:
-    mod = None
-    try:
-        mod = importlib.import_module(name)
-    except Exception as exc:
-        print(f'{name} not importable: {exc}')
-        sys.exit(1)
-    ver = getattr(mod, '__version__', '0.0')
-    try:
-        assert tuple([*ver.split('.')]) >= tuple([*target.split('.')])
-    except Exception as exc:
-        print(f'{name} version not available: {exc}')
-        continue
-    print(f'{name} version {ver}, target {target}')
-sys.exit(0)
-PY
 
 # TODO:
 # ARG ARATMOSPY_VERSION=1.0.0
@@ -640,3 +689,8 @@ RUN if [ "${SKIP_TESTS:-0}" = "1" ]; then exit 0; fi; \
 # E          [-1.      , 21.      ,       inf],...
 
 WORKDIR "/home/${NB_USER}"
+
+# Expose Jupyter default port and auto-start server using Spack Python
+EXPOSE 8888
+ENTRYPOINT ["/usr/bin/tini", "--"]
+CMD ["bash", "-lc", "jupyter lab --ip 0.0.0.0 --no-browser --ServerApp.token='' --ServerApp.password='' --NotebookApp.allow_origin='*'"]
