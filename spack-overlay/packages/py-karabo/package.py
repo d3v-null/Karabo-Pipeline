@@ -86,3 +86,15 @@ class PyKarabo(PythonPackage):
             "print('KARABO_IMPORT_OK', karabo.__version__)\n"
         )
         python("-c", code)
+
+    def test_karabo_version(self):
+        """Verify that Karabo reports the correct version."""
+        python = self.spec["python"].command
+        expected_version = str(self.spec.version)
+        code = (
+            "import karabo\n"
+            f"assert karabo.__version__.startswith('{expected_version}'), "
+            f"f'Expected {expected_version}, got {{karabo.__version__}}'\n"
+            "print(f'KARABO_VERSION_OK: {{karabo.__version__}}')\n"
+        )
+        python("-c", code)

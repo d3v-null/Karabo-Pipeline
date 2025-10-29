@@ -422,6 +422,7 @@ checks = [
     ('toolz','0.0'),
     ('tqdm','4.0'),
     ('mwa_hyperbeam','0.10'),
+    ('karabo','0.34'),
 ]
 
 for (name, target) in checks:
@@ -457,10 +458,10 @@ ARG NB_USER=jovyan
 ARG NB_UID=1000
 ARG NB_GID=100
 
-RUN mkdir -p /home/${NB_USER}/Karabo-Pipeline
-COPY --chown=${NB_UID}:${NB_GID} karabo /home/${NB_USER}/Karabo-Pipeline/karabo
-COPY --chown=${NB_UID}:${NB_GID} setup.cfg pyproject.toml /home/${NB_USER}/Karabo-Pipeline/
-RUN fix-permissions /home/${NB_USER}/Karabo-Pipeline /home/${NB_USER}/.cache
+RUN mkdir -p /opt/Karabo-Pipeline
+COPY --chown=${NB_UID}:${NB_GID} karabo /opt/Karabo-Pipeline/karabo
+COPY --chown=${NB_UID}:${NB_GID} setup.cfg pyproject.toml /opt/Karabo-Pipeline/
+RUN fix-permissions /opt/Karabo-Pipeline /home/${NB_USER}/.cache
 
 USER ${NB_UID}
 
@@ -476,19 +477,20 @@ ARG SKIP_TESTS=0
 ENV SKIP_TESTS=${SKIP_TESTS}
 RUN if [ "${SKIP_TESTS:-0}" = "1" ]; then exit 0; fi; \
     export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1; \
+    cd /opt/Karabo-Pipeline && \
     # known failing test: test_source_detection_plot
-    PYTHONPATH="/home/${NB_USER}/.local/pytest:${PYTHONPATH}" python -m pytest -x -k "rascil"; echo deleteme && \
-    PYTHONPATH="/home/${NB_USER}/.local/pytest:${PYTHONPATH}" python -m pytest -q -x --tb=short -k "not (test_suppress_rascil_warning or test_source_detection_plot or rascil)" /home/${NB_USER}/Karabo-Pipeline && \
-    (PYTHONPATH="/home/${NB_USER}/.local/pytest:${PYTHONPATH}" python -m pytest -q -x --tb=short -k test_source_detection_plot /home/${NB_USER}/Karabo-Pipeline || true) && \
+    python -m pytest -x -k "version" && \
+    python -m pytest -x -k "not test_source_detection_plot" && \
+    (python -m pytest -x -k test_source_detection_plot || true) && \
     # Aggressive cleanup of all caches and temporary files
     rm -rf /home/${NB_USER}/.astropy/cache \
     /home/${NB_USER}/.cache/* \
     /tmp/* \
     /home/${NB_USER}/.local/share/jupyter/runtime/* \
-    /home/${NB_USER}/Karabo-Pipeline/.pytest_cache \
-    /home/${NB_USER}/Karabo-Pipeline/**/__pycache__ && \
-    find /home/${NB_USER}/Karabo-Pipeline -type d -name '__pycache__' -exec rm -rf {} + 2>/dev/null || true && \
-    find /home/${NB_USER}/Karabo-Pipeline -type d -name '.pytest_cache' -exec rm -rf {} + 2>/dev/null || true
+    /opt/Karabo-Pipeline/.pytest_cache \
+    /opt/Karabo-Pipeline/**/__pycache__ && \
+    find /opt/Karabo-Pipeline -type d -name '__pycache__' -exec rm -rf {} + 2>/dev/null || true && \
+    find /opt/Karabo-Pipeline -type d -name '.pytest_cache' -exec rm -rf {} + 2>/dev/null || true
 
 
 # ss.s..........................................................ssssssssss [ 20%]
