@@ -299,6 +299,7 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     # 'py-eidos@'$EIDOS_VERSION \ # in py-karabo
     # 'py-katbeam@'$KATBEAM_VERSION \ # in py-karabo
     'wsclean@'$WSCLEAN_VERSION'~mpi' \
+    'py-tools21cm@'$TOOLS21CM_VERSION \
     'py-karabo@'$KARABO_VERSION \
     # for testing karabo itself:
     'py-pytest@8' \
@@ -351,6 +352,7 @@ RUN spack test run 'py-astropy-healpix' && \
     spack test run 'py-pyfftw' && \
     spack test run 'py-eidos' && \
     spack test run 'py-katbeam' && \
+    spack test run 'py-tools21cm' && \
     spack test run 'py-karabo'
 # TODO: Clean up test artifacts
 # rm -rf /tmp/* /root/.cache/* && \
@@ -376,7 +378,6 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     && \
     # optional extras
     pip install --no-deps \
-    'tools21cm=='$TOOLS21CM_VERSION \
     'mwa-hyperbeam==0.10.4' && \
     fix-permissions /opt/view/lib/python${PYTHON_VERSION}
 

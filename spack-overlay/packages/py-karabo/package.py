@@ -64,6 +64,8 @@ class PyKarabo(PythonPackage):
     )  # Match py-ska-sdp-datamodels constraint
     depends_on("wsclean", type=("build", "run"))
     depends_on("oskar", type=("build", "run"))
+    # conda requires 2.0.3 but that's not available, however 2.8.3 is
+    depends_on("py-tools21cm", type=("build", "run"))
 
     def setup_build_environment(self, env):
         # Ensure Spack provides dependencies without pip attempting isolation
