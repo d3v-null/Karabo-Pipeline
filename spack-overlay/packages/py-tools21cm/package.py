@@ -19,8 +19,8 @@ class PyTools21cm(PythonPackage):
     git = "https://github.com/sambit-giri/tools21cm.git"
     pypi = "tools21cm/tools21cm-2.3.8.tar.gz"
 
-    # Pin the exact version used in docker builds
-    version("2.3.8", tag="v2.3.8", preferred=True)
+    # Pin the exact commit for version 2.3.8 (repo doesn't use tags)
+    version("2.3.8", commit="662d6e5b591fa5493d935ae8dd80c6b2e9a7712f", preferred=True)
 
     # Use pip-based build system
     build_system("python_pip")

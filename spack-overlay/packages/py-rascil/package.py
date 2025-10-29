@@ -35,7 +35,7 @@ class PyRascil(PythonPackage):
     depends_on("py-matplotlib@3.6:", type=("build", "run"))
     depends_on("py-numpy@1.23:", type=("build", "run"))
     depends_on("py-pandas@1.5:", type=("build", "run"))
-    depends_on("py-reproject@0.9:", type=("build", "run"))
+    depends_on("py-reproject@0.9:0.13", type=("build", "run"))
     depends_on("py-scipy@1.9:", type=("build", "run"))
     depends_on("py-seqfile", type=("build", "run"))
     depends_on("py-ska-sdp-datamodels@0.1.3", type=("build", "run"))

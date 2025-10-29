@@ -71,7 +71,9 @@ class PyDistributed(PythonPackage):
     depends_on("py-toolz@0.10.0:", type=("build", "run"), when="@2022.10.2:")
     depends_on("py-tornado@5:", type=("build", "run"), when="^python@:3.7")
     depends_on("py-tornado@6.0.3:", type=("build", "run"), when="^python@3.8:")
-    depends_on("py-tornado@6.0.3:6.1", type=("build", "run"), when="@2022.10.2:")
+    # Note: conda shows distributed 2022.12.1 works with tornado 6.5.2
+    # Relaxing constraint from 6.0.3:6.1 to allow newer tornado versions
+    depends_on("py-tornado@6.0.3:6.5", type=("build", "run"), when="@2022.10.2:")
     depends_on("py-tornado@6.0.4:", type=("build", "run"), when="@2024.7.1:")
     depends_on("py-zict@0.1.3:", type=("build", "run"))
     depends_on("py-zict@2.2.0:", type=("build", "run"), when="@2023.4.1:")
