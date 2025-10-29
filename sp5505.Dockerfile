@@ -477,7 +477,7 @@ RUN if [ "${SKIP_TESTS:-0}" = "1" ]; then exit 0; fi; \
     export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1; \
     cd /opt/Karabo-Pipeline && \
     # known failing test: test_source_detection_plot
-    python -m pytest -x -k "not (test_source_detection_plot or rascil)" && \
+    python -m pytest -x -k "not test_source_detection_plot" && \
     (python -m pytest -x -k test_source_detection_plot || true) && \
     # Aggressive cleanup of all caches and temporary files
     rm -rf /home/${NB_USER}/.astropy/cache \
