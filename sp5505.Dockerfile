@@ -1,8 +1,13 @@
-FROM quay.io/jupyter/minimal-notebook:notebook-7.2.2
+# Global ARG that can be passed at build time
+ARG PYTHON_VERSION=3.10
 
-# RASCIL deps-only image (no RASCIL itself). Versions aligned with sp5505.
+FROM quay.io/jupyter/minimal-notebook:notebook-7.2.2 AS builder
+
 USER root
 SHELL ["/bin/bash", "-lc"]
+
+# Re-declare ARG to make it available in this stage
+ARG PYTHON_VERSION=3.10
 
 # Essential build dependencies
 # These are found by spack external find, and later garbage collected by spack.# Do not include runtime dependencies here.
@@ -73,17 +78,10 @@ RUN spack compiler find && \
 # Add SKA SDP Spack repo and overlay
 RUN git clone --depth=1 --single-branch --branch=2025.07.3 https://gitlab.com/ska-telescope/sdp/ska-sdp-spack.git /opt/ska-sdp-spack && \
     rm -rf /opt/ska-sdp-spack/.git && \
-    . ${SPACK_ROOT}/share/spack/setup-env.sh && spack repo add /opt/ska-sdp-spack
+    spack repo add /opt/ska-sdp-spack
 COPY spack-overlay /opt/karabo-spack
-RUN . ${SPACK_ROOT}/share/spack/setup-env.sh && spack repo add /opt/karabo-spack
+RUN spack repo add /opt/karabo-spack
 
-#HACK: setup rascil data - create canary file that RASCIL checks for
-ENV RASCIL_DATA=/opt/rascil_data
-RUN mkdir -p ${RASCIL_DATA}/models && \
-    echo "# Dummy RASCIL data file" > ${RASCIL_DATA}/models/S3_151MHz_10deg.csv && \
-    fix-permissions ${RASCIL_DATA}
-
-ARG PYTHON_VERSION=3.10
 ARG NUMPY_VERSION=1.23.5
 # 1.23.5 worked at some point
 # numpy needed by pyuvdata montagepy numexpr scipy rascil scikit-image pywavelets astroml ducc0 imageio ska-sdp-func-python contourpy aratmospy bokeh astroplan coda harp astropy-healpix katbeam tensorboard h5py dask ml_dtypes ska-gridder-nifty-cuda libboost-python-devel python-casacore tifffile pytest-arraydiff shapely bdsf casacore finufft reproject numcodecs matplotlib-base tools21cm libboost-python numba gwcs tensorflow-base pyfftw boost xarray asdf pyside6 photutils astropy bottleneck pandas oskarpy ska-sdp-datamodels ska-sdp-func healpy keras scikit-learn pyerfa eidos asdf-astropy zarr bluebild
@@ -311,11 +309,56 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     ac_cv_lib_curl_curl_easy_init=no spack install --no-check-signature --no-checksum --fail-fast --fresh --show-log-on-error && \
     spack gc -y && \
     spack env view regenerate && \
-    fix-permissions /opt/view /opt/spack_env /opt/software /opt/view
+    fix-permissions /opt/view /opt/spack_env /opt/software
+
+# todo: delete
+FROM quay.io/jupyter/minimal-notebook:notebook-7.2.2 AS runtime
+
+USER root
+SHELL ["/bin/bash", "-lc"]
+
+# Re-declare ARG to make it available in this stage
+# ARG PYTHON_VERSION=3.10
+
+# Install runtime dependencies
+ENV DEBIAN_FRONTEND=noninteractive
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get --no-install-recommends install -y \
+    build-essential \
+    ca-certificates \
+    curl \
+    gfortran \
+    git \
+    libcurl4-openssl-dev \
+    libgomp1 \
+    wget \
+    zstd
+
+COPY --from=builder /opt/software /opt/software
+COPY --from=builder /opt/view /opt/view
+COPY --from=builder /opt/spack_env /opt/spack_env
+COPY --from=builder /opt/spack /opt/spack
+COPY --from=builder /opt/ska-sdp-spack /opt/ska-sdp-spack
+COPY --from=builder /opt/karabo-spack /opt/karabo-spack
+COPY --from=builder /opt/cargo /opt/cargo
+COPY --from=builder /opt/rustup /opt/rustup
+
+# Set Spack environment variables (needed from builder stage)
+ENV SPACK_ROOT=/opt/spack \
+    SPACK_DISABLE_LOCAL_CONFIG=1 \
+    CARGO_HOME=/opt/cargo \
+    RUSTUP_HOME=/opt/rustup
 
 # Activate spack env in login shells
 RUN echo ". ${SPACK_ROOT}/share/spack/setup-env.sh 2>/dev/null || true" > /etc/profile.d/spack.sh && \
     echo "spack env activate -p /opt/spack_env 2>/dev/null || true" >> /etc/profile.d/spack.sh
+
+#HACK: setup rascil data - create canary file that RASCIL checks for
+ENV RASCIL_DATA=/opt/rascil_data
+RUN mkdir -p ${RASCIL_DATA}/models && \
+    echo "# Dummy RASCIL data file" > ${RASCIL_DATA}/models/S3_151MHz_10deg.csv && \
+    fix-permissions ${RASCIL_DATA}
 
 # Set PATH to prioritize Spack over conda
 ENV PATH="/opt/view/bin:${PATH}"
@@ -367,16 +410,14 @@ RUN spack test run 'py-astropy-healpix' && \
 # spack test run 'py-pyuvdata'
 
 # TODO: Verify hyperbeam (Spack-installed) can be imported
-# RUN . ${SPACK_ROOT}/share/spack/setup-env.sh && \
-#     spack env activate /opt/spack_env && \
-#     python -c "from mwa_hyperbeam import FEEBeam; print('mwa_hyperbeam (Spack) import successful')"
+# RUN python -c "from mwa_hyperbeam import FEEBeam; print('mwa_hyperbeam (Spack) import successful')"
 
 ARG PIP_EXTRAS="mwa-hyperbeam==0.10.4"
 
 # Install optional extras via pip (not available in Spack)
+# Use python -m pip instead of pip directly to avoid shebang issues
 RUN --mount=type=cache,target=/root/.cache/pip \
-    [ -z "${PIP_EXTRAS}" ] || pip install ${PIP_EXTRAS} && \
-    fix-permissions /opt/view/lib/python${PYTHON_VERSION}
+    [ -z "${PIP_EXTRAS}" ] || python -m pip install ${PIP_EXTRAS}
 
 # distributed 2022.12.1 requires msgpack>=0.6.0, which is not installed.
 # rascil 1.0.0 requires h5py<3.8,>=3.7, but you have h5py 3.12.1 which is incompatible.
