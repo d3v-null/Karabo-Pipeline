@@ -337,6 +337,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 
 COPY --from=builder /opt/software /opt/software
 COPY --from=builder /opt/view /opt/view
+COPY --from=builder /opt/._view /opt/._view
 COPY --from=builder /opt/spack_env /opt/spack_env
 COPY --from=builder /opt/spack /opt/spack
 COPY --from=builder /opt/ska-sdp-spack /opt/ska-sdp-spack
@@ -415,7 +416,7 @@ RUN spack test run 'py-astropy-healpix' && \
 ARG PIP_EXTRAS="mwa-hyperbeam==0.10.4"
 
 # Install optional extras via pip (not available in Spack)
-# Use python -m pip instead of pip directly to avoid shebang issues
+# Use python -m pip instead of pip directly to avoid shebang issues!
 RUN --mount=type=cache,target=/root/.cache/pip \
     [ -z "${PIP_EXTRAS}" ] || python -m pip install ${PIP_EXTRAS}
 
@@ -518,8 +519,8 @@ RUN if [ "${SKIP_TESTS:-0}" = "1" ]; then exit 0; fi; \
     export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1; \
     cd /opt/Karabo-Pipeline && \
     # known failing test: test_source_detection_plot
-    python -m pytest -x -k "not test_source_detection_plot" && \
-    (python -m pytest -x -k test_source_detection_plot || true) && \
+    pytest -x -k "not test_source_detection_plot" && \
+    (pytest -x -k test_source_detection_plot || true) && \
     # Aggressive cleanup of all caches and temporary files
     rm -rf /home/${NB_USER}/.astropy/cache \
     /home/${NB_USER}/.cache/* \
