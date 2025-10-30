@@ -83,20 +83,19 @@ COPY spack-overlay /opt/karabo-spack
 RUN spack repo add /opt/karabo-spack
 
 ARG NUMPY_VERSION=1.23.5
-# 1.23.5 worked at some point
 # numpy needed by pyuvdata montagepy numexpr scipy rascil scikit-image pywavelets astroml ducc0 imageio ska-sdp-func-python contourpy aratmospy bokeh astroplan coda harp astropy-healpix katbeam tensorboard h5py dask ml_dtypes ska-gridder-nifty-cuda libboost-python-devel python-casacore tifffile pytest-arraydiff shapely bdsf casacore finufft reproject numcodecs matplotlib-base tools21cm libboost-python numba gwcs tensorflow-base pyfftw boost xarray asdf pyside6 photutils astropy bottleneck pandas oskarpy ska-sdp-datamodels ska-sdp-func healpy keras scikit-learn pyerfa eidos asdf-astropy zarr bluebild
-# numpy 1.26.4 installed by conda
+# TODO: conda has numpy 1.26.4
 # numpy>=1.24 required by zarr 2.18.3
 # numpy 1.23 needed by rascil 1.0.0 and ska-sdp-func-python 0.1.5
 # numpy>=1.25 required by astropy-healpix 1.1.2
 ARG CFITSIO_VERSION=4.3.1
-# conda installs 4.3.1
+# conda has cfitsio 4.3.1
 ARG PANDAS_VERSION=1.5.3
 # pandas needed by rascil dask xarray ska-sdp-datamodels bluebild
-# pandas 1.5.3 is installed by conda
+# conda has pandas 1.5.3
 ARG XARRAY_VERSION=2023.2.0
 # xarray needed by pyuvdata bluebild rascil scikit-image astroml ska-sdp-func-python aratmospy bdsf reproject tools21cm gwcs photutils healpy scikit-learn eidos
-# xarray 2023.2.0 is installed by conda
+# conda has xarray 2023.2.0
 # xarray<2022.13,>=2022.12 required by rascil 1.0.0
 # xarray<2023.0.0,>=2022.10.0 required by ska-sdp-datamodels 0.1.3
 # xarray<2023.0.0,>=2022.11.0 required by ska-sdp-func-python 0.1.5
@@ -105,21 +104,25 @@ ARG XARRAY_VERSION=2023.2.0
 # only 2025.4.0 2024.10.0 available in sdp spack (but only the main branch, not the 2025.07.3 branch)
 ARG H5PY_VERSION=3.7
 # h5py needed by pyuvdata tensorflow-base ska-sdp-datamodels keras
+# TODO: conda has h5py 3.13.0
+# h5py 3.7 works with numpy 1.23.5
+# h5py 3.8 needed by rascil 1.1
 ARG HDF5_VERSION=1.12.3
-# hdf5 1.14.3 installed by conda
-# hdf5 1.12.3 seems to have worked at one point
+# TODO: conda has hdf5 1.14.3
+# hdf5 1.12.3 works fine
 # hdf5 1.10.10 installed by ubuntu24 apt
 ARG DISTRIBUTED_VERSION=2022.12.1
 # distributed needed by rascil, dask
 # conda has 2022.12.1
 # rascil 1.0.0 requires distributed<2022.13,>=2022.12
-# issues installing 2022.12.1 directly with spack
+# rascil 1.1 requires distributed>=2023.3, closest available is 2023.4.1
 ARG SCIPY_VERSION=1.9.3
+# TODO: conda has scipy 1.13.1 but this requires cupy and torch
 # 1.9.3 worked with numpy 1.23.5
+# 1.10 required by rascil 1.1, closest is 1.10.1
 ARG MATPLOTLIB_VERSION=3.9.2
 # matplotlib needed by bluebild rascil aratmospy tools21cm
-# conda uses 3.10.5 but max available is 3.9.2
-# 3.6.3 worked at some point
+# TODO: conda uses 3.10.5 but max available is 3.9.2
 ARG ASTROPY_VERSION=5.1.1
 # astropy needed by rascil pyuvdata ska-sdp-func-python aratmospy bdsf tools21cm gwcs photutils ska-sdp-datamodels healpy eidos bluebild
 # conda install 5.1.1
@@ -128,47 +131,43 @@ ARG ASTROPY_VERSION=5.1.1
 # astropy 6.1 requires numpy2
 # astropy 6.0.1 works with numpy 1.23.x and pyerfa 2.0.1.x
 # astropy 6 deprecates utils.decorators which is used by healpy 1.16.2
-# astropy 6 deprecates utils.iers which is used by astroplan 0.10.1
 # astropy>5.2 has no ._erfa
+# 5.2.2 works with numpy 1.23.5
 ARG CASACORE_VERSION=3.5.0
 # casacore needed by everybeam wsclean oskar rascil
 ARG HEALPY_VERSION=1.16.6
 # healpy needed by rascil ska-sdp-func-python aratmospy bdsf tools21cm gwcs photutils ska-sdp-datamodels eidos bluebild
-# conda installs 1.16.6
-# 1.16.2 worked at some point
+# conda has 1.16.6
+# 1.16.2 works too
 # astropy 6.0.1 wants 1.17.3
 ARG OSKAR_VERSION=2.8.3
-
 ARG TOOLS21CM_VERSION=2.3.8
 # tools21cm needed by rascil ska-sdp-func-python aratmospy bdsf tools21cm gwcs photutils ska-sdp-datamodels eidos bluebild
-# tools21cm 2.0.3 installed by conda
+# conda has tools21cm 2.0.3
 # tools21cm 2.3.8 is available
-
 ARG TABULATE_VERSION=0.9.0
 # conda has 0.9.0
 ARG NUMEXPR_VERSION=2.10.2
 # conda has 2.10.2
 ARG BOTTLENECK_VERSION=1.3.7
-# conda has 1.5.0
-# 1.3.7 worked at some point
+# TODO: conda has 1.5.0
+# 1.3.7 works too
 ARG SEQFILE_VERSION=0.2.0
 # conda has 0.2.0
-# SciPy 1.9.x in Spack conflicts with OpenBLAS >=0.3.26; use 0.3.25 to satisfy
 ARG OPENBLAS_VERSION=0.3.25
-# 0.3.27 works on arm64
 # conda has 0.3.30
+# 0.3.27 works on arm64
 # 0.3.28 is the latest supported in builtin
+# SciPy 1.9.x in Spack conflicts with OpenBLAS >=0.3.26; use 0.3.25 to satisfy
 ARG BOOST_VERSION=1.82.0
-# 1.86.0 worked at some point
 # conda has 1.82.0
-
+# 1.86.0 works too
 ARG SKIMAGE_VERSION=0.24.0
 # scikit-image needed by rascil source detection stack
 # conda installs 0.25.0, latest available is 0.24.0
 ARG SKLEARN_VERSION=1.3.2
 # scikit-learn required by rascil imaging utilities
 # conda installs 1.7.1
-
 ARG TQDM_VERSION=4.66.3
 # tqdm needed by tools21cm optional install
 # conda install 4.67.1
@@ -177,15 +176,12 @@ ARG PYUVDATA_VERSION=2.4.2
 # conda installs 2.4.2 but it has a bug in MWA beams pointed away from zenith
 # 3.2.1 is the last one that works with Python 3.10 but is yanked and unbuildable
 # 3.2.0 has the beam fix
-
-
-# Version pins aligned with sp5505
 ARG ASTROPLAN_VERSION=0.10.1
-# 0.8 may have worked at some point
 # conda uses 0.10.1
+# 0.8 may have worked at some point
 ARG ASTROPY_HEALPIX_VERSION=1.1.2
-# 1.0.0 was installed at some point
 # conda uses 1.1.2
+# 1.0.0 was installed at some point
 ARG BDSF_VERSION=1.12.0
 # 1.12.0 is easier to install because of setuptools nonsense
 # conda uses 1.10.2
@@ -199,20 +195,23 @@ ARG DUCC_VERSION=0.27
 # 2.0.0.1 needed patches to work with astropy 5.1
 # pyerfa 2.0.0.1 rejects Quantity inputs used by Astropy 5's EarthLocation geodetic conversion
 ARG PHOTUTILS_VERSION=1.11.0
-# 1.11.0 worked at some point
+# 1.11.0 works too
 # TODO: conda uses 1.8.0
 ARG REPROJECT_VERSION=0.9.1
-# 0.9.1 worked at some point
+# 0.9.1 works too
 # TODO: conda uses 0.14.1
+# 0.10.0 needed by rascil 1.1
 ARG SDP_DATAMODELS_VERSION=0.1.3
+# conda uses 0.1.3
+# 0.2 needed by rascil 1.1, closest is 0.2.10
 ARG SDP_FUNC_VERSION=1.2.2
-# 0.1.5 worked at some point
-# TODO: conda uses 0.0.6
-# earliest 1.1.7 in sdp-spack
-# 1.2.2 works with the current stack
+# conda uses 0.0.6
+# TODO: earliest 1.1.7 in sdp-spack
+# 0.1.5 and 1.2.2 work too
 ARG SDP_FUNC_PYTHON_VERSION=0.1.4
-# TODO: conda uses 0.1.4 !
-# 0.1.5 works with the current stack
+# conda uses 0.1.4
+# 0.1.5 works too
+# 0.2 needed by rascil 1.1
 ARG RASCIL_VERSION=1.0.0
 # conda uses 1.0.0
 ARG ARATMOSPY_VERSION=1.0.0
