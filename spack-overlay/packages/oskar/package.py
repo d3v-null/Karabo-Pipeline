@@ -12,8 +12,10 @@ class Oskar(CMakePackage):
 
     # Karabo uses 2.8.3 specifically
     # 2.10.0 works on arm64 but gives code -115 when reading vis files
-    version("2.8.3", commit="2.8.3", preferred=True)
+    # 2.11.x includes important fixes and updates to build system
+    version("2.11.1", commit="2.11.1")
     version("2.10.0", commit="2.10.0")
+    version("2.8.3", commit="2.8.3", preferred=True)
 
     # Variants
     variant("cuda", default=False, description="Enable CUDA support")
@@ -24,11 +26,13 @@ class Oskar(CMakePackage):
     variant("hdf5", default=True, description="Build HDF5 support")
 
     # Build dependencies
-    depends_on("cmake@3.10:", type="build")
+    depends_on("cmake@3.10:", when="@:2.10", type="build")
+    depends_on("cmake@3.18:", when="@2.11:", type="build")
     depends_on("git", type="build")
 
     # Runtime dependencies
     # conda uses casacore 3.5.0.*, harp, hdf5 >=1.14.3,<1.14.4.0a0, libgcc, libgcc-ng >=12, libstdcxx, libstdcxx-ng >=12
+    # Python bindings compatibility: oskarpy 2.11.x supports OSKAR 2.7-2.11 (0x020700-0x020BFF)
     depends_on("python@3.6:", when="+python", type=("build", "run"))
     depends_on("py-numpy@1", when="+python", type=("build", "run"))
     depends_on("py-setuptools", when="+python", type="build")
@@ -37,7 +41,9 @@ class Oskar(CMakePackage):
     # Optional dependencies for enhanced functionality
     depends_on("hdf5+hl", when="+hdf5", type=("build", "run"))
     depends_on("hdf5+hl~mpi", when="+hdf5~mpi", type=("build", "run"))
-    depends_on("cfitsio", type=("build", "run"))
+    # OSKAR 2.11+ uses CFITSIO 4.6.2; earlier versions use embedded cfitsio
+    depends_on("cfitsio@4.6.2:", when="@2.11:", type=("build", "run"))
+    depends_on("cfitsio", when="@:2.10", type=("build", "run"))
     # OSKAR requires single-precision FFTW. Use precision variant in this Spack.
     # Avoid pulling MPI into the build to reduce complexity; OSKAR tests
     # are serial and don't require MPI-enabled FFTW.
@@ -378,9 +384,11 @@ class Oskar(CMakePackage):
         executables = [
             "oskar_sim_interferometer",
             "oskar_imager",
-            "oskar_vis_to_ms",
-            "oskar_convert_cst_to_scalar"
+            "oskar_vis_to_ms"
         ]
+        # oskar_convert_cst_to_scalar was removed in OSKAR 2.11+
+        if self.spec.satisfies("@:2.10"):
+            executables.append("oskar_convert_cst_to_scalar")
 
         for exe in executables:
             exe_path = which(exe)

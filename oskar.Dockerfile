@@ -48,7 +48,7 @@ COPY spack-overlay /opt/karabo-spack
 RUN . ${SPACK_ROOT}/share/spack/setup-env.sh && spack repo add /opt/karabo-spack
 
 # Version variables matching main Dockerfile
-ARG OSKAR_VERSION=2.8.3
+ARG OSKAR_VERSION=2.11.1
 ARG NUMPY_VERSION=1.23.5
 ARG HDF5_VERSION=1.12.3
 
@@ -72,7 +72,6 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     spack buildcache keys --install --trust || true; \
     # Install minimal dependencies for OSKAR
     spack add \
-        'cfitsio@3' \
         'hdf5@'$HDF5_VERSION'+hl~mpi' \
         'oskar@'$OSKAR_VERSION'~cuda~openmp~mpi+casacore+python+hdf5' \
         'py-numpy@'$NUMPY_VERSION \

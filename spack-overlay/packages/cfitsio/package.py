@@ -17,6 +17,7 @@ class Cfitsio(AutotoolsPackage):
 
     license("custom")
 
+    version("4.6.3", sha256="fad44fff274fdda5ffcc0c0fff3bc3c596362722b9292fc8944db91187813600")
     version("4.4.0", sha256="95900cf95ae760839e7cb9678a7b2fad0858d6ac12234f934bd1cb6bfc246ba9")
     version("4.3.1", sha256="a3b9502090e49aaa3a9fe464654820ea4957cc30e9c9bf0d3def37c50ab5aff7")
     version("4.3.0", sha256="fdadc01d09cf9f54253802c5ec87eb10de51ce4130411415ae88c30940621b8b")
@@ -59,6 +60,9 @@ class Cfitsio(AutotoolsPackage):
             extra_args.append(f"--with-bzip2={spec['bzip2'].prefix}"),
         if not spec.satisfies("+curl"):
             extra_args.append("--disable-curl"),
+        # For cfitsio 4.6+, enable shared libs via configure
+        if spec.satisfies("+shared"):
+            extra_args.append("--enable-reentrant")
         return extra_args
 
     def setup_build_environment(self, env):
@@ -74,7 +78,9 @@ class Cfitsio(AutotoolsPackage):
         targets = ["all"]
 
         # Build shared if variant is set.
-        if self.spec.satisfies("+shared"):
+        # Note: cfitsio 4.6+ no longer has a separate 'shared' target;
+        # shared libs are built automatically by configure --enable-reentrant
+        if self.spec.satisfies("+shared") and self.spec.satisfies("@:4.5"):
             targets += ["shared"]
 
         return targets
