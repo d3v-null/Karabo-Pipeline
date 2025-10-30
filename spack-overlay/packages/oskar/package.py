@@ -19,6 +19,7 @@ class Oskar(CMakePackage):
 
     # Variants
     variant("cuda", default=False, description="Enable CUDA support")
+    variant("opencl", default=False, description="Enable OpenCL support")
     variant("openmp", default=False, description="Enable OpenMP support")
     variant("mpi", default=False, description="Enable MPI support")
     variant("casacore", default=True, description="Enable Measurement Set I/O via Casacore")
@@ -59,6 +60,8 @@ class Oskar(CMakePackage):
 
     # CUDA dependency when variant is enabled
     depends_on("cuda", when="+cuda")
+    # OpenCL dependency when variant is enabled
+    depends_on("opencl", when="+opencl")
     # Casacore dependency for MS functionality
     # using 3.5 because casacore 3.7 headers require C++14 constexpr semantics,
     # but OSKAR is being compiled with an older C++ standard.
@@ -80,9 +83,15 @@ class Oskar(CMakePackage):
             # Prevent CMake from finding OpenMP
             args.append(self.define("CMAKE_DISABLE_FIND_PACKAGE_OpenMP", "ON"))
 
-        # OSKAR 2.8.3 doesn't expose explicit feature toggles for CUDA/OMP/MS,
-        # it detects libraries via CMake. Ensure Casacore is found when enabled
-        # by passing the prefix if Spack's CMAKE_PREFIX_PATH doesn't suffice.
+        # Control OpenCL support via FIND_OPENCL flag
+        if "+opencl" in self.spec:
+            args.append(self.define("FIND_OPENCL", "ON"))
+        else:
+            args.append(self.define("FIND_OPENCL", "OFF"))
+
+        # OSKAR detects most libraries (CUDA, HDF5, etc.) via CMake automatically.
+        # Ensure Casacore is found when enabled by passing the prefix if Spack's
+        # CMAKE_PREFIX_PATH doesn't suffice.
         if "+casacore" in self.spec:
             # Prefer config-file package discovery
             args.append(self.define("CASACORE_DIR", self.spec["casacore"].prefix))
