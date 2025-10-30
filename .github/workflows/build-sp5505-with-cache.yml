@@ -67,9 +67,6 @@ jobs:
           sudo rm -rf "$AGENT_TOOLSDIRECTORY"
           sudo docker system prune -af --volumes
           sudo apt-get clean
-          # Create temp directory on /mnt which has more space
-          sudo mkdir -p /mnt/buildkit-tmp
-          sudo chmod 1777 /mnt/buildkit-tmp
           echo "Disk space after cleanup:"
           df -h
 
@@ -82,10 +79,12 @@ jobs:
           buildkitd-config-inline: |
             [worker.oci]
               max-parallelism = 1
-              tmpdir = "/mnt/buildkit-tmp"
+              gc = true
+              gckeepstorage = 5000
             [worker.containerd]
               max-parallelism = 1
-          buildkitd-flags: --oci-worker-tmpdir=/mnt/buildkit-tmp
+              gc = true
+              gckeepstorage = 5000
 
       - name: Log in to Container Registry
         uses: docker/login-action@v3
