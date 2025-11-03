@@ -502,16 +502,15 @@ ARG NB_USER=jovyan
 ARG NB_UID=1000
 ARG NB_GID=100
 
+# Karabo dependencies are installed via Spack
+# The local repository copy overrides the Spack version via editable pip install below
 RUN mkdir -p /opt/Karabo-Pipeline /home/${NB_USER}/.astropy/cache /home/${NB_USER}/.cache
 COPY --chown=${NB_UID}:${NB_GID} karabo /opt/Karabo-Pipeline/karabo
 COPY --chown=${NB_UID}:${NB_GID} setup.cfg pyproject.toml /opt/Karabo-Pipeline/
-RUN fix-permissions /opt/Karabo-Pipeline /home/${NB_USER}/.cache /home/${NB_USER}/.astropy
+RUN python -m pip install --no-deps -e /opt/Karabo-Pipeline && \
+    fix-permissions /opt/Karabo-Pipeline /home/${NB_USER}/.cache /home/${NB_USER}/.astropy /opt/view
+
 USER ${NB_UID}
-
-# Karabo is now installed via Spack (py-karabo-pipeline)
-# The local repository copy is kept for running tests
-# ARG KARABO_VERSION already set above for Spack package version
-
 # Register kernel for jovyan user using the Spack Python
 RUN python -m ipykernel install --user --name=karabo --display-name="Karabo (Spack Py3.10)"
 
