@@ -363,10 +363,15 @@ RUN mkdir -p ${RASCIL_DATA}/models && \
 # Set PATH to prioritize Spack over conda
 ENV PATH="/opt/view/bin:${PATH}"
 
-# Create hook that runs after conda activation to restore Spack priority
+# Create hook that runs instead of conda activation to set Spack python
+# Disable conda auto-activation in login shells by removing conda hook from .bashrc
 RUN mkdir -p /usr/local/bin/before-notebook.d && \
     printf '#!/bin/bash\n# Restore Spack priority after conda activation\nexport PATH="/opt/view/bin:${PATH}"\n' > /usr/local/bin/before-notebook.d/20-restore-spack.sh && \
-    chmod +x /usr/local/bin/before-notebook.d/20-restore-spack.sh
+    chmod +x /usr/local/bin/before-notebook.d/20-restore-spack.sh && \
+    ( [ -f /usr/local/bin/before-notebook.d/10activate-conda-env.sh ] && \
+    rm -f /usr/local/bin/before-notebook.d/10activate-conda-env.sh ) && \
+    sed -i '/^eval "\$(conda shell\.bash hook)"/d' /home/jovyan/.bashrc && \
+    sed -i '/^eval "\$(conda shell\.bash hook)"/d' /root/.bashrc 2>/dev/null || true
 
 RUN spack test run 'py-astropy-healpix' && \
     # spack test run 'py-astropy' && \ # broken
@@ -497,11 +502,10 @@ ARG NB_USER=jovyan
 ARG NB_UID=1000
 ARG NB_GID=100
 
-RUN mkdir -p /opt/Karabo-Pipeline
+RUN mkdir -p /opt/Karabo-Pipeline /home/${NB_USER}/.astropy/cache /home/${NB_USER}/.cache
 COPY --chown=${NB_UID}:${NB_GID} karabo /opt/Karabo-Pipeline/karabo
 COPY --chown=${NB_UID}:${NB_GID} setup.cfg pyproject.toml /opt/Karabo-Pipeline/
-RUN fix-permissions /opt/Karabo-Pipeline /home/${NB_USER}/.cache
-
+RUN fix-permissions /opt/Karabo-Pipeline /home/${NB_USER}/.cache /home/${NB_USER}/.astropy
 USER ${NB_UID}
 
 # Karabo is now installed via Spack (py-karabo-pipeline)
