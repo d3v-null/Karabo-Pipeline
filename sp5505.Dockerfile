@@ -249,33 +249,31 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     spack add \
     'cfitsio@'$CFITSIO_VERSION \
     'boost@'$BOOST_VERSION'+python+numpy' \
-    # 'py-astropy@'$ASTROPY_VERSION \ # in py-karabo
+    'py-astropy@'$ASTROPY_VERSION \
     # 'py-astropy-healpix@'$ASTROPY_HEALPIX_VERSION \ # transitive
-    # 'py-bdsf@'$BDSF_VERSION \ # in py-karabo
-    # 'py-matplotlib@'$MATPLOTLIB_VERSION \ # in py-karabo
-    # 'py-numpy@'$NUMPY_VERSION \ # in py-karabo
-    # 'py-pip' \ # transitive
-    # 'py-scipy@'$SCIPY_VERSION \ # in py-karabo
+    'py-bdsf@'$BDSF_VERSION \
+    'py-matplotlib@'$MATPLOTLIB_VERSION \
+    'py-numpy@'$NUMPY_VERSION \
+    'py-scipy@'$SCIPY_VERSION \
     'python@'$PYTHON_VERSION \
     'casacore@'$CASACORE_VERSION'+python' \
     # 'fftw~mpi~openmp' \
     'hdf5@'$HDF5_VERSION'+hl~mpi' \
     'py-maturin@1.6.0' \
-    # needed by something important
     'py-pip' \
     'py-joblib' \
     'py-lazy-loader' \
     # 'openblas@'$OPENBLAS_VERSION \ # transitive
     # 'py-astroplan@'$ASTROPLAN_VERSION \ # transitive
     # 'py-casacore@'$CASACORE_VERSION \ # transitive
-    # 'py-dask@'$DASK_VERSION \ # in py-karabo
-    # 'py-distributed@'$DISTRIBUTED_VERSION \ # in py-karabo
+    'py-dask@'$DASK_VERSION \
+    'py-distributed@'$DISTRIBUTED_VERSION \
     'py-ducc@'$DUCC_VERSION \
     # h5py is not pulled transitively once we pin photutils; keep explicitly for karabo tests
     'py-h5py@'$H5PY_VERSION \
     'py-healpy@'$HEALPY_VERSION'+internal-healpix' \
     # 'py-numexpr@'$NUMEXPR_VERSION \ # transitive
-    # 'py-pandas@'$PANDAS_VERSION \ # in py-karabo
+    'py-pandas@'$PANDAS_VERSION \
     'py-photutils@'$PHOTUTILS_VERSION \
     'py-rascil@'$RASCIL_VERSION \
     'py-scikit-image@'$SKIMAGE_VERSION \
@@ -284,23 +282,28 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     'py-reproject@:0.13' \
     # (0.14+ breaks rascil 1.0.0)
     # 'py-seqfile@'$SEQFILE_VERSION \ # transitive
-    # 'py-ska-sdp-datamodels@'$SDP_DATAMODELS_VERSION \ # in py-karabo
+    'py-ska-sdp-datamodels@'$SDP_DATAMODELS_VERSION \
     'py-ska-sdp-func-python@'$SDP_FUNC_PYTHON_VERSION \
     # 'py-ska-sdp-func@'$SDP_FUNC_VERSION \ # transitive
     'py-tabulate@'$TABULATE_VERSION \
-    # 'py-xarray@'$XARRAY_VERSION \ # in py-karabo
+    'py-xarray@'$XARRAY_VERSION \
     'oskar@'$OSKAR_VERSION'+python~openmp' \
     # 'py-bottleneck@'$BOTTLENECK_VERSION \ # transitive
-    # 'py-pyuvdata@'$PYUVDATA_VERSION'+casa' \ # transitive
-    # 'py-aratmospy@'$ARATMOSPY_VERSION \ # in py-karabo
-    # 'py-eidos@'$EIDOS_VERSION \ # in py-karabo
-    # 'py-katbeam@'$KATBEAM_VERSION \ # in py-karabo
+    'py-pyuvdata@'$PYUVDATA_VERSION'+casa' \
+    'py-aratmospy@'$ARATMOSPY_VERSION \
+    'py-eidos@'$EIDOS_VERSION \
+    'py-katbeam@'$KATBEAM_VERSION \
     'wsclean@'$WSCLEAN_VERSION'~mpi' \
     'py-tools21cm@'$TOOLS21CM_VERSION \
     'py-jupyterlab-server@2.27:' \
     'py-jupyterlab@4' \
     'py-notebook@7' \
-    'py-karabo@'$KARABO_VERSION \
+    # NOTE: py-karabo@$KARABO_VERSION removed - installing from local source instead \
+    'py-dask-mpi' \
+    'py-mpi4py' \
+    'py-packaging' \
+    'py-requests' \
+    'py-rfc3986' \
     # for testing karabo itself:
     'py-pytest@8' \
     && \
@@ -406,8 +409,7 @@ RUN spack test run 'py-astropy-healpix' && \
     spack test run 'py-tools21cm' && \
     spack test run 'py-jupyterlab-server' && \
     spack test run 'py-jupyterlab' && \
-    spack test run 'py-notebook' && \
-    spack test run 'py-karabo'
+    spack test run 'py-notebook'
 # TODO: Clean up test artifacts
 # rm -rf /tmp/* /root/.cache/* && \
 # find /opt/software -type d -name '.pytest_cache' -exec rm -rf {} + 2>/dev/null || true
@@ -451,7 +453,6 @@ checks = [
     ('erfa','2.0'),
     ('healpy','1.16'),
     ('joblib','0.0'),
-    ('karabo','0.34'),
     ('katbeam','0.1'),
     ('lazy_loader','0.0'),
     ('mpi4py','0.0'),
@@ -466,7 +467,6 @@ checks = [
     ('toolz','0.0'),
     ('tqdm','4.0'),
     ('mwa_hyperbeam','0.10'),
-    ('karabo','0.34'),
 ]
 
 for (name, target) in checks:
@@ -502,13 +502,13 @@ ARG NB_USER=jovyan
 ARG NB_UID=1000
 ARG NB_GID=100
 
-# Karabo dependencies are installed via Spack
-# The local repository copy overrides the Spack version via editable pip install below
+# Karabo dependencies are installed via Spack above, but not py-karabo itself
+# Install local Karabo from source via pip
 RUN mkdir -p /opt/Karabo-Pipeline /home/${NB_USER}/{.astropy/cache,.cache,.config/matplotlib}
 COPY --chown=${NB_UID}:${NB_GID} karabo /opt/Karabo-Pipeline/karabo
 COPY --chown=${NB_UID}:${NB_GID} setup.cfg pyproject.toml /opt/Karabo-Pipeline/
 RUN python -m pip install --no-deps -e /opt/Karabo-Pipeline && \
-    fix-permissions /opt/Karabo-Pipeline /home/${NB_USER} /opt/view
+    fix-permissions /opt/Karabo-Pipeline /home/${NB_USER}
 
 USER ${NB_UID}
 # Register kernel for jovyan user using the Spack Python
