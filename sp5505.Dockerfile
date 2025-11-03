@@ -504,11 +504,11 @@ ARG NB_GID=100
 
 # Karabo dependencies are installed via Spack
 # The local repository copy overrides the Spack version via editable pip install below
-RUN mkdir -p /opt/Karabo-Pipeline /home/${NB_USER}/.astropy/cache /home/${NB_USER}/.cache
+RUN mkdir -p /opt/Karabo-Pipeline /home/${NB_USER}/{.astropy/cache,.cache,.config/matplotlib}
 COPY --chown=${NB_UID}:${NB_GID} karabo /opt/Karabo-Pipeline/karabo
 COPY --chown=${NB_UID}:${NB_GID} setup.cfg pyproject.toml /opt/Karabo-Pipeline/
 RUN python -m pip install --no-deps -e /opt/Karabo-Pipeline && \
-    fix-permissions /opt/Karabo-Pipeline /home/${NB_USER}/.cache /home/${NB_USER}/.astropy /opt/view
+    fix-permissions /opt/Karabo-Pipeline /home/${NB_USER} /opt/view
 
 USER ${NB_UID}
 # Register kernel for jovyan user using the Spack Python
