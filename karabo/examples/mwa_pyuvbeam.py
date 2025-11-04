@@ -274,6 +274,14 @@ def plot_beam(
         print(f"  x_vals (axis2) range: {x_vals.min():.3f} to {x_vals.max():.3f}")
         print(f"  y_vals (axis1) range: {y_vals.min():.3f} to {y_vals.max():.3f}")
 
+    # Report power at zenith (za=0, az=0) similar to hyperbeam debug
+    if beam.pixel_coordinate_system == "az_za":
+        # nearest indices for za=0, az=0
+        za_idx = int(np.argmin(np.abs(y_vals - 0.0)))
+        az_idx = int(np.argmin(np.abs(x_vals - 0.0)))
+        p0 = float(data[za_idx, az_idx])
+        print(f"Power at zenith: {p0:.6e}")
+
     # Apply quantity transformation
     if quantity == "power":
         z = data
@@ -424,9 +432,9 @@ def plot_beam(
         extent = [x_vals.min(), x_vals.max(), y_vals.min(), y_vals.max()]
 
     im = ax.imshow(
-        z.T,  # Transpose to match axis convention
+        z,  # z[za_idx, az_idx] maps directly to extent [az_min, az_max, za_min, za_max]
         aspect="auto",
-        origin="lower",
+        origin="upper",  # show za increasing downward (0 at top, 90 at bottom)
         extent=extent,
         cmap=cmap,
         norm=LogNorm(vmin=vmin_plot, vmax=vmax_plot) if use_log else None,
@@ -518,7 +526,10 @@ def main() -> None:
     #     [0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3]
     # ])
     delays = None
-    beam = read_beam(args.beam_path, delays=delays)
+    # Limit read to a narrow frequency window around target to speed up
+    f0 = float(args.freq_mhz) * 1e6
+    half_bw_hz = 0.64e6
+    beam = read_beam(args.beam_path, delays=delays, freq_range=(f0 - half_bw_hz, f0 + half_bw_hz))
 
     plot_beam(
         beam,
