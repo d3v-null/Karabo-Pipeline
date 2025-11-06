@@ -420,7 +420,7 @@ RUN spack test run 'py-astropy-healpix' && \
 # TODO: Verify hyperbeam (Spack-installed) can be imported
 # RUN python -c "from mwa_hyperbeam import FEEBeam; print('mwa_hyperbeam (Spack) import successful')"
 
-ARG PIP_EXTRAS="mwa-hyperbeam==0.10.4"
+ARG PIP_EXTRAS="mwa-hyperbeam==0.10.4 psrecord==1.4"
 
 # Install optional extras via pip (not available in Spack)
 # Use python -m pip instead of pip directly to avoid shebang issues!
