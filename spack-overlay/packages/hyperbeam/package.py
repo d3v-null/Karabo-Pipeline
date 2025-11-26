@@ -192,13 +192,11 @@ class Hyperbeam(Package):
             # Find where we set header content and add the typedef
             # Look for the pattern where we configure cbindgen
             if 'config.header = Some' not in build_rs:
-                # Add after "let export ="
-                pattern = r'(let export = .*?;)'
+                # Add after "config.export = export;"
+                pattern = r'(config\.export = export;)'
                 replacement = r'''\1
-
-        // Add GpuFloat typedef for CFFI when GPU features aren't enabled
-        config.header = Some(format!("typedef {} GpuFloat;", c_type));'''
-                build_rs_patched = re.sub(pattern, replacement, build_rs, flags=re.DOTALL)
+                    config.header = Some(format!("typedef {} GpuFloat;", c_type));'''
+                build_rs_patched = re.sub(pattern, replacement, build_rs)
 
                 with open(build_rs_path, 'w') as f:
                     f.write(build_rs_patched)
@@ -219,7 +217,7 @@ class Hyperbeam(Package):
             env["HIP_PATH"] = str(spec["hip"].prefix)
 
         # Build features for maturin
-        features = []
+        features = ["python"]
         if "+cuda" in spec:
             features.append("cuda")
         if "+hip" in spec:

@@ -306,6 +306,8 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     'py-rfc3986' \
     # for testing karabo itself:
     'py-pytest@8' \
+    # not karabo-related
+    'hyperbeam' \
     && \
     spack concretize --force && \
     ac_cv_lib_curl_curl_easy_init=no spack install --no-check-signature --no-checksum --fail-fast --fresh --show-log-on-error && \
@@ -410,17 +412,17 @@ RUN spack test run 'py-astropy-healpix' && \
     spack test run 'py-tools21cm' && \
     spack test run 'py-jupyterlab-server' && \
     spack test run 'py-jupyterlab' && \
-    spack test run 'py-notebook'
+    spack test run 'py-notebook' && \
+    spack test run 'hyperbeam'
 # TODO: Clean up test artifacts
 # rm -rf /tmp/* /root/.cache/* && \
 # find /opt/software -type d -name '.pytest_cache' -exec rm -rf {} + 2>/dev/null || true
-# TODO: spack test run 'hyperbeam'
 # spack test run 'py-pyuvdata'
 
 # TODO: Verify hyperbeam (Spack-installed) can be imported
 # RUN python -c "from mwa_hyperbeam import FEEBeam; print('mwa_hyperbeam (Spack) import successful')"
 
-ARG PIP_EXTRAS="mwa-hyperbeam==0.10.4 psrecord==1.4"
+ARG PIP_EXTRAS="psrecord==1.4"
 
 # Install optional extras via pip (not available in Spack)
 # Use python -m pip instead of pip directly to avoid shebang issues!
