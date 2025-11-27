@@ -308,6 +308,7 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     'py-pytest@8' \
     # not karabo-related
     'hyperbeam' \
+    'hyperdrive' \
     && \
     spack concretize --force && \
     ac_cv_lib_curl_curl_easy_init=no spack install --no-check-signature --no-checksum --fail-fast --fresh --show-log-on-error && \

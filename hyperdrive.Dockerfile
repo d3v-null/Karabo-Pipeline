@@ -1,18 +1,7 @@
 # syntax=docker/dockerfile:1.6
-# Minimal image to run mwa_hyperbeam reliably (numpy 2.x wheel) without touching your main stack
+# Minimal image to run mwa_hyperdrive
 # Build:
-#   docker build -t d3vnull0/hyperbeam:latest -f hyperbeam.Dockerfile .
-# Test:
-# docker run --rm -it --entrypoint /bin/bash --rm f6bcb4da3c6aa9351726e0b2d94e4fe53659f600464d0566a8c27e080f78499f -l
-# python - <<'PY'
-# from mwa_hyperbeam import FEEBeam
-# import numpy as np
-# import os
-# b = FEEBeam(os.environ.get('MWA_BEAM_FILE', 'mwa_full_embedded_element_pattern.h5'))
-# az = np.array([0.0]); za = np.array([0.0]); delays=[0]*16; amps=[1]*16
-# j = b.calc_jones_array(az, za, 180e6, delays, amps, False)
-# print('OK', j, abs(j[0,0])**2)
-# PY
+#   docker build -t karabo-hyperdrive:latest -f hyperdrive.Dockerfile .
 
 FROM quay.io/jupyter/minimal-notebook:notebook-7.2.2
 
@@ -23,7 +12,7 @@ SHELL ["/bin/bash", "-lc"]
 RUN rm -f /usr/local/bin/before-notebook.d/10activate-conda-env.sh || true; \
     rm -rf /opt/conda || true
 
-# System libs required by hyperbeam runtime
+# System libs required by spack and hyperdrive runtime
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && apt-get --no-install-recommends install -y \
@@ -38,10 +27,9 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         pkg-config \
         wget \
         zstd \
-    ; # not required because of buildcache: rm -rf /var/lib/apt/lists/*
+    ;
 
-
-# Install Rust before any Spack setup, because Spack rust is unbelievably slow.
+# Install Rust
 ARG RUST_VERSION=1.81.0
 ENV CARGO_HOME=/opt/cargo \
     RUSTUP_HOME=/opt/rustup
@@ -61,8 +49,9 @@ RUN git clone --depth=2 --branch=releases/v0.23 https://github.com/spack/spack.g
     spack external find git && \
     spack external find pkgconf
 
+# Copy spack overlay
 COPY spack-overlay/repo.yaml /opt/karabo-spack/repo.yaml
-COPY spack-overlay/packages/hyperbeam /opt/karabo-spack/packages/hyperbeam
+COPY spack-overlay/packages/hyperdrive /opt/karabo-spack/packages/hyperdrive
 RUN . ${SPACK_ROOT}/share/spack/setup-env.sh && spack repo add /opt/karabo-spack
 
 ARG NUMPY_VERSION=1.23.5
@@ -97,13 +86,12 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     spack config add "packages:all:target:[${SPACK_TARGET}]"; \
     spack mirror add --autopush --unsigned mycache file:///opt/buildcache; \
     spack buildcache keys --install --trust || true; \
-    # TODO: spack mirror add v0.23.1 https://binaries.spack.io/v0.23.1; \
     spack add \
         'py-matplotlib@'$MATPLOTLIB_VERSION \
         'py-numpy@'$NUMPY_VERSION \
         'py-pip@:25.2' \
         'python@'$PYTHON_VERSION \
-        'hyperbeam+python' \
+        'hyperdrive' \
     && \
     spack concretize --force && \
     ac_cv_lib_curl_curl_easy_init=no spack install --no-check-signature --no-checksum --fail-fast --reuse --show-log-on-error && \
@@ -138,14 +126,8 @@ RUN . ${SPACK_ROOT}/share/spack/setup-env.sh && \
     spack env activate /opt/spack_env && \
     spack test run 'py-matplotlib' && \
     spack test run 'py-numpy' && \
-    spack test run 'hyperbeam'
+    spack test run 'hyperdrive'
 
-# Verify hyperbeam (Spack-installed) can be imported
-RUN . ${SPACK_ROOT}/share/spack/setup-env.sh && \
-    spack env activate /opt/spack_env && \
-    python -c "from mwa_hyperbeam import FEEBeam; print('mwa_hyperbeam (Spack) import successful')"
-
-# todo: try spack env activate /opt/spack_env --with-view /opt/view
 RUN . ${SPACK_ROOT}/share/spack/setup-env.sh && \
     spack env activate /opt/spack_env && \
     python - <<"PY"
@@ -157,72 +139,11 @@ print(f'BASH_ENV: {os.environ.get("BASH_ENV")}')
 print(f'PYTHONNOUSERSITE: {os.environ.get("PYTHONNOUSERSITE")}')
 print(f'CMAKE_PREFIX_PATH: {os.environ.get("CMAKE_PREFIX_PATH")}')
 print(f'PKG_CONFIG_PATH: {os.environ.get("PKG_CONFIG_PATH")}')
-
-checks = [
-    ('matplotlib','3.9.2'),
-    ('numpy','1.23.5'),
-    ('mwa_hyperbeam','0.10'),
-]
-for (name, target) in checks:
-    mod = None
-    try:
-        mod = importlib.import_module(name)
-    except Exception as exc:
-        print(f'{name} not importable: {exc}')
-        sys.exit(1)
-    ver = getattr(mod, '__version__', '0.0')
-    try:
-        assert tuple([*ver.split('.')]) >= tuple([*target.split('.')])
-    except Exception as exc:
-        print(f'{name} version not available: {exc}')
-        continue
-    print(f'{name} version {ver}, target {target}')
-sys.exit(0)
 PY
 
 # Quick verification at build time (non-zero power expected)
 ENV MWA_BEAM_FILE=/opt/mwa_full_embedded_element_pattern.h5
 RUN wget -O$MWA_BEAM_FILE http://ws.mwatelescope.org/static/mwa_full_embedded_element_pattern.h5
 
-# Create isolated venv with numpy 2.x and working hyperbeam wheel
-# RUN python3 -m venv /opt/hbvenv && \
-#     /opt/hbvenv/bin/pip install -q --no-cache-dir --upgrade 'pip<25.3' && \
-#     /opt/hbvenv/bin/pip install -q --no-cache-dir \
-#         'numpy==2.2.2' \
-#         'mwa-hyperbeam==0.10.4' \
-#         'matplotlib==3.9.2'
-# RUN /opt/hbvenv/bin/python - <<'PY' ...
-
-RUN . ${SPACK_ROOT}/share/spack/setup-env.sh && \
-    spack env activate /opt/spack_env && \
-    python - <<'PY'
-from mwa_hyperbeam import FEEBeam
-import numpy as np, os
-
-# get beam_file from environment variable MWA_BEAM_FILE
-beam_file = os.environ.get('MWA_BEAM_FILE')
-open(beam_file,'ab').close() if not os.path.exists(beam_file) else None
-
-expected = np.array([
-    -1.27736793e-04+4.05936557e-05j,  6.64722096e-01+1.52033633e-01j,
-    6.65447569e-01+1.51013577e-01j, -1.31500672e-04+4.29656015e-05j
-])
-try:
-    b = FEEBeam(beam_file)
-    az = np.array([0.0]); za = np.array([0.0])
-    j = b.calc_jones_array(az, za, 180e6, [0]*16, [1]*16, False)
-    print('hyperbeam import OK; jones:', j)
-except Exception as e:
-    # Import verified even if beam missing; runtime will mount real file
-    print('something failed', repr(e))
-if not np.allclose(j, expected):
-    print('jones mismatch', j, expected)
-PY
-
-ENV PATH=/opt/hbvenv/bin:${PATH}
 USER ${NB_UID}
 WORKDIR /home/${NB_USER}
-
-CMD ["python", "-c", "import mwa_hyperbeam, sys; print('mwa_hyperbeam', getattr(mwa_hyperbeam,'__version__','unknown')); sys.stdout.flush(); import time; time.sleep(3600)"]
-
-
