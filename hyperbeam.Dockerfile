@@ -3,14 +3,14 @@
 # Build:
 #   docker build -t d3vnull0/hyperbeam:latest -f hyperbeam.Dockerfile .
 # Test:
-# docker run --rm -it --entrypoint /bin/bash --rm f6bcb4da3c6aa9351726e0b2d94e4fe53659f600464d0566a8c27e080f78499f -l
+#   docker run --rm d3vnull0/hyperbeam:latest
 # python - <<'PY'
 # from mwa_hyperbeam import FEEBeam
-# import numpy as np
 # import os
+# import numpy as np
 # b = FEEBeam(os.environ.get('MWA_BEAM_FILE', 'mwa_full_embedded_element_pattern.h5'))
 # az = np.array([0.0]); za = np.array([0.0]); delays=[0]*16; amps=[1]*16
-# j = b.calc_jones_array(az, za, 180e6, delays, amps, False)
+# j = b.calc_jones_gpu(az, za, 180e6, delays, amps, False)
 # print('OK', j, abs(j[0,0])**2)
 # PY
 
@@ -103,7 +103,7 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
         'py-numpy@'$NUMPY_VERSION \
         'py-pip@:25.2' \
         'python@'$PYTHON_VERSION \
-        'hyperbeam+python' \
+        'hyperbeam+python+cuda' \
     && \
     spack concretize --force && \
     ac_cv_lib_curl_curl_easy_init=no spack install --no-check-signature --no-checksum --fail-fast --reuse --show-log-on-error && \

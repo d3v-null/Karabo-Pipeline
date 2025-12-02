@@ -1,8 +1,12 @@
 from spack.package import *
+
 import os
+import llnl.util.filesystem as fs
+from pathlib import Path
+import shutil
 
 
-class Hyperbeam(Package):
+class Hyperbeam(Package, ROCmPackage, CudaPackage):
     """Primary beam model for the Murchison Widefield Array (MWA) radio telescope.
 
     hyperbeam is a Rust library for calculating the beam response of the MWA.
@@ -35,221 +39,105 @@ class Hyperbeam(Package):
     version("0.10.2", sha256="2ee299d94c882e0d5d480134cf31bbd8")
 
     # Variants
-    variant("python", default=True, description="Build Python bindings")
-    variant("cuda", default=False, description="Enable CUDA support for GPU acceleration")
-    variant("hip", default=False, description="Enable HIP support for AMD GPU acceleration")
-    variant("all-static", default=False, description="Statically link all dependencies")
-    variant("hdf5-static", default=False, description="Statically link HDF5")
-    variant("cfitsio-static", default=False, description="Statically link CFITSIO")
+    variant("python", default=True, description="Build and install Python bindings.")
+    variant("hdf5-static", default=False, description="Link statically to hdf5 via hdf5-sys crate.")
+    variant("portable", default=True, description="Disable native CPU optimizations")
 
     # Build dependencies
-    depends_on("rust@1.64:", type="build")
-    depends_on("cmake@3.10:", type="build")
-    depends_on("pkgconfig", type="build")
+    depends_on("rust@1.64.0:", type="build")
+    depends_on("rust@1.80.0:", type="build", when="@0.10.0:")
+    depends_on("cmake", type="build")
 
-    # Core dependencies
-    depends_on("cfitsio", type=("build", "link", "run"))
-    depends_on("hdf5@1.8.15:", type=("build", "link", "run"))
-    depends_on("hdf5~mpi", type=("build", "link", "run"))
+    # cfitsio > 4 introduces a breaking change, is incompatible with mwalib.
+    depends_on("cfitsio@3.49")
 
-    # Python dependencies
-    depends_on("python@3.8:", when="+python", type=("build", "run"))
-    depends_on("py-pip", when="+python", type="build")
-    depends_on("py-maturin@0.14:", when="+python", type="build")
-    depends_on("py-cffi", when="+python", type=("build", "run"))
-    depends_on("py-numpy@1.20:", when="+python", type=("build", "run"))
+    depends_on("hdf5@1.10 +cxx ~mpi api=v110", when="~hdf5-static")
+    depends_on("py-maturin", when="+python")
 
-    # GPU dependencies
-    depends_on("cuda@11.0:", when="+cuda", type=("build", "link", "run"))
-    depends_on("hip@4.0:", when="+hip", type=("build", "link", "run"))
+    # this is the only version of patchelf that has been found to work with maturin. patchelf@0.18
+    # corrupts the dynamic libraries, making them unusable.
+    # https://github.com/PawseySC/pawsey-spack-config/pull/280#issuecomment-2258095785
+    depends_on("patchelf@0.17.2", type=("build", "run"), when="+python")
 
-    # Conflicts
-    conflicts("+cuda", when="+hip", msg="CUDA and HIP cannot be enabled simultaneously")
+    depends_on("py-numpy", type=("build", "run"), when="+python")
+    depends_on("python", type=("build", "run"), when="+python")
+    depends_on("py-pip", type="build", when="+python")
+    depends_on("erfa", when="@0.5.0")
+
+    conflicts("+rocm", when="@:0.6.0")  # early hip support was added in 0.6.0
 
     def setup_build_environment(self, env):
-        """Set up build environment for Rust compilation."""
-        # Set CFITSIO paths
-        env.set("CFITSIO_LIB", self.spec["cfitsio"].prefix.lib)
-        env.set("CFITSIO_INC", self.spec["cfitsio"].prefix.include)
-
-        # Set HDF5 paths
-        env.set("HDF5_DIR", self.spec["hdf5"].prefix)
-        env.prepend_path("PKG_CONFIG_PATH", join_path(self.spec["hdf5"].prefix, "lib", "pkgconfig"))
-
-        # CUDA support
-        if "+cuda" in self.spec:
-            env.set("CUDA_LIB", self.spec["cuda"].prefix.lib)
-            env.set("CUDA_LIB64", self.spec["cuda"].prefix.lib64)
-            # Set compute capability (can be overridden by user)
-            if not os.environ.get("HYPERDRIVE_CUDA_COMPUTE"):
-                env.set("HYPERDRIVE_CUDA_COMPUTE", "75")  # Default to RTX 2070/3060 Ti
-
-        # HIP support
-        if "+hip" in self.spec:
-            env.set("HIP_PATH", self.spec["hip"].prefix)
-
-        # Fix for ARM64 proc-macro compilation issue with hdf5-metno-derive
-        # Spack's target configuration can confuse Cargo into thinking we're cross-compiling
-        # Clear any cross-compilation env vars that might interfere with proc-macro builds
-        env.unset("CARGO_BUILD_TARGET")
-        env.unset("CARGO_TARGET_DIR")
-        env.unset("CARGO_BUILD_TARGET_DIR")
-
-        # Rust compilation flags
-        # NOTE: We do NOT set RUSTFLAGS on ARM64 to avoid proc-macro issues
-        import platform
-        machine = platform.machine()
-        is_arm = machine in ("aarch64", "arm64")
-
-        if not is_arm:
-            rustflags = []
-            # Static linking options (skip on ARM64 due to proc-macro limitations)
-            if "+all-static" in self.spec or "+hdf5-static" in self.spec:
-                rustflags.append("-C target-feature=+crt-static")
-            if rustflags:
-                env.set("RUSTFLAGS", " ".join(rustflags))
-
-        # Use release profile for optimization
-        env.set("CARGO_PROFILE_RELEASE_OPT_LEVEL", "3")
-        env.set("CARGO_PROFILE_RELEASE_LTO", "thin")
+        build_dir = self.stage.source_path
+        env.set("CARGO_HOME", f"{build_dir}/.cargo")
+        if self.spec.satisfies("+rocm"):
+            amdgpu_target = ",".join(self.spec.variants["amdgpu_target"].value)
+            env.set("HYPERBEAM_HIP_ARCH", amdgpu_target)
+            hip_spec = self.spec["hip"]
+            rocm_dir = hip_spec.prefix
+            # print(f"rocm_dir: {rocm_dir}, amdgpu_target: {amdgpu_target}")
+            if hip_spec.satisfies("@6:"):
+                env.set("HIP_PATH", rocm_dir)
+            else:
+                env.set("HIP_PATH", rocm_dir)
+                env.set("ROCM_PATH", rocm_dir)
+        if self.spec.satisfies("+cuda"):
+            # Default to compute capability 86 (RTX 3090/4090) if not specified or none
+            cuda_arch = "86"
+            try:
+                if "cuda_arch" in self.spec.variants:
+                    arch_values = self.spec.variants["cuda_arch"].value
+                    # Filter out 'none' values and use only valid architectures
+                    valid_archs = [str(arch) for arch in arch_values if str(arch) != "none"]
+                    if valid_archs:
+                        cuda_arch = ",".join(valid_archs)
+            except Exception:
+                # If there's any issue accessing cuda_arch, use default
+                pass
+            env.set("HYPERBEAM_CUDA_COMPUTE", cuda_arch)
+            cuda_dir = self.spec["cuda"].prefix
+            # print(f"cuda_dir: {cuda_dir}, cuda_arch: {cuda_arch}")
+        if self.spec.satisfies("~portable"):
+            env.append_flags("RUSTFLAGS", f"-C target-cpu=native")
 
     def install(self, spec, prefix):
         """Install hyperbeam using cargo."""
-        import re
-
-        # Patch build.rs to add GpuFloat typedef when GPU features aren't enabled
-        # This ensures CFFI can parse the generated header
-        if "+cuda" not in spec and "+hip" not in spec:
-            build_rs_path = "build.rs"
-            with open(build_rs_path, 'r') as f:
-                build_rs = f.read()
-
-            # Insert typedef header configuration after export config
-            # Find the line with "config.export = export;" and add the header typedef
-            pattern = r'(config\.export = export;)'
-            replacement = r'''\1
-                    config.header = Some(format!("typedef {} GpuFloat;", c_type));'''
-            build_rs_patched = re.sub(pattern, replacement, build_rs)
-
-            with open(build_rs_path, 'w') as f:
-                f.write(build_rs_patched)
-
         cargo = which("cargo")
+        features = self.get_features()
 
-        # Build Rust features list
+        with fs.working_dir(self.stage.source_path):
+            cargo("build", "--locked", "--release", f"--features={','.join(features)}")
+
+            # Install library files
+            shutil.copytree("include", f"{prefix}/include")
+            os.mkdir(f"{prefix}/lib")
+            release = Path("target/release/")
+            for f in release.iterdir():
+                if f.name.startswith("libmwa_hyperbeam."):
+                    shutil.copy2(f"{f}", f"{prefix}/lib/")
+
+            # Install Python bindings if requested
+            if "+python" in spec:
+                self.install_python_bindings(spec, prefix)
+
+    def get_features(self):
         features = []
-
-        if "+cuda" in spec:
-            features.append("cuda")
-
-        if "+hip" in spec:
-            features.append("hip")
-
-        # ARM64 proc-macro limitation: skip all-static feature
-        # The hdf5-metno-derive proc-macro doesn't support cross-compilation
-        import platform
-        is_arm = platform.machine() in ("aarch64", "arm64")
-
-        if not is_arm:
-            if "+all-static" in spec:
-                features.append("all-static")
-            elif "+hdf5-static" in spec:
-                features.append("hdf5-static")
-            elif "+cfitsio-static" in spec:
-                features.append("cfitsio-static")
-        else:
-            # On ARM64, skip static features to avoid proc-macro issues
-            if "+all-static" in spec or "+hdf5-static" in spec or "+cfitsio-static" in spec:
-                print("WARNING: Skipping static linking features on ARM64 due to proc-macro limitations")
-
-        # Install the Rust library
-        # NOTE: We do NOT specify --target to allow Cargo to use the native default target
-        # This is critical for proc-macro compilation on ARM64
-        install_args = ["install", "--path", ".", "--locked", "--root", prefix]
-
-        if features:
-            install_args.extend(["--features", ",".join(features)])
-
-        # Ensure we're building for the native target (no cross-compilation)
-        cargo(*install_args)
-
-        # Install Python bindings if requested
-        if "+python" in spec:
-            self.install_python_bindings(spec, prefix)
+        if self.spec.satisfies("+hdf5-static"):
+            features += ["hdf5-static"]
+        if self.spec.satisfies("+rocm"):
+            features += ["hip"]
+        if self.spec.satisfies("+cuda"):
+            features += ["cuda"]
+        return features
 
     def install_python_bindings(self, spec, prefix):
         """Install Python bindings using maturin."""
-        python = spec["python"].command
-
-        # Fix for CFFI GpuFloat error when GPU features aren't enabled
-        # Add typedef to build.rs so CFFI can parse the generated header
-        if "+cuda" not in spec and "+hip" not in spec:
-            import re
-            build_rs_path = "build.rs"
-            with open(build_rs_path, 'r') as f:
-                build_rs = f.read()
-
-            # Find where we set header content and add the typedef
-            # Look for the pattern where we configure cbindgen
-            if 'config.header = Some' not in build_rs:
-                # Add after "config.export = export;"
-                pattern = r'(config\.export = export;)'
-                replacement = r'''\1
-                    config.header = Some(format!("typedef {} GpuFloat;", c_type));'''
-                build_rs_patched = re.sub(pattern, replacement, build_rs)
-
-                with open(build_rs_path, 'w') as f:
-                    f.write(build_rs_patched)
-                print("Patched build.rs to add GpuFloat typedef for CFFI")
-
-        # Set environment for Python build
-        env = os.environ.copy()
-        env["CFITSIO_LIB"] = str(spec["cfitsio"].prefix.lib)
-        env["CFITSIO_INC"] = str(spec["cfitsio"].prefix.include)
-        env["HDF5_DIR"] = str(spec["hdf5"].prefix)
-
-        if "+cuda" in spec:
-            env["CUDA_LIB"] = str(spec["cuda"].prefix.lib)
-            if not env.get("HYPERDRIVE_CUDA_COMPUTE"):
-                env["HYPERDRIVE_CUDA_COMPUTE"] = "75"
-
-        if "+hip" in spec:
-            env["HIP_PATH"] = str(spec["hip"].prefix)
-
-        # Build features for maturin
-        features = ["python"]
-        if "+cuda" in spec:
-            features.append("cuda")
-        if "+hip" in spec:
-            features.append("hip")
-
-        # Use maturin to build and install Python package
-        maturin_args = [
-            "-m", "pip", "install",
-            "--no-build-isolation",
-            "--no-deps",
-            f"--prefix={prefix}",
-        ]
-
-        # If maturin is available, use it directly for better control
         maturin = which("maturin")
-        if maturin:
-            build_args = ["build", "--release", "--strip"]
-            if features:
-                build_args.extend(["--features", ",".join(features)])
-
-            maturin(*build_args, env=env)
-
-            # Install the wheel
-            import glob
-            wheels = glob.glob("target/wheels/*.whl")
-            if wheels:
-                python("-m", "pip", "install", "--no-deps",
-                       f"--prefix={prefix}", wheels[0], env=env)
-        else:
-            # Fallback to pip install
-            maturin_args.append(".")
-            python(*maturin_args, env=env)
+        pip = which("pip3")
+        features = self.get_features()
+        pyfeatures = ["python"] + features
+        maturin("build", "--release", f"--features={','.join(pyfeatures)}", "--strip")
+        whl_file = list(os.listdir("target/wheels"))[0]
+        pip("install", f"--prefix={prefix}", f"target/wheels/{whl_file}")
 
     def setup_run_environment(self, env):
         """Set up runtime environment."""
