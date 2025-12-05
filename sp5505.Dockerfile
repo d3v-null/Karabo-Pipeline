@@ -348,8 +348,6 @@ COPY --from=builder /opt/spack_env /opt/spack_env
 COPY --from=builder /opt/spack /opt/spack
 COPY --from=builder /opt/ska-sdp-spack /opt/ska-sdp-spack
 COPY --from=builder /opt/karabo-spack /opt/karabo-spack
-COPY --from=builder /opt/cargo /opt/cargo
-COPY --from=builder /opt/rustup /opt/rustup
 
 # Set Spack environment variables (needed from builder stage)
 ENV SPACK_ROOT=/opt/spack \
