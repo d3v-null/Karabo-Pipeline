@@ -70,8 +70,8 @@ jobs:
           echo "Disk space after cleanup:"
           df -h
 
-      - name: ensure there is 40GB disk space
-        run: df / | awk 'NR==2 {exit !($4 > 40*1024*1024)}'
+      - name: ensure there is 30GB disk space
+        run: df / | awk 'NR==2 {exit !($4 > 30*1024*1024)}'
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -122,15 +122,15 @@ jobs:
           platforms: ${{ matrix.platform }}
           labels: ${{ steps.meta-pretest.outputs.labels }}
           outputs: type=image,name=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
-          cache-from: |
-            type=registry,ref=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:buildcache-${{ env.PLATFORM_PAIR }}
-          cache-to: |
-            type=registry,ref=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:buildcache-${{ env.PLATFORM_PAIR }},mode=max,compression=zstd,compression-level=3
           build-args: |
             SKIP_TESTS=1
             SPACK_TARGET=${{ matrix.platform == 'linux/amd64' && 'x86_64' || 'aarch64' }}
-          build-contexts: |
-            spack-cache=docker-image://ghcr.io/spack/ubuntu-jammy:v0.23.0
+          # cache-from: |
+          #   type=registry,ref=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:buildcache-${{ env.PLATFORM_PAIR }}
+          # cache-to: |
+          #   type=registry,ref=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:buildcache-${{ env.PLATFORM_PAIR }},mode=max,compression=zstd,compression-level=3
+          # build-contexts: |
+          #   spack-cache=docker-image://ghcr.io/spack/ubuntu-jammy:v0.23.0
 
       - name: Check disk space after build
         if: always()
