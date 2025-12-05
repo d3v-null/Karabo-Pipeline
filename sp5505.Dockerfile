@@ -243,7 +243,8 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     spack config add "config:source_cache:/opt/spack-source-cache"; \
     spack config add "config:misc_cache:/opt/spack-misc-cache"; \
     spack config add "packages:all:target:[${SPACK_TARGET}]"; \
-    spack mirror add --autopush --unsigned mycache file:///opt/buildcache; \
+    spack config add "packages:cuda:version:[12.2.2]"; \
+    # spack mirror add --autopush --unsigned mycache file:///opt/buildcache; \
     spack buildcache keys --install --trust || true; \
     # TODO: spack mirror add v0.23.1 https://binaries.spack.io/v0.23.1; \
     spack add \
