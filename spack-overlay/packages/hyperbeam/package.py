@@ -49,9 +49,10 @@ class Hyperbeam(Package, ROCmPackage, CudaPackage):
     depends_on("cmake", type="build")
 
     # cfitsio > 4 introduces a breaking change, is incompatible with mwalib.
-    depends_on("cfitsio@3.49")
+    # Use cfitsio-reentrant package which is pinned to 3.x
+    depends_on("cfitsio-reentrant@3.49")
 
-    depends_on("hdf5@1.10 +cxx ~mpi api=v110", when="~hdf5-static")
+    depends_on("hdf5@1.12:1.12 +cxx ~mpi", when="~hdf5-static")
     depends_on("py-maturin", when="+python")
 
     # this is the only version of patchelf that has been found to work with maturin. patchelf@0.18
@@ -86,16 +87,23 @@ class Hyperbeam(Package, ROCmPackage, CudaPackage):
             try:
                 if "cuda_arch" in self.spec.variants:
                     arch_values = self.spec.variants["cuda_arch"].value
-                    # Filter out 'none' values and use only valid architectures
-                    valid_archs = [str(arch) for arch in arch_values if str(arch) != "none"]
+                    # Filter out 'none' values and ensure each arch is a two-digit string
+                    valid_archs = []
+                    for arch in arch_values:
+                        arch_str = str(arch).strip()
+                        if arch_str != "none" and arch_str.isdigit():
+                            # Ensure it's exactly 2 digits (pad with 0 if needed, though unlikely)
+                            if len(arch_str) == 2:
+                                valid_archs.append(arch_str)
+                            elif len(arch_str) == 1:
+                                valid_archs.append(f"0{arch_str}")
                     if valid_archs:
                         cuda_arch = ",".join(valid_archs)
-            except Exception:
+            except Exception as e:
                 # If there's any issue accessing cuda_arch, use default
                 pass
             env.set("HYPERBEAM_CUDA_COMPUTE", cuda_arch)
             cuda_dir = self.spec["cuda"].prefix
-            # print(f"cuda_dir: {cuda_dir}, cuda_arch: {cuda_arch}")
         if self.spec.satisfies("~portable"):
             env.append_flags("RUSTFLAGS", f"-C target-cpu=native")
 
