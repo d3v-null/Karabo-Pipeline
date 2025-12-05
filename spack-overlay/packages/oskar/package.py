@@ -2,7 +2,7 @@ from spack.package import *
 import os
 
 
-class Oskar(CMakePackage):
+class Oskar(CMakePackage, CudaPackage):
     """OSKAR is a software package for simulating radio interferometry observations."""
 
     homepage = "https://github.com/OxfordSKA/OSKAR"
@@ -88,6 +88,36 @@ class Oskar(CMakePackage):
             args.append(self.define("FIND_OPENCL", "ON"))
         else:
             args.append(self.define("FIND_OPENCL", "OFF"))
+
+        # Explicitly disable CUDA detection when variant is not enabled
+        # OSKAR's CMake auto-detects CUDA, which can cause build failures
+        if "~cuda" in self.spec:
+            args.append(self.define("CMAKE_DISABLE_FIND_PACKAGE_CUDA", "ON"))
+            # Also disable CUDA language support
+            args.append(self.define("CMAKE_CUDA_COMPILER", "NOTFOUND"))
+        elif "+cuda" in self.spec:
+            # OSKAR expects CUDA_ARCH in format "7.5;8.0;8.6" (with decimal point)
+            # Convert from Spack's cuda_arch format (e.g., "75,80,86") to OSKAR format
+            cuda_archs = []
+            try:
+                if "cuda_arch" in self.spec.variants:
+                    arch_values = self.spec.variants["cuda_arch"].value
+                    for arch in arch_values:
+                        arch_str = str(arch).strip()
+                        if arch_str != "none" and arch_str.isdigit():
+                            # Convert "75" -> "7.5", "80" -> "8.0", etc.
+                            if len(arch_str) == 2:
+                                cuda_archs.append(f"{arch_str[0]}.{arch_str[1]}")
+                            elif len(arch_str) == 1:
+                                cuda_archs.append(f"{arch_str}.0")
+            except Exception:
+                # Default to 7.5 if no valid architecture specified
+                cuda_archs = ["7.5"]
+
+            if cuda_archs:
+                # OSKAR expects semicolon-separated list
+                cuda_arch_str = ";".join(cuda_archs)
+                args.append(self.define("CUDA_ARCH", cuda_arch_str))
 
         # OSKAR detects most libraries (CUDA, HDF5, etc.) via CMake automatically.
         # Ensure Casacore is found when enabled by passing the prefix if Spack's
