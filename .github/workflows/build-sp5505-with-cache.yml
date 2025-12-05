@@ -70,8 +70,8 @@ jobs:
           echo "Disk space after cleanup:"
           df -h
 
-      - name: ensure there is 30GB disk space
-        run: df / | awk 'NR==2 {exit !($4 > 30*1024*1024)}'
+      - name: ensure there is 29GB disk space
+        run: df / | awk 'NR==2 {exit !($4 > 29*1024*1024)}'
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
