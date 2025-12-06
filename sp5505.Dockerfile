@@ -1,7 +1,7 @@
 # Global ARG that can be passed at build time
 ARG PYTHON_VERSION=3.10
 
-FROM quay.io/jupyter/minimal-notebook:notebook-7.2.2 AS builder
+FROM quay.io/jupyter/minimal-notebook:notebook-7.2.2
 
 USER root
 SHELL ["/bin/bash", "-lc"]
@@ -28,12 +28,14 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     gfortran \
     git \
     libcurl4-openssl-dev \
+    libgomp1 \
     libtool \
     m4 \
     meson \
     patchelf \
     perl \
     pkg-config \
+    time \
     wget \
     zstd \
     ; # not required because of buildcache: rm -rf /var/lib/apt/lists/*
@@ -316,49 +318,6 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     spack gc -y && \
     spack env view regenerate && \
     fix-permissions /opt/view /opt/spack_env /opt/software
-
-# todo: delete
-FROM quay.io/jupyter/minimal-notebook:notebook-7.2.2 AS runtime
-
-USER root
-SHELL ["/bin/bash", "-lc"]
-
-# Re-declare ARG to make it available in this stage
-# ARG PYTHON_VERSION=3.10
-
-# Install runtime dependencies
-ENV DEBIAN_FRONTEND=noninteractive
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update && apt-get --no-install-recommends install -y \
-    build-essential \
-    ca-certificates \
-    curl \
-    gfortran \
-    git \
-    libcurl4-openssl-dev \
-    libgomp1 \
-    time \
-    wget \
-    zstd
-
-COPY --from=builder /opt/software /opt/software
-COPY --from=builder /opt/view /opt/view
-COPY --from=builder /opt/._view /opt/._view
-COPY --from=builder /opt/spack_env /opt/spack_env
-COPY --from=builder /opt/spack /opt/spack
-COPY --from=builder /opt/ska-sdp-spack /opt/ska-sdp-spack
-COPY --from=builder /opt/karabo-spack /opt/karabo-spack
-
-# Set Spack environment variables (needed from builder stage)
-ENV SPACK_ROOT=/opt/spack \
-    SPACK_DISABLE_LOCAL_CONFIG=1 \
-    CARGO_HOME=/opt/cargo \
-    RUSTUP_HOME=/opt/rustup
-
-# Activate spack env in login shells
-RUN echo ". ${SPACK_ROOT}/share/spack/setup-env.sh 2>/dev/null || true" > /etc/profile.d/spack.sh && \
-    echo "spack env activate -p /opt/spack_env 2>/dev/null || true" >> /etc/profile.d/spack.sh
 
 #HACK: setup rascil data - create canary file that RASCIL checks for
 ENV RASCIL_DATA=/opt/rascil_data
