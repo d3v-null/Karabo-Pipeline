@@ -228,6 +228,19 @@ jobs:
           flavor: |
             suffix=-pretest
 
+      - name: Free up disk space for tests
+        run: |
+          echo "Disk space before cleanup:"
+          df -h
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /usr/local/share/boost
+          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+          sudo docker system prune -af --volumes
+          sudo apt-get clean
+          echo "Disk space after cleanup:"
+          df -h
+
       - name: Run smoke tests
         run: |
           IMAGE_REF="${{ fromJSON(steps.meta-pretest.outputs.json).tags[0] }}"
