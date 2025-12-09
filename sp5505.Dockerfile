@@ -310,7 +310,7 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     # for testing karabo itself:
     'py-pytest@8' \
     # not karabo-related
-    'hyperbeam+cuda+python cuda_arch=75' \
+    'hyperbeam+cuda+python cuda_arch=75,80,86' \
     'hyperdrive' \
     && \
     spack concretize --force && \
