@@ -157,6 +157,11 @@ Examples:
     )
 
     parser.add_argument(
+        "--sky-model",
+        help="Path to sky model CSV file. If not provided, a simple point source model is used.",
+    )
+
+    parser.add_argument(
         "--backend",
         choices=["OSKAR", "RASCIL"],
         default="OSKAR",
@@ -397,12 +402,19 @@ def main():
 
     # Create sky model
     print("Creating sky model...")
-    sky_model = create_simple_sky_model(
-        args.phase_center_ra,
-        args.phase_center_dec,
-        args.sky_flux,
-        args.mid_frequency,
-    )
+    if args.sky_model:
+        try:
+            sky_model = SkyModel.read_from_file(args.sky_model)
+        except Exception as e:
+            print(f"Error reading sky model from {args.sky_model}: {e}", file=sys.stderr)
+            sys.exit(1)
+    else:
+        sky_model = create_simple_sky_model(
+            args.phase_center_ra,
+            args.phase_center_dec,
+            args.sky_flux,
+            args.mid_frequency,
+        )
     print(f"Sky model: {len(sky_model.sources)} source(s)")
 
     # Create interferometer simulation
