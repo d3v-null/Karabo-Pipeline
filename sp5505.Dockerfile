@@ -290,7 +290,8 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     # 'py-ska-sdp-func@'$SDP_FUNC_VERSION \ # transitive
     'py-tabulate@'$TABULATE_VERSION \
     'py-xarray@'$XARRAY_VERSION \
-    'oskar@'$OSKAR_VERSION'+python~openmp' \
+    # 'oskar@'$OSKAR_VERSION'+cuda+python~openmp cuda_arch=75,80,86,90' \ # todo: https://github.com/i4Ds/Karabo-Pipeline/issues/673
+    'oskar@'$OSKAR_VERSION'+cuda+python~openmp cuda_arch=75,80,86' \
     # 'py-bottleneck@'$BOTTLENECK_VERSION \ # transitive
     'py-pyuvdata@'$PYUVDATA_VERSION'+casa' \
     'py-aratmospy@'$ARATMOSPY_VERSION \
@@ -310,8 +311,8 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     # for testing karabo itself:
     'py-pytest@8' \
     # not karabo-related
-    'hyperbeam+cuda+python cuda_arch=75,80,86' \
-    'hyperdrive' \
+    'hyperbeam+cuda+python cuda_arch=75,80,86,90' \
+    'hyperdrive+cuda cuda_arch=75,80,86,90' \
     && \
     spack concretize --force && \
     ac_cv_lib_curl_curl_easy_init=no spack install --no-check-signature --no-checksum --fail-fast --fresh --show-log-on-error && \
