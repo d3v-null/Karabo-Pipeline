@@ -297,7 +297,7 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     'py-aratmospy@'$ARATMOSPY_VERSION \
     'py-eidos@'$EIDOS_VERSION \
     'py-katbeam@'$KATBEAM_VERSION \
-    'wsclean@'$WSCLEAN_VERSION'~mpi' \
+    'wsclean@'$WSCLEAN_VERSION'~mpi+cuda~python' \
     'py-tools21cm@'$TOOLS21CM_VERSION \
     'py-jupyterlab-server@2.27:' \
     'py-jupyterlab@4' \
@@ -315,6 +315,19 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     'hyperdrive+cuda cuda_arch=75,80,86,90' \
     && \
     spack concretize --force && \
+    # CUDA HACK: Install dependencies first, then setup CUDA stubs for wsclean
+    ac_cv_lib_curl_curl_easy_init=no spack install --only dependencies --no-check-signature --no-checksum --fail-fast --fresh --show-log-on-error && \
+    CUDA_ROOT=$(spack location -i cuda) && \
+    STUBS_DIR="${CUDA_ROOT}/lib64/stubs" && \
+    [ -d "${STUBS_DIR}" ] || STUBS_DIR="${CUDA_ROOT}/lib/stubs" && \
+    if [ -d "${STUBS_DIR}" ]; then \
+        echo "Found CUDA stubs at ${STUBS_DIR}"; \
+        ln -sf "${STUBS_DIR}/libcuda.so" "${STUBS_DIR}/libcuda.so.1"; \
+        ln -sf "${STUBS_DIR}/libcuda.so" /usr/lib/x86_64-linux-gnu/libcuda.so.1; \
+        ln -sf "${STUBS_DIR}/libcuda.so" /usr/lib/x86_64-linux-gnu/libcuda.so; \
+    else \
+        echo "WARNING: CUDA stubs not found in ${CUDA_ROOT}"; \
+    fi && \
     ac_cv_lib_curl_curl_easy_init=no spack install --no-check-signature --no-checksum --fail-fast --fresh --show-log-on-error && \
     spack gc -y && \
     spack env view regenerate && \
