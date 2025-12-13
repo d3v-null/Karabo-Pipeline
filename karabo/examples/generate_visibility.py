@@ -12,6 +12,9 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import numpy as np
+from astropy import units as u
+from astropy.coordinates import ICRS, AltAz, EarthLocation, SkyCoord
+from astropy.time import Time
 
 from karabo.simulation.interferometer import InterferometerSimulation
 from karabo.simulation.observation import Observation
@@ -138,15 +141,15 @@ Examples:
     parser.add_argument(
         "--phase-center-ra",
         type=float,
-        default=0.0,
-        help="Phase center Right Ascension in degrees (default: 0.0)",
+        default=None,
+        help="Phase center Right Ascension in degrees (default: use zenith)",
     )
 
     parser.add_argument(
         "--phase-center-dec",
         type=float,
-        default=-27.0,
-        help="Phase center Declination in degrees (default: -27.0)",
+        default=None,
+        help="Phase center Declination in degrees (default: use zenith)",
     )
 
     parser.add_argument(
@@ -376,7 +379,48 @@ def main():
     else:
         print()
     print(f"Backend: {backend}")
+
+    # Create telescope
+    print("Creating telescope...")
+    try:
+        telescope = Telescope.constructor(
+            name=args.telescope, version=telescope_version, backend=backend
+        )
+    except Exception as e:
+        print(f"Error creating telescope: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    location = EarthLocation(
+        lon=telescope.centre_longitude * u.deg,
+        lat=telescope.centre_latitude * u.deg,
+        height=telescope.centre_altitude * u.m,
+    )
+    obs_time = Time(midpoint_time)
+
+    # default to zenith if phase center is not provided
+    if args.phase_center_ra is None or args.phase_center_dec is None:
+        zenith_azel = AltAz(0.0 * u.deg, 90.0 * u.deg, obstime=obs_time, location=location)
+        zenith_radec = zenith_azel.transform_to(ICRS())
+        args.phase_center_ra = zenith_radec.ra.deg
+        args.phase_center_dec = zenith_radec.dec.deg
+
     print(f"Phase center: RA={args.phase_center_ra}°, Dec={args.phase_center_dec}°")
+
+    # check if phase center is above the horizon
+    source_coord = SkyCoord(ra=args.phase_center_ra * u.deg, dec=args.phase_center_dec * u.deg)
+    altaz = source_coord.transform_to(AltAz(obstime=obs_time, location=location))
+    elevation = altaz.alt.deg
+    azimuth = altaz.az.deg
+    print(f"Phase center elevation: {elevation}°, azimuth: {azimuth}°")
+    if elevation < 0:
+        print("WARNING: Phase center is below the horizon!")
+        sys.exit(1)
+    elif elevation < 10:
+        print("WARNING: Phase center is very low on the horizon (< 10°).")
+        sys.exit(1)
+    else:
+        print("Phase center is visible.")
+
     print(f"Observation start: {start_time}")
     print(f"Observation length: {total_obs_length}")
     print(f"Number of timesteps: {args.num_timesteps}")
@@ -389,16 +433,6 @@ def main():
     print(f"Frequency resolution: {args.frequency_resolution / 1e3:.3f} kHz")
     print(f"Output: {output_path}")
     print()
-
-    # Create telescope
-    print("Creating telescope...")
-    try:
-        telescope = Telescope.constructor(
-            name=args.telescope, version=telescope_version, backend=backend
-        )
-    except Exception as e:
-        print(f"Error creating telescope: {e}", file=sys.stderr)
-        sys.exit(1)
 
     # Create sky model
     print("Creating sky model...")
@@ -415,6 +449,7 @@ def main():
             args.sky_flux,
             args.mid_frequency,
         )
+
     print(f"Sky model: {len(sky_model.sources)} source(s)")
 
     # Create interferometer simulation
