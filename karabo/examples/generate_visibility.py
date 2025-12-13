@@ -351,24 +351,6 @@ def main():
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
 
-    # Parse midpoint time
-    try:
-        if "+" in args.midpoint_time or args.midpoint_time.endswith("Z"):
-            midpoint_time = datetime.fromisoformat(
-                args.midpoint_time.replace("Z", "+00:00")
-            )
-        else:
-            midpoint_time = datetime.fromisoformat(args.midpoint_time).replace(
-                tzinfo=timezone.utc
-            )
-    except ValueError as e:
-        print(f"Error parsing midpoint time: {e}", file=sys.stderr)
-        sys.exit(1)
-
-    # Calculate observation parameters
-    total_obs_length = timedelta(seconds=args.num_timesteps * args.time_resolution)
-    start_time = midpoint_time - total_obs_length / 2
-
     # Calculate start frequency from middle frequency
     total_bandwidth = args.num_channels * args.frequency_resolution
     start_frequency = args.mid_frequency - total_bandwidth / 2
@@ -381,7 +363,7 @@ def main():
     print(f"Backend: {backend}")
 
     # Create telescope
-    print("Creating telescope...")
+    print(f"Creating telescope name={args.telescope} ...")
     try:
         telescope = Telescope.constructor(
             name=args.telescope, version=telescope_version, backend=backend
@@ -395,6 +377,50 @@ def main():
         lat=telescope.centre_latitude * u.deg,
         height=telescope.centre_altitude * u.m,
     )
+
+    # Parse midpoint time
+    if args.midpoint_time is None:
+        j2k_epoch = datetime.fromisoformat("1999-12-31T23:59:20+00:00")
+        if args.phase_center_ra is None or args.phase_center_dec is None:
+            print("No phase center or midpoint time provided", file=sys.stderr)
+            sys.exit(1)
+        else:
+            source_coord = SkyCoord(ra=args.phase_center_ra * u.deg, dec=args.phase_center_dec * u.deg)
+
+            # Calculate transit time nearest to J2000 epoch
+            obs_time = Time(j2k_epoch, location=location)
+            lst = obs_time.sidereal_time('apparent')
+
+            # HA = LST - RA. Wrap at 12h to find nearest transit.
+            ha = (lst - source_coord.ra).wrap_at(12 * u.hourangle)
+
+            # Convert sidereal HA to solar time offset
+            # 1 sidereal hour = 0.99726958 solar hours
+            offset_solar_hours = -ha.to_value(u.hourangle) * 0.99726958
+
+            transit_time = obs_time + offset_solar_hours * u.hour
+            midpoint_time = transit_time.to_datetime(timezone.utc)
+            args.midpoint_time = midpoint_time.isoformat()
+
+            print(f"No midpoint time provided. Using transit time nearest J2000: {args.midpoint_time}", file=sys.stderr)
+    else:
+        try:
+            if "+" in args.midpoint_time or args.midpoint_time.endswith("Z"):
+                midpoint_time = datetime.fromisoformat(
+                    args.midpoint_time.replace("Z", "+00:00")
+                )
+            else:
+                midpoint_time = datetime.fromisoformat(args.midpoint_time).replace(
+                    tzinfo=timezone.utc
+                )
+        except ValueError as e:
+            print(f"Error parsing midpoint time: {e}", file=sys.stderr)
+            sys.exit(1)
+
+    # Calculate observation parameters
+    total_obs_length = timedelta(seconds=args.num_timesteps * args.time_resolution)
+    start_time = midpoint_time - total_obs_length / 2
+
     obs_time = Time(midpoint_time)
 
     # default to zenith if phase center is not provided
