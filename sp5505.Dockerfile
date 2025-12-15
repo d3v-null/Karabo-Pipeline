@@ -340,19 +340,25 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     'hyperdrive+cuda cuda_arch=75,80,86,90' \
     && \
     spack concretize --force && \
-    # CUDA HACK: Link against stubs (libcuda.so.1) to allow building wsclean/idg without a GPU driver present in Docker
-    ac_cv_lib_curl_curl_easy_init=no spack install --only dependencies --no-check-signature --no-checksum --fail-fast --fresh --show-log-on-error && \
+    # Install cuda first to get stubs location
+    spack install --no-check-signature --no-checksum --fail-fast --fresh cuda && \
     CUDA_ROOT=$(spack location -i cuda) && \
     STUBS_DIR="${CUDA_ROOT}/lib64/stubs" && \
     [ -d "${STUBS_DIR}" ] || STUBS_DIR="${CUDA_ROOT}/lib/stubs" && \
     if [ -d "${STUBS_DIR}" ]; then \
         echo "Found CUDA stubs at ${STUBS_DIR}"; \
         ln -sf "${STUBS_DIR}/libcuda.so" "${STUBS_DIR}/libcuda.so.1"; \
+        ln -sf "${STUBS_DIR}/libcuda.so" /usr/lib/x86_64-linux-gnu/libcuda.so.1; \
+        spack config add "config:build_environment:prepend_path:LD_LIBRARY_PATH:${STUBS_DIR}"; \
+        spack config add "config:build_environment:prepend_path:LIBRARY_PATH:${STUBS_DIR}"; \
         export LD_LIBRARY_PATH="${STUBS_DIR}:${LD_LIBRARY_PATH}"; \
         export LIBRARY_PATH="${STUBS_DIR}:${LIBRARY_PATH}"; \
     else \
         echo "WARNING: CUDA stubs not found in ${CUDA_ROOT}"; \
+        exit 1; \
     fi && \
+    # CUDA HACK: Link against stubs (libcuda.so.1) to allow building wsclean/idg without a GPU driver present in Docker
+    ac_cv_lib_curl_curl_easy_init=no spack install --only dependencies --no-check-signature --no-checksum --fail-fast --fresh --show-log-on-error && \
     ac_cv_lib_curl_curl_easy_init=no spack install --no-check-signature --no-checksum --fail-fast --fresh --show-log-on-error && \
     spack gc -y && \
     spack env view regenerate && \
