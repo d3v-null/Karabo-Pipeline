@@ -11,10 +11,12 @@ import sys
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
+from astropy.table import Table
 import numpy as np
 from astropy import units as u
 from astropy.coordinates import ICRS, AltAz, EarthLocation, SkyCoord
 from astropy.time import Time
+from tabulate import tabulate
 
 from karabo.simulation.interferometer import InterferometerSimulation
 from karabo.simulation.observation import Observation
@@ -87,7 +89,7 @@ Examples:
 
     parser.add_argument(
         "--midpoint-time",
-        required=True,
+        default=None,
         help=(
             "Midpoint time of observation in ISO format (e.g., "
             "'2020-01-01T12:00:00' or '2020-01-01T12:00:00+00:00')"
@@ -162,6 +164,27 @@ Examples:
     parser.add_argument(
         "--sky-model",
         help="Path to sky model CSV file. If not provided, a simple point source model is used.",
+    )
+
+    parser.add_argument(
+        "--model-cutoff",
+        type=float,
+        default=None,
+        help="Cutoff angle for sky model in degrees (default: no cutoff)",
+    )
+
+    parser.add_argument(
+        "--model-flux-limit",
+        type=float,
+        default=None,
+        help="minimum flux for sky model in Jy (default: no flux limit)",
+    )
+
+    parser.add_argument(
+        "--model-count",
+        type=float,
+        default=None,
+        help="maximum number of sources for sky model (default: no limit)",
     )
 
     parser.add_argument(
@@ -476,9 +499,32 @@ def main():
             args.mid_frequency,
         )
 
-    print(f"Sky model: {len(sky_model.sources)} source(s)")
+    previous_count = len(sky_model.sources)
 
-    # Create interferometer simulation
+    if args.model_cutoff:
+        sky_model = sky_model.filter_by_radius_euclidean_flat_approximation(0, args.model_cutoff, args.phase_center_ra, args.phase_center_dec)
+        if len(sky_model.sources) != previous_count:
+            print(f"Sky model: filtered {len(sky_model.sources)} of {previous_count} source(s) within {args.model_cutoff}° of phase center")
+        previous_count = len(sky_model.sources)
+
+    if args.model_flux_limit:
+        sky_model = sky_model.filter_by_flux(args.model_flux_limit, np.inf)
+        if len(sky_model.sources) != previous_count:
+            print(f"Sky model: filtered {len(sky_model.sources)} of {previous_count} source(s) with flux greater than {args.model_flux_limit} Jy")
+        previous_count = len(sky_model.sources)
+
+    if args.model_count:
+        sky_model = sky_model.limit_sources(args.model_count)
+        if len(sky_model.sources) != previous_count:
+            print(f"Sky model: limited to brightest {len(sky_model.sources)} of {previous_count} source(s)")
+        previous_count = len(sky_model.sources)
+
+    if previous_count != len(sky_model.sources):
+        print(f"Sky model: {len(sky_model.sources)} source(s), showing up to 50:")
+    # print sources
+    print(tabulate(sky_model.sources[:50].values, headers=["ra", "dec", "i", "q", "u", "v", "ref_freq", "alpha", "?", "maj", "min", "pa", "id", ""], tablefmt="github"))
+
+    # Create interferometer simulationq
     print("Setting up interferometer simulation...")
     simulation = InterferometerSimulation(
         channel_bandwidth_hz=args.frequency_resolution,

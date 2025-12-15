@@ -785,10 +785,37 @@ class SkyModel:
         self.save_sky_model_as_csv(path)
 
     @classmethod
+    def _get_sky_model_from_fits(cls: Type[_TSkyModel], hdul: fits.HDUList) -> _TSkyModel:
+        """
+        Get a SkyModel from a FITS file.
+
+        inspired by https://gitlab.com/ska-telescope/src/sd/workflows/ska-src-dsc-057-continuum/-/blob/development/src/sims/oskar_external_model.py?ref_type=heads#L208
+
+        TODO: use get_sky_model_from_fits instead.
+        """
+        t = Table(hdul[1].data)
+        zero=np.zeros(len(t))
+        one=np.ones(len(t))
+        ggsm_columns = ['RAJ2000', 'DEJ2000', 'S_200', 'alpha', 'beta', 'a', 'b', 'pa']
+        lofar_columns = ['RA', 'DEC', 'Total_flux', 'alpha', 'DC_Maj', 'DC_Min', 'DC_PA']
+        if all(col in t.colnames for col in ggsm_columns):
+            # e.g. https://github.com/GLEAM-X/GLEAM-X-pipeline/raw/master/models/GGSM_updated.fits
+            sky_array=np.column_stack((t['RAJ2000'],t['DEJ2000'],t['S_200'],zero,zero,zero,
+                                    200e6*one,-t['alpha'],zero,t['a'],t['b'],t['pa']))
+            # TODO: beta?
+        elif all(col in t.colnames for col in lofar_columns):
+            # e.g. https://lofar-surveys.org/public/Combined_input_catalogue_alpha.fits
+            sky_array=np.column_stack((t['RA'],t['DEC'],t['Total_flux'],zero,zero,zero,
+                                    144e6*one,-t['alpha'],zero,t['DC_Maj'],t['DC_Min'],t['DC_PA']))
+        else:
+            raise KaraboSkyModelError(f"Unknown sky model format: {t.colnames}")
+        return np.nan_to_num(sky_array, nan=0.0)
+
+    @classmethod
     def read_from_file(cls: Type[_TSkyModel], path: str) -> _TSkyModel:
         """
-        Read a CSV file in to create a SkyModel.
-        The CSV should have the following columns
+        Read a CSV or FITS file in to create a SkyModel.
+        Requires the following columns
 
         - right ascension (deg)
         - declination (deg)
@@ -811,7 +838,11 @@ class SkyModel:
         Returns:
             SkyModel
         """
-        dataframe = pd.read_csv(path).to_numpy()
+        if path.endswith('.fits'):
+            with fits.open(path) as hdul:
+                dataframe = cls._get_sky_model_from_fits(hdul)
+        else:
+            dataframe = pd.read_csv(path).to_numpy()
 
         if dataframe.shape[1] < 3:
             raise KaraboSkyModelError(
@@ -1087,6 +1118,50 @@ class SkyModel:
         max_freq: IntFloat,
     ) -> SkyModel:
         return self.filter_by_column(6, min_freq, max_freq)
+
+    def limit_sources(self, max_sources: IntFloat, col_name: SkySourcesColName = "stokes_i") -> SkyModel:
+        """
+        Limits the number of sources in the sky model.
+        The sources are sorted by flux (descending) before limiting.
+        Non-finite flux values (NaN, Inf) are filtered out.
+
+        Args:
+            max_sources: Maximum number of sources to keep.
+
+        Returns:
+            SkyModel: New SkyModel with limited sources.
+        """
+        column_idx = self.COL_IDX[col_name]
+        copied_sky = SkyModel.copy_sky(self)
+        if copied_sky.sources is None:
+            raise KaraboSkyModelError("`sources` is None.")
+
+        # Ensure we have data
+        if copied_sky.sources.shape[0] == 0:
+            return copied_sky
+
+        # Sort by flux (column 2) descending
+        # We need to access values to use numpy argsort
+        # column 2 is Stokes I Flux
+        sort_values = copied_sky.sources[:, column_idx].values
+
+        # Filter out non-finite flux values
+        valid_mask = np.isfinite(sort_values)
+        if not np.all(valid_mask):
+            warn("Found non-finite flux values in sky model. These will be removed before limiting.")
+            copied_sky.sources = copied_sky.sources[valid_mask]
+            sort_values = copied_sky.sources[:, column_idx].values
+
+        sort_indices = np.argsort(sort_values)[::-1]
+
+        # Apply sorting
+        copied_sky.sources = copied_sky.sources[sort_indices]
+
+        # Limit
+        if max_sources is not None and max_sources < copied_sky.sources.shape[0]:
+             copied_sky.sources = copied_sky.sources[:int(max_sources)]
+
+        return copied_sky
 
     def get_wcs(self) -> WCS:
         """
