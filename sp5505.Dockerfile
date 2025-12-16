@@ -246,6 +246,7 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     spack config add "config:misc_cache:/opt/spack-misc-cache"; \
     spack config add "packages:all:target:[${SPACK_TARGET}]"; \
     spack config add "packages:cuda:version:[12.2.2]"; \
+    spack config add "config:build_jobs:4"; \
     # spack mirror add --autopush --unsigned mycache file:///opt/buildcache; \
     spack buildcache keys --install --trust || true; \
     # Manual download of cfitsio because heasarc is flaky
@@ -257,6 +258,7 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     (curl -f -L -O --retry 10 --retry-connrefused --retry-max-time 600 --connect-timeout 30 https://heasarc.gsfc.nasa.gov/FTP/software/fitsio/c/cfitsio-${CFITSIO_VERSION}.tar.gz || \
      wget --tries=10 --timeout=30 https://heasarc.gsfc.nasa.gov/FTP/software/fitsio/c/cfitsio-${CFITSIO_VERSION}.tar.gz) && \
     echo "Successfully downloaded cfitsio-${CFITSIO_VERSION}" && \
+    gzip -t cfitsio-${CFITSIO_VERSION}.tar.gz && \
     tar xf cfitsio-${CFITSIO_VERSION}.tar.gz && \
     sed -i 's|AC_CHECK_LIB([[]pthread[]],[[]main[]].*|LIBS="$LIBS -lpthread"|g' cfitsio-${CFITSIO_VERSION}/configure.in && \
     (cd cfitsio-${CFITSIO_VERSION} && autoreconf -ivf) && \
@@ -269,6 +271,7 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     (curl -f -L -O --retry 10 --retry-connrefused --retry-max-time 600 --connect-timeout 30 https://heasarc.gsfc.nasa.gov/FTP/software/fitsio/c/cfitsio-3.49.tar.gz || \
      wget --tries=10 --timeout=30 https://heasarc.gsfc.nasa.gov/FTP/software/fitsio/c/cfitsio-3.49.tar.gz) && \
     echo "Successfully downloaded cfitsio-3.49" && \
+    gzip -t cfitsio-3.49.tar.gz && \
     tar xf cfitsio-3.49.tar.gz && \
     sed -i 's|AC_CHECK_LIB([[]pthread[]],[[]main[]].*|LIBS="$LIBS -lpthread"|g' cfitsio-3.49/configure.in && \
     (cd cfitsio-3.49 && autoreconf -ivf) && \
@@ -347,6 +350,7 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     # not karabo-related
     'hyperbeam+cuda+python cuda_arch=75,80,86,90' \
     'hyperdrive+cuda cuda_arch=75,80,86,90' \
+    # 'aoflagger@3.4.0' \
     && \
     spack concretize --force && \
     # Install cuda first to get stubs location
@@ -464,6 +468,7 @@ RUN python -c "import ska_sdp_func_python" || exit 1 && \
 import importlib, os, sys
 
 checks = [
+    # ('aoflagger','3.0'),
     ('ARatmospy','1.0'),
     ('astropy','5.1'),
     ('astropy_healpix','1.0'),
@@ -555,7 +560,6 @@ RUN if [ "${SKIP_TESTS:-0}" = "1" ]; then exit 0; fi; \
     find /opt/Karabo-Pipeline -type d -name '__pycache__' -exec rm -rf {} + 2>/dev/null || true && \
     find /opt/Karabo-Pipeline -type d -name '.pytest_cache' -exec rm -rf {} + 2>/dev/null || true
 
-
 # ss.s..........................................................ssssssssss [ 20%]
 # s...................................s.................................F
 # =================================== FAILURES ===================================
@@ -576,5 +580,8 @@ RUN if [ "${SKIP_TESTS:-0}" = "1" ]; then exit 0; fi; \
 # E    y: array([[-1.      , 18.      ,       inf],
 # E          [-1.      , 20.      ,       inf],
 # E          [-1.      , 21.      ,       inf],...
+
+# download latest Leap_Second.dat, IERS finals2000A.all
+RUN python -c "from astropy.time import Time; t=Time.now(); from astropy.utils.data import download_file; download_file('http://data.astropy.org/coordinates/sites.json', cache=True); print(t.gps, t.ut1)"
 
 WORKDIR "/home/${NB_USER}"
