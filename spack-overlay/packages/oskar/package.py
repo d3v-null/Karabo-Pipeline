@@ -40,8 +40,11 @@ class Oskar(CMakePackage, CudaPackage):
     depends_on("py-cython", when="+python", type="build")
 
     # Optional dependencies for enhanced functionality
-    depends_on("hdf5+hl", when="+hdf5", type=("build", "run"))
-    depends_on("hdf5+hl~mpi", when="+hdf5~mpi", type=("build", "run"))
+    # OSKAR 2.8.3 requires HDF5 < 1.12 for API compatibility
+    depends_on("hdf5@1.10:1.10+hl", when="@:2.10+hdf5", type=("build", "run"))
+    depends_on("hdf5@1.10:1.10+hl~mpi", when="@:2.10+hdf5~mpi", type=("build", "run"))
+    depends_on("hdf5+hl", when="@2.11:+hdf5", type=("build", "run"))
+    depends_on("hdf5+hl~mpi", when="@2.11:+hdf5~mpi", type=("build", "run"))
     # OSKAR 2.11+ uses CFITSIO 4.6.2; earlier versions use embedded cfitsio
     depends_on("cfitsio@4.6.2:", when="@2.11:", type=("build", "run"))
     depends_on("cfitsio", when="@:2.10", type=("build", "run"))
@@ -141,7 +144,8 @@ class Oskar(CMakePackage, CudaPackage):
         env.set("OMP_PROC_BIND", "false")
         env.set("OMP_DYNAMIC", "false")
         # Pin CPU features to baseline to avoid illegal instructions at runtime
-        env.prepend_path("CPATH", self.spec['hdf5'].prefix.include)
+        if "+hdf5" in self.spec:
+            env.prepend_path("CPATH", self.spec['hdf5'].prefix.include)
         # Avoid injecting x86-specific flags on non-x86 platforms
         try:
             arch_family = str(self.spec.target.family)
