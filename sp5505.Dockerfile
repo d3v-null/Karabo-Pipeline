@@ -253,26 +253,47 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     # Download and repack cfitsio to fix configure check and checksum
     mkdir -p /tmp/repack && cd /tmp/repack && \
     # 1. Download and process cfitsio 4.3.1
-    curl -f -L -O --retry 10 --retry-connrefused --retry-max-time 600 --connect-timeout 30 https://heasarc.gsfc.nasa.gov/FTP/software/fitsio/c/cfitsio-${CFITSIO_VERSION}.tar.gz && \
-    tar xf cfitsio-${CFITSIO_VERSION}.tar.gz && \
-    sed -i 's|AC_CHECK_LIB([[]pthread[]],[[]main[]].*|LIBS="$LIBS -lpthread"|g' cfitsio-${CFITSIO_VERSION}/configure.in && \
-    (cd cfitsio-${CFITSIO_VERSION} && autoreconf -ivf) && \
-    tar czf cfitsio-${CFITSIO_VERSION}.tar.gz cfitsio-${CFITSIO_VERSION} && \
-    NEW_SHA=$(sha256sum cfitsio-${CFITSIO_VERSION}.tar.gz | awk '{print $1}') && \
-    cp cfitsio-${CFITSIO_VERSION}.tar.gz /opt/manual-mirror/cfitsio/ && \
+    echo "Downloading cfitsio-${CFITSIO_VERSION}.tar.gz..." && \
+    if curl -f -L -O --retry 10 --retry-connrefused --retry-max-time 600 --connect-timeout 30 https://heasarc.gsfc.nasa.gov/FTP/software/fitsio/c/cfitsio-${CFITSIO_VERSION}.tar.gz; then \
+        echo "Successfully downloaded cfitsio-${CFITSIO_VERSION}"; \
+        tar xf cfitsio-${CFITSIO_VERSION}.tar.gz && \
+        sed -i 's|AC_CHECK_LIB([[]pthread[]],[[]main[]].*|LIBS="$LIBS -lpthread"|g' cfitsio-${CFITSIO_VERSION}/configure.in && \
+        (cd cfitsio-${CFITSIO_VERSION} && autoreconf -ivf) && \
+        tar czf cfitsio-${CFITSIO_VERSION}.tar.gz cfitsio-${CFITSIO_VERSION} && \
+        NEW_SHA=$(sha256sum cfitsio-${CFITSIO_VERSION}.tar.gz | awk '{print $1}') && \
+        cp cfitsio-${CFITSIO_VERSION}.tar.gz /opt/manual-mirror/cfitsio/ && \
+        echo "cfitsio-${CFITSIO_VERSION} processed and copied to manual mirror"; \
+    else \
+        echo "Failed to download cfitsio-${CFITSIO_VERSION}, skipping manual mirror setup"; \
+    fi && \
     # 2. Download and process cfitsio 3.49 (for reentrant copy)
-    curl -f -L -O --retry 10 --retry-connrefused --retry-max-time 600 --connect-timeout 30 https://heasarc.gsfc.nasa.gov/FTP/software/fitsio/c/cfitsio-3.49.tar.gz && \
-    tar xf cfitsio-3.49.tar.gz && \
-    sed -i 's|AC_CHECK_LIB([[]pthread[]],[[]main[]].*|LIBS="$LIBS -lpthread"|g' cfitsio-3.49/configure.in && \
-    (cd cfitsio-3.49 && autoreconf -ivf) && \
-    tar czf cfitsio-3.49.tar.gz cfitsio-3.49 && \
-    NEW_SHA_349=$(sha256sum cfitsio-3.49.tar.gz | awk '{print $1}') && \
-    cp cfitsio-3.49.tar.gz /opt/manual-mirror/cfitsio/ && \
-    # 3. Patch package.py with NEW checksums
-    find /opt -name package.py | grep cfitsio | xargs sed -i "s/a3b9502090e49aaa3a9fe464654820ea4957cc30e9c9bf0d3def37c50ab5aff7/${NEW_SHA}/"; \
-    find /opt -name package.py | grep cfitsio | xargs sed -i "s/5b65a20d5c53494ec8f638267fca4a629836b7ac8dd0ef0266834eab270ed4b3/${NEW_SHA_349}/"; \
-    # 4. Force Spack to use local files
-    find /opt -name package.py | grep cfitsio | xargs sed -i 's|https://heasarc.gsfc.nasa.gov/FTP/software/fitsio/c/|file:///opt/manual-mirror/cfitsio/|g'; \
+    echo "Downloading cfitsio-3.49.tar.gz..." && \
+    if curl -f -L -O --retry 10 --retry-connrefused --retry-max-time 600 --connect-timeout 30 https://heasarc.gsfc.nasa.gov/FTP/software/fitsio/c/cfitsio-3.49.tar.gz; then \
+        echo "Successfully downloaded cfitsio-3.49"; \
+        tar xf cfitsio-3.49.tar.gz && \
+        sed -i 's|AC_CHECK_LIB([[]pthread[]],[[]main[]].*|LIBS="$LIBS -lpthread"|g' cfitsio-3.49/configure.in && \
+        (cd cfitsio-3.49 && autoreconf -ivf) && \
+        tar czf cfitsio-3.49.tar.gz cfitsio-3.49 && \
+        NEW_SHA_349=$(sha256sum cfitsio-3.49.tar.gz | awk '{print $1}') && \
+        cp cfitsio-3.49.tar.gz /opt/manual-mirror/cfitsio/ && \
+        echo "cfitsio-3.49 processed and copied to manual mirror"; \
+    else \
+        echo "Failed to download cfitsio-3.49, skipping manual mirror setup for this version"; \
+    fi && \
+    # 3. Patch package.py with NEW checksums if files exist
+    if [ -f /opt/manual-mirror/cfitsio/cfitsio-${CFITSIO_VERSION}.tar.gz ]; then \
+        find /opt -name package.py | grep cfitsio | xargs sed -i "s/a3b9502090e49aaa3a9fe464654820ea4957cc30e9c9bf0d3def37c50ab5aff7/${NEW_SHA:-placeholder}/"; \
+    fi && \
+    if [ -f /opt/manual-mirror/cfitsio/cfitsio-3.49.tar.gz ]; then \
+        find /opt -name package.py | grep cfitsio | xargs sed -i "s/5b65a20d5c53494ec8f638267fca4a629836b7ac8dd0ef0266834eab270ed4b3/${NEW_SHA_349:-placeholder}/"; \
+    fi && \
+    # 4. Force Spack to use local files if they exist
+    if [ -d /opt/manual-mirror/cfitsio ]; then \
+        find /opt -name package.py | grep cfitsio | xargs sed -i 's|https://heasarc.gsfc.nasa.gov/FTP/software/fitsio/c/|file:///opt/manual-mirror/cfitsio/|g'; \
+        echo "Manual mirror setup completed"; \
+    else \
+        echo "Manual mirror directory not found, using default Spack mirrors"; \
+    fi && \
     # TODO: spack mirror add v0.23.1 https://binaries.spack.io/v0.23.1; \
     spack add \
     'cfitsio@'$CFITSIO_VERSION \
