@@ -19,6 +19,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     automake \
     bison \
     build-essential \
+    bzip2 \
+    libbz2-dev \
     ca-certificates \
     cmake \
     curl \
@@ -66,10 +68,12 @@ RUN spack compiler find && \
     autoconf \
     automake \
     bison \
+    bzip2 \
     curl \
     diffutils \
     findutils \
     git \
+    # gmake \ # we don't want system gmake
     libtool \
     m4 \
     meson \

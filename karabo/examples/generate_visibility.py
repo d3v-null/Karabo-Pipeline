@@ -522,7 +522,8 @@ def main():
     if previous_count != len(sky_model.sources):
         print(f"Sky model: {len(sky_model.sources)} source(s), showing up to 50:")
     # print sources
-    print(tabulate(sky_model.sources[:50].values, headers=["ra", "dec", "i", "q", "u", "v", "ref_freq", "alpha", "?", "maj", "min", "pa", "id", ""], tablefmt="github"))
+
+    print(tabulate(sky_model.sources[:50].values, headers=["ra", "dec", "i", "q", "u", "v", "ref_freq", "alpha", "rm", "maj", "min", "pa", "z_true", "z_obs", "id"], tablefmt="github"))
 
     # Create interferometer simulationq
     print("Setting up interferometer simulation...")
