@@ -18,14 +18,16 @@ class CfitsioReentrant(AutotoolsPackage):
     """
 
     homepage = "https://heasarc.gsfc.nasa.gov/fitsio/"
-    url = "https://heasarc.gsfc.nasa.gov/FTP/software/fitsio/c/cfitsio-3.49.tar.gz"
+    # url = "https://heasarc.gsfc.nasa.gov/FTP/software/fitsio/c/cfitsio-3.49.tar.gz"
+        # nasa has been down for weeks.
+    url = "https://projects.pawsey.org.au/birli-test/cfitsio-3.49.tar.gz"
 
     license("custom")
 
     # Only provide 3.x versions - 4.x has breaking API changes
     version("3.49", sha256="5b65a20d5c53494ec8f638267fca4a629836b7ac8dd0ef0266834eab270ed4b3", preferred=True)
-    version("3.48", sha256="91b48ffef544eb8ea3908543052331072c99bf09ceb139cb3c6977fc3e47aac1")
-    version("3.47", sha256="418516f10ee1e0f1b520926eeca6b77ce639bed88804c7c545e74f26b3edf4ef")
+    # version("3.48", sha256="91b48ffef544eb8ea3908543052331072c99bf09ceb139cb3c6977fc3e47aac1")
+    # version("3.47", sha256="418516f10ee1e0f1b520926eeca6b77ce639bed88804c7c545e74f26b3edf4ef")
 
     depends_on("c", type="build")
     depends_on("fortran", type="build")
