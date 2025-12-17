@@ -329,7 +329,7 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     if [ -d "${STUBS_DIR}" ]; then \
         echo "Found CUDA stubs at ${STUBS_DIR}"; \
         ln -sf "${STUBS_DIR}/libcuda.so" "${STUBS_DIR}/libcuda.so.1"; \
-        ln -sf "${STUBS_DIR}/libcuda.so" /usr/lib/x86_64-linux-gnu/libcuda.so.1; \
+        ln -sf "${STUBS_DIR}/libcuda.so" "/usr/lib/${arch}-linux-gnu/libcuda.so.1"; \
         spack config add "config:build_environment:prepend_path:LD_LIBRARY_PATH:${STUBS_DIR}"; \
         spack config add "config:build_environment:prepend_path:LIBRARY_PATH:${STUBS_DIR}"; \
         export LD_LIBRARY_PATH="${STUBS_DIR}:${LD_LIBRARY_PATH}"; \
