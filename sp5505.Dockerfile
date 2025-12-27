@@ -82,7 +82,7 @@ RUN spack compiler find && \
     rust
 
 # Add SKA SDP Spack repo and overlay
-RUN git clone --depth=1 --single-branch --branch=2025.07.3 https://gitlab.com/ska-telescope/sdp/ska-sdp-spack.git /opt/ska-sdp-spack && \
+RUN git clone --depth=1 --single-branch --branch=2025.08.3 https://gitlab.com/ska-telescope/sdp/ska-sdp-spack.git /opt/ska-sdp-spack && \
     rm -rf /opt/ska-sdp-spack/.git && \
     spack repo add /opt/ska-sdp-spack
 COPY spack-overlay /opt/karabo-spack
