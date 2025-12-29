@@ -5,7 +5,7 @@ from llnl.util import tty
 from llnl.util.filesystem import working_dir
 
 from spack.package import *
-from spack.build_systems.python import PythonPipBuilder
+from spack_repo.builtin.build_systems.python import PythonPackage, PythonPipBuilder
 
 
 class PyBdsf(PythonPackage):
@@ -52,15 +52,13 @@ class PyBdsf(PythonPackage):
     depends_on("py-wheel", type="build")
 
     # PEP 517 builder and build tooling added from 1.11.0
-    # scm8 needs minimum setuptools 61 (80 recommended)
-    # scm7 needs setuptools 59-60
-    # scm6 needs setuptools 45-58 (50 recommended)
     depends_on("py-build", when="@1.11:", type="build")
     depends_on("py-scikit-build@0.13:", when="@1.11:", type="build")
     # Spack may have an external cmake that is too old; allow alternatives
     depends_on("cmake@3.18:", when="@1.11:", type="build")
     depends_on("ninja", type="build")
-    depends_on("py-setuptools-scm@8:", when="@1.11:", type="build")
+    # Match upstream-style constraints: allow 6.2+ (needed for other build tooling, e.g. matplotlib 3.6)
+    depends_on("py-setuptools-scm@6.2:", when="@1.11:", type="build")
     # depends_on("py-packaging", type="build")
     # depends_on("py-cython@0.29:", type="build", when="@:1.10")
 
@@ -88,6 +86,20 @@ class PyBdsf(PythonPackage):
             "find_package(F2PY REQUIRED)",
             "set(F2PY_EXECUTABLE f2py)",
             "CMakeLists.txt",
+            string=True,
+        )
+
+        # PyBDSF 1.12.0 uses a non-standard setuptools_scm key:
+        #
+        #   [tool.setuptools_scm]
+        #   version_file = "bdsf/_version.py"
+        #
+        # setuptools_scm 7.x does not accept `version_file` and errors during
+        # metadata generation. Translate it to the supported key `write_to`.
+        filter_file(
+            'version_file = "bdsf/_version.py"',
+            'write_to = "bdsf/_version.py"',
+            "pyproject.toml",
             string=True,
         )
 

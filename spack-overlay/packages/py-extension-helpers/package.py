@@ -4,7 +4,8 @@
 # SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
 
-from spack.package import *
+from spack.package import version, license, depends_on, build_system
+from spack_repo.builtin.build_systems.python import PythonPackage
 
 
 class PyExtensionHelpers(PythonPackage):

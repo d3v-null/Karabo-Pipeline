@@ -1,4 +1,5 @@
-from spack.package import CMakePackage, depends_on, variant, version
+from spack.package import depends_on, variant, version
+from spack_repo.builtin.build_systems.cmake import CMakePackage
 
 
 class Wsclean(CMakePackage):
@@ -9,19 +10,19 @@ class Wsclean(CMakePackage):
     homepage = "https://wsclean.readthedocs.io/"
     git = "https://gitlab.com/aroffringa/wsclean.git"
 
-    version("3.0", commit="v3.0", submodules=True)
-    version("3.0.1", commit="v3.0.1", submodules=True)
-    version("3.1", commit="v3.1", submodules=True)
-    version("3.2", commit="v3.2", submodules=True)
-    version("3.3", commit="v3.3", submodules=True)
-    version("3.4", commit="v3.4", submodules=True)
-    version("3.5", commit="v3.5", submodules=True)
+    version("3.0", tag="v3.0", submodules=True)
+    version("3.0.1", tag="v3.0.1", submodules=True)
+    version("3.1", tag="v3.1", submodules=True)
+    version("3.2", tag="v3.2", submodules=True)
+    version("3.3", tag="v3.3", submodules=True)
+    version("3.4", tag="v3.4", submodules=True)
+    version("3.5", tag="v3.5", submodules=True)
     version(  # master branch at 2025-01-27
         "3.5.20250127",
         commit="d7d89fddf472ffac05a2fa1820ec7d0027da38ee",
         submodules=True,
     )
-    version("3.6", commit="v3.6", submodules=True)
+    version("3.6", tag="v3.6", submodules=True)
     version(  # master branch at 2025-06-30
         "3.6.20250630",
         commit="012778d4b9ca9a5e46815f7aae95f3f469539f99",

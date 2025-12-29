@@ -1,4 +1,5 @@
 from spack.package import *
+from spack_repo.builtin.build_systems.python import PythonPackage
 
 
 class PySkaSdpFuncPython(PythonPackage):
@@ -23,7 +24,9 @@ class PySkaSdpFuncPython(PythonPackage):
     depends_on("py-setuptools-scm", type="build")
     depends_on("py-hatchling", type="build")
     depends_on("py-hatch-vcs", type="build")
-    depends_on("py-poetry", type="build")
+    # Poetry is only needed as a build backend; poetry-core is sufficient and
+    # avoids pulling the full `poetry` dependency stack.
+    depends_on("py-poetry-core@1:", type="build")
 
     # Runtime pins (match rascil.Dockerfile stack)
     depends_on("py-astropy@5.1:", type=("build", "run"))

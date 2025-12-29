@@ -1,5 +1,6 @@
 # from analysis of https://github.com/RadioAstronomySoftwareGroup/pyuvdata
 from spack.package import *
+from spack_repo.builtin.build_systems.python import PythonPackage
 
 
 class PyPyuvdata(PythonPackage):
@@ -41,7 +42,10 @@ class PyPyuvdata(PythonPackage):
     depends_on("py-setuptools@64:", type="build", when="@2.4.3:")
     depends_on("py-wheel", type="build")
     # setup.py imports setuptools_scm and it is in install_requires as well
-    depends_on("py-setuptools-scm@:6,7.0.3:", type=("build", "run"))
+    # Keep compatibility with the 6.x line while skipping early 7.0.{0,1,2}
+    # NOTE: In Spack version ranges, `@:6` means <=6.0.* (not <=6.x), so we
+    # extend to a high 6.x upper bound to allow 6.3.x.
+    depends_on("py-setuptools-scm@:6.999,7.0.3:", type=("build", "run"))
     # TODO: depends_on("py-setuptools-scm@8.1:", type=("build", "run"), when="@3.0.0:")
 
     # Cythonized extensions need Cython and NumPy headers at build time

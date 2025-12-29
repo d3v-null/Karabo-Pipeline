@@ -1,4 +1,5 @@
 from spack.package import *
+from spack_repo.builtin.build_systems.python import PythonPackage
 
 
 class PyCasacore(PythonPackage):
@@ -49,6 +50,20 @@ class PyCasacore(PythonPackage):
         majmin = f"{pyver.up_to(2).string.replace('.', '')}"
         env.set("BOOST_PYTHON_LIB", f"boost_python{majmin}")
         env.set("BOOST_NUMPY_LIB", f"boost_numpy{majmin}")
+        # wcslib is a dependency of casacore - make headers visible
+        wcslib = self.spec["casacore"]["wcslib"].prefix
+        env.prepend_path("CPATH", join_path(wcslib, "include"))
+        env.prepend_path("LIBRARY_PATH", join_path(wcslib, "lib"))
+        env.prepend_path("LIBRARY_PATH", join_path(wcslib, "lib64"))
+        env.prepend_path("LD_LIBRARY_PATH", join_path(wcslib, "lib"))
+        env.prepend_path("LD_LIBRARY_PATH", join_path(wcslib, "lib64"))
+        # cfitsio is also a dependency of casacore - make headers visible
+        cfitsio = self.spec["casacore"]["cfitsio"].prefix
+        env.prepend_path("CPATH", join_path(cfitsio, "include"))
+        env.prepend_path("LIBRARY_PATH", join_path(cfitsio, "lib"))
+        env.prepend_path("LIBRARY_PATH", join_path(cfitsio, "lib64"))
+        env.prepend_path("LD_LIBRARY_PATH", join_path(cfitsio, "lib"))
+        env.prepend_path("LD_LIBRARY_PATH", join_path(cfitsio, "lib64"))
 
     import_modules = ["casacore", "casacore.tables", "casacore.quanta"]
 

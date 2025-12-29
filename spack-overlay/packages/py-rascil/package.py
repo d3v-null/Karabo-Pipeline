@@ -1,4 +1,5 @@
-from spack.package import *
+from spack.package import version, license, depends_on
+from spack_repo.builtin.build_systems.python import PythonPackage
 
 
 class PyRascil(PythonPackage):
@@ -14,9 +15,6 @@ class PyRascil(PythonPackage):
     def url_for_version(self, version):
         ver = str(version)
         return self.base_url.format(ver=ver)
-
-    # Spack 0.23-compatible backends
-    build_system("python_pip", "python_setuptools")
 
     # Python runtime
     depends_on("python@3.8:", type=("build", "run"))

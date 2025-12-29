@@ -5,7 +5,8 @@ linters. Disable lints for this file.
 """  # flake8: noqa  # mypy: ignore-errors
 # pyright: reportMissingImports=false, reportUndefinedVariable=false, reportMissingModuleSource=false
 
-from spack.package import (version, build_system, PythonPackage, depends_on, filter_file)
+from spack.package import (version, build_system, depends_on, filter_file)
+from spack_repo.builtin.build_systems.python import PythonPackage
 
 class PyTools21cm(PythonPackage):
     """Tools for analysing cosmological simulations of the 21cm signal.

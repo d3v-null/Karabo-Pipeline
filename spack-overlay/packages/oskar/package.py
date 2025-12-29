@@ -1,4 +1,6 @@
 from spack.package import *
+from spack_repo.builtin.build_systems.cmake import CMakePackage
+from spack_repo.builtin.build_systems.cuda import CudaPackage
 import os
 
 
@@ -13,9 +15,9 @@ class Oskar(CMakePackage, CudaPackage):
     # Karabo uses 2.8.3 specifically
     # 2.10.0 works on arm64 but gives code -115 when reading vis files
     # 2.11.x includes important fixes and updates to build system
-    version("2.11.1", commit="2.11.1")
-    version("2.10.0", commit="2.10.0")
-    version("2.8.3", commit="2.8.3", preferred=True)
+    version("2.11.1", tag="2.11.1")
+    version("2.10.0", tag="2.10.0")
+    version("2.8.3", tag="2.8.3", preferred=True)
 
     # Variants
     variant("cuda", default=False, description="Enable CUDA support")

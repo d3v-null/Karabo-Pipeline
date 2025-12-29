@@ -1,6 +1,7 @@
 import os
 
-from spack.package import *
+from spack.package import version, license, depends_on
+from spack_repo.builtin.build_systems.python import PythonPackage
 
 
 class PyDucc(PythonPackage):
@@ -20,7 +21,8 @@ class PyDucc(PythonPackage):
     depends_on("py-setuptools@69.2:69", type="build") # todo: constraints may be too tight
     depends_on("py-wheel@0.41.2:0.41", type="build") # todo: constraints may be too tight
     depends_on("py-build@1.2.1:1.2", type="build") # todo: constraints may be too tight
-    depends_on("py-setuptools-scm@6.0.1:6", type="build") # todo: constraints may be too tight
+    # Allow newer setuptools-scm (matplotlib 3.6 pulls 7+ in spack-packages)
+    depends_on("py-setuptools-scm@6.0.1:", type="build") # todo: constraints may be too tight
     depends_on("py-pybind11@2.13.5:2.13", type="build") # todo: constraints may be too tight
     depends_on("py-packaging@24.1:24", type="build") # todo: constraints may be too tight
     depends_on("py-numpy@1.18:1", type=("build", "run")) # todo: constraints may be too tight

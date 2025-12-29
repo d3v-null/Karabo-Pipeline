@@ -1,6 +1,6 @@
-from llnl.util.filesystem import filter_file
-
 from spack.package import *
+from spack_repo.builtin.build_systems.python import PythonPackage
+
 
 
 class PyAstropyHealpix(PythonPackage):

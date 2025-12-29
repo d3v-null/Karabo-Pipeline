@@ -1,4 +1,5 @@
 from spack.package import *
+from spack_repo.builtin.build_systems.python import PythonPackage
 
 
 class PySkaSdpDatamodels(PythonPackage):
@@ -23,8 +24,9 @@ class PySkaSdpDatamodels(PythonPackage):
     depends_on("py-setuptools-scm", type="build")
     depends_on("py-hatchling", type="build")
     depends_on("py-hatch-vcs", type="build")
-    # Some tags still require poetry backend during metadata prep
-    depends_on("py-poetry", type="build")
+    # Poetry is only needed as a build backend; poetry-core is sufficient and
+    # avoids pulling the full `poetry` dependency stack.
+    depends_on("py-poetry-core@1:", type="build")
 
     # Runtime pins aligned with rascil.Dockerfile
     depends_on("py-numpy@1.23:", type=("build", "run"))

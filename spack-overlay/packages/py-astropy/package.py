@@ -6,7 +6,19 @@
 
 import os
 
-from spack.package import *
+from spack.package import (
+    version,
+    license,
+    variant,
+    depends_on,
+    when,
+    join_path,
+    run_after,
+    on_package_attributes,
+    working_dir,
+    conflicts,
+)
+from spack_repo.builtin.build_systems.python import PythonPackage
 
 
 class PyAstropy(PythonPackage):
@@ -69,7 +81,8 @@ class PyAstropy(PythonPackage):
     depends_on("py-pyyaml@3.13:", when="@5.1:", type=("build", "run"))
     depends_on("py-pyerfa@2.0.1.1:", when="@5.1:", type=("build", "run", "test"))
 
-    depends_on("py-setuptools-scm@6.2:6", when="@5.1:", type="build")
+    # Match upstream: allow setuptools-scm >= 6.2 (no artificial upper bound)
+    depends_on("py-setuptools-scm@6.2:", when="@5.1:", type="build")
     depends_on("py-extension-helpers@1:1", when="@5.1:", type="build")
     depends_on("pkgconfig", type="build")
 

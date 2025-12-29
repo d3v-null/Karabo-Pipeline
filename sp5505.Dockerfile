@@ -1,7 +1,7 @@
 # Global ARG that can be passed at build time
 ARG PYTHON_VERSION=3.10
 
-FROM quay.io/jupyter/minimal-notebook:notebook-7.2.2
+FROM quay.io/jupyter/minimal-notebook:notebook-7.0.6
 
 USER root
 SHELL ["/bin/bash", "-lc"]
@@ -50,10 +50,10 @@ RUN curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-too
     ln -sf /opt/cargo/bin/* /usr/local/bin/ && \
     rustc --version | grep -Fq "$RUST_VERSION"
 
-# Install Spack v0.23 and detect compilers
+# Install Spack v1.0.1 and detect compilers
 ENV SPACK_ROOT=/opt/spack \
     SPACK_DISABLE_LOCAL_CONFIG=1
-RUN git clone --depth=1 --single-branch --branch=releases/v0.23 https://github.com/spack/spack.git ${SPACK_ROOT} && \
+RUN git clone --depth=1 --single-branch --branch=v1.0.1 https://github.com/spack/spack.git ${SPACK_ROOT} && \
     cd ${SPACK_ROOT} && \
     rm -rf .git && \
     . share/spack/setup-env.sh && \
@@ -64,6 +64,7 @@ RUN echo ". ${SPACK_ROOT}/share/spack/setup-env.sh 2>/dev/null || true" > /etc/p
     echo "spack env activate -p /opt/spack_env 2>/dev/null || true" >> /etc/profile.d/spack.sh
 
 RUN spack compiler find && \
+    spack compiler list && \
     spack external find \
     autoconf \
     automake \
@@ -82,7 +83,7 @@ RUN spack compiler find && \
     rust
 
 # Add SKA SDP Spack repo and overlay
-RUN git clone --depth=1 --single-branch --branch=2025.09.1 https://gitlab.com/ska-telescope/sdp/ska-sdp-spack.git /opt/ska-sdp-spack && \
+RUN git clone --depth=1 --single-branch --branch=2025.10.4 https://gitlab.com/ska-telescope/sdp/ska-sdp-spack.git /opt/ska-sdp-spack && \
     rm -rf /opt/ska-sdp-spack/.git && \
     spack repo add /opt/ska-sdp-spack
 COPY spack-overlay /opt/karabo-spack
@@ -126,7 +127,7 @@ ARG SCIPY_VERSION=1.9.3
 # TODO: conda has scipy 1.13.1 but this requires cupy and torch
 # 1.9.3 worked with numpy 1.23.5
 # 1.10 required by rascil 1.1, closest is 1.10.1
-ARG MATPLOTLIB_VERSION=3.9.2
+ARG MATPLOTLIB_VERSION=3.6.3
 # matplotlib needed by bluebild rascil aratmospy tools21cm
 # TODO: conda uses 3.10.5 but max available is 3.9.2
 ARG ASTROPY_VERSION=5.1.1
@@ -234,26 +235,28 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     --mount=type=cache,target=/opt/spack-misc-cache,id=spack-misc-cache,sharing=locked \
     mkdir -p /opt/{software,view,buildcache,spack-source-cache,spack-misc-cache}; \
     arch=$(uname -m); \
-    if [ -z "${SPACK_TARGET}" ]; then \
-    case "$arch" in \
-    x86_64) SPACK_TARGET=x86_64 ;; \
-    aarch64) SPACK_TARGET=aarch64 ;; \
-    *) SPACK_TARGET="$arch" ;; \
-    esac; \
+    spack_target="${SPACK_TARGET}"; \
+    if [ -z "${spack_target}" ]; then \
+      case "$arch" in \
+        x86_64) spack_target=x86_64 ;; \
+        aarch64) spack_target=aarch64 ;; \
+        *) spack_target="$arch" ;; \
+      esac; \
     fi; \
-    echo "SPACK_TARGET=${SPACK_TARGET} <- (uname -m)=$arch"; \
+    echo "SPACK_TARGET=${spack_target} <- (uname -m)=$arch"; \
     spack config add "config:install_tree:root:/opt/software"; \
+    # DO NOT MODIFY CONCRETIZATION OR VIEW SETTINGS
     spack config add "concretizer:unify:when_possible"; \
     spack config add "concretizer:reuse:false"; \
     spack config add "view:/opt/view"; \
     spack config add "config:source_cache:/opt/spack-source-cache"; \
     spack config add "config:misc_cache:/opt/spack-misc-cache"; \
-    spack config add "packages:all:target:[${SPACK_TARGET}]"; \
+    spack config add "packages:all:target:[${spack_target}]"; \
     spack config add "packages:cuda:version:[12.2.2]"; \
     spack config add "config:build_jobs:4"; \
     # spack mirror add --autopush --unsigned mycache file:///opt/buildcache; \
     spack buildcache keys --install --trust || true; \
-    # TODO: spack mirror add v0.23.1 https://binaries.spack.io/v0.23.1; \
+    spack mirror add v1.0.1 https://binaries.spack.io/v1.0.1; \
     spack add \
     'cfitsio@'$CFITSIO_VERSION \
     'boost@'$BOOST_VERSION'+python+numpy' \
@@ -351,18 +354,20 @@ RUN mkdir -p ${RASCIL_DATA}/models && \
     echo "# Dummy RASCIL data file" > ${RASCIL_DATA}/models/S3_151MHz_10deg.csv && \
     fix-permissions ${RASCIL_DATA}
 
-# Set PATH to prioritize Spack over conda
-ENV PATH="/opt/view/bin:${PATH}"
-
-# Create hook that runs instead of conda activation to set Spack python
+# Create hook that activates spack environment and sets up PATH
 # Disable conda auto-activation in login shells by removing conda hook from .bashrc
 RUN mkdir -p /usr/local/bin/before-notebook.d && \
-    printf '#!/bin/bash\n# Restore Spack priority after conda activation\nexport PATH="/opt/view/bin:${PATH}"\n' > /usr/local/bin/before-notebook.d/20-restore-spack.sh && \
-    chmod +x /usr/local/bin/before-notebook.d/20-restore-spack.sh && \
+    printf '#!/bin/bash\n# Activate Spack environment\n. /opt/spack/share/spack/setup-env.sh\nspack env activate -p /opt/spack_env\n' > /usr/local/bin/before-notebook.d/20-activate-spack.sh && \
+    chmod +x /usr/local/bin/before-notebook.d/20-activate-spack.sh && \
     ( [ -f /usr/local/bin/before-notebook.d/10activate-conda-env.sh ] && \
     rm -f /usr/local/bin/before-notebook.d/10activate-conda-env.sh ) && \
     sed -i '/^eval "\$(conda shell\.bash hook)"/d' /home/jovyan/.bashrc && \
     sed -i '/^eval "\$(conda shell\.bash hook)"/d' /root/.bashrc 2>/dev/null || true
+
+# Ensure the dynamic linker can find Spack view shared libraries at runtime.
+# Without this, Python extensions (e.g. py-bdsf) may fail to import with errors like:
+#   ImportError: libboost_numpy310.so.1.82.0: cannot open shared object file
+RUN printf "%s\n" "/opt/view/lib" "/opt/view/lib64" > /etc/ld.so.conf.d/karabo-spack-view.conf && ldconfig
 
 RUN spack test run 'py-astropy-healpix' && \
     # spack test run 'py-astropy' && \ # broken

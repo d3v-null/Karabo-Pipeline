@@ -5,7 +5,8 @@ linters. Disable lints for this file.
 """  # flake8: noqa  # mypy: ignore-errors
 # pyright: reportMissingImports=false, reportUndefinedVariable=false, reportMissingModuleSource=false
 
-from spack.package import (version, build_system, PythonPackage, depends_on)
+from spack.package import (version, build_system, depends_on)
+from spack_repo.builtin.build_systems.python import PythonPackage
 
 class PyNotebook(PythonPackage):
     """Jupyter Interactive Notebook (version 6.x - compatible with tornado 6.1).
