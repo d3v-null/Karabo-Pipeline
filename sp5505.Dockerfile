@@ -354,20 +354,47 @@ RUN mkdir -p ${RASCIL_DATA}/models && \
     echo "# Dummy RASCIL data file" > ${RASCIL_DATA}/models/S3_151MHz_10deg.csv && \
     fix-permissions ${RASCIL_DATA}
 
-# Create hook that activates spack environment and sets up PATH
+# Create hook that activates spack environment
+# IMPORTANT: Spack's setup-env.sh uses a loop variable 'cmd' which conflicts with
+# the 'cmd' array set by start.sh. We must save/restore it to avoid interference.
 # Disable conda auto-activation in login shells by removing conda hook from .bashrc
 RUN mkdir -p /usr/local/bin/before-notebook.d && \
-    printf '#!/bin/bash\n# Activate Spack environment\n. /opt/spack/share/spack/setup-env.sh\nspack env activate -p /opt/spack_env\n' > /usr/local/bin/before-notebook.d/20-activate-spack.sh && \
-    chmod +x /usr/local/bin/before-notebook.d/20-activate-spack.sh && \
+    cat > /usr/local/bin/before-notebook.d/20-activate-spack.sh <<'EOF'
+#!/bin/bash
+# Save cmd array to avoid conflict with Spack's setup-env.sh loop variable
+_saved_cmd=("${cmd[@]}")
+
+# Activate Spack environment
+. /opt/spack/share/spack/setup-env.sh
+spack env activate -p /opt/spack_env
+
+# Restore cmd array
+cmd=("${_saved_cmd[@]}")
+unset _saved_cmd
+EOF
+RUN chmod +x /usr/local/bin/before-notebook.d/20-activate-spack.sh && \
     ( [ -f /usr/local/bin/before-notebook.d/10activate-conda-env.sh ] && \
     rm -f /usr/local/bin/before-notebook.d/10activate-conda-env.sh ) && \
     sed -i '/^eval "\$(conda shell\.bash hook)"/d' /home/jovyan/.bashrc && \
     sed -i '/^eval "\$(conda shell\.bash hook)"/d' /root/.bashrc 2>/dev/null || true
 
-# Ensure the dynamic linker can find Spack view shared libraries at runtime.
-# Without this, Python extensions (e.g. py-bdsf) may fail to import with errors like:
-#   ImportError: libboost_numpy310.so.1.82.0: cannot open shared object file
+# Configure system-wide library search path for the dynamic linker.
+# Direct commands like `docker run IMAGE python ...` do NOT run the
+# before-notebook.d hook, so they don't get LD_LIBRARY_PATH from Spack activation.
+# This ldconfig configuration ensures shared libraries are found even without
+# LD_LIBRARY_PATH being set. DO NOT REMOVE - Python extensions will fail to import.
+# Example error without this: "ImportError: libboost_numpy310.so.1.82.0: cannot open shared object file"
 RUN printf "%s\n" "/opt/view/lib" "/opt/view/lib64" > /etc/ld.so.conf.d/karabo-spack-view.conf && ldconfig
+
+# Set PATH for non-login shells and direct command execution.
+# hree execution contexts require different approaches:
+#   1. Direct commands (`docker run IMAGE python`): Only get this ENV, no hooks run
+#   2. Jupyter startup: Gets full Spack env via before-notebook.d hook (see line ~362)
+#   3. Login shells (`bash -lc`): Gets full Spack env via /etc/profile.d/spack.sh
+# Without this ENV, direct commands would use conda's Python instead of Spack's.
+# DO NOT REMOVE - breaks smoke tests and CLI usage. Activating Spack for all shells
+# would add 16+ seconds overhead per command (tested), making the image unusable.
+ENV PATH="/opt/view/bin:${PATH}"
 
 RUN spack test run 'py-astropy-healpix' && \
     # spack test run 'py-astropy' && \ # broken
