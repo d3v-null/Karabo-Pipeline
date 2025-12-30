@@ -1,6 +1,6 @@
 from spack.package import *
 import os
-import llnl.util.filesystem as fs
+import spack.llnl.util.filesystem as fs
 import shutil
 
 

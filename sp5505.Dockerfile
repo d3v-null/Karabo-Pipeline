@@ -53,9 +53,13 @@ RUN curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-too
 # Install Spack v1.0.1 and detect compilers
 ENV SPACK_ROOT=/opt/spack \
     SPACK_DISABLE_LOCAL_CONFIG=1
-RUN git clone --depth=1 --single-branch --branch=v1.0.1 https://github.com/spack/spack.git ${SPACK_ROOT} && \
+RUN git clone --depth=1 --single-branch --branch=v1.1.0 https://github.com/spack/spack.git ${SPACK_ROOT} && \
     cd ${SPACK_ROOT} && \
     rm -rf .git && \
+    # Spack v1.1.0 ships some dangling symlinks in docs assets which cause
+    # `fix-permissions` (from the Jupyter base image) to fail the build.
+    # Remove any broken symlinks before running fix-permissions.
+    find ${SPACK_ROOT}/lib/spack/docs -xtype l -delete || true && \
     . share/spack/setup-env.sh && \
     spack env create --dir /opt/spack_env && \
     fix-permissions ${SPACK_ROOT} /opt/spack_env
@@ -77,13 +81,12 @@ RUN spack compiler find && \
     # gmake \ # we don't want system gmake
     libtool \
     m4 \
-    meson \
     perl \
     pkgconf \
     rust
 
 # Add SKA SDP Spack repo and overlay
-RUN git clone --depth=1 --single-branch --branch=2025.11.3 https://gitlab.com/ska-telescope/sdp/ska-sdp-spack.git /opt/ska-sdp-spack && \
+RUN git clone --depth=1 --single-branch --branch=2025.12.3 https://gitlab.com/ska-telescope/sdp/ska-sdp-spack.git /opt/ska-sdp-spack && \
     rm -rf /opt/ska-sdp-spack/.git && \
     spack repo add /opt/ska-sdp-spack
 COPY spack-overlay /opt/karabo-spack
@@ -255,7 +258,7 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     spack config add "packages:cuda:version:[12.2.2]"; \
     spack config add "config:build_jobs:4"; \
     # spack mirror add --autopush --unsigned mycache file:///opt/buildcache; \
-    spack mirror add v1.0.1 https://binaries.spack.io/v1.0.1; \
+    spack mirror add v1.1.0 https://binaries.spack.io/v1.1.0; \
     spack buildcache keys --install --trust || true; \
     spack add \
     'cfitsio@'$CFITSIO_VERSION \

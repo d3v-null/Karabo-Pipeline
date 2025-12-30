@@ -62,9 +62,6 @@ patch_*.sh
 *_instructions.md
 hyperbeam.md
 oskar_instructions.md
-*.svg
-conda-sfdp.svg
-installed-*.svg
 pyuvdata_test_variants.sh
 sp5505.json
 sp5505.txt

@@ -1,8 +1,8 @@
 # from https://gitlab.com/ska-telescope/sdp/ska-sdp-spack/-/blob/main/packages/py-bdsf/package.py
 import os
 
-from llnl.util import tty
-from llnl.util.filesystem import working_dir
+import spack.llnl.util.tty as tty
+from spack.llnl.util.filesystem import working_dir
 
 from spack.package import *
 from spack_repo.builtin.build_systems.python import PythonPackage, PythonPipBuilder

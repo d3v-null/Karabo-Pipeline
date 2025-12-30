@@ -1,4 +1,4 @@
-import llnl.util.lang
+from spack.llnl.util.lang import memoized
 
 from spack.package import version, depends_on, variant, license
 from spack_repo.builtin.build_systems.python import PythonPackage
@@ -83,7 +83,7 @@ class PySkaSdpFunc(PythonPackage):
         env.set("CMAKE_ARGS", " ".join(cmake_args))
 
     @property
-    @llnl.util.lang.memoized
+    @memoized
     def _output_version(self):
         spec_vers_str = str(self.spec.version.up_to(3))
         if "develop" in spec_vers_str:
