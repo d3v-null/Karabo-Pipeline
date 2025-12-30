@@ -83,7 +83,7 @@ RUN spack compiler find && \
     rust
 
 # Add SKA SDP Spack repo and overlay
-RUN git clone --depth=1 --single-branch --branch=2025.10.4 https://gitlab.com/ska-telescope/sdp/ska-sdp-spack.git /opt/ska-sdp-spack && \
+RUN git clone --depth=1 --single-branch --branch=2025.11.3 https://gitlab.com/ska-telescope/sdp/ska-sdp-spack.git /opt/ska-sdp-spack && \
     rm -rf /opt/ska-sdp-spack/.git && \
     spack repo add /opt/ska-sdp-spack
 COPY spack-overlay /opt/karabo-spack
@@ -255,8 +255,8 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     spack config add "packages:cuda:version:[12.2.2]"; \
     spack config add "config:build_jobs:4"; \
     # spack mirror add --autopush --unsigned mycache file:///opt/buildcache; \
-    spack buildcache keys --install --trust || true; \
     spack mirror add v1.0.1 https://binaries.spack.io/v1.0.1; \
+    spack buildcache keys --install --trust || true; \
     spack add \
     'cfitsio@'$CFITSIO_VERSION \
     'boost@'$BOOST_VERSION'+python+numpy' \
