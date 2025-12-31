@@ -33,7 +33,6 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     libgomp1 \
     libtool \
     m4 \
-    meson \
     patchelf \
     perl \
     pkg-config \
@@ -229,9 +228,12 @@ ARG EIDOS_VERSION=1.1.0
 ARG KATBEAM_VERSION=0.1.0
 ARG KARABO_VERSION=0.34.0
 ARG WSCLEAN_VERSION=3.4
+ARG CUDA_VERSION=12.2.2
 
 # Create Spack environment and install deps
 ARG SPACK_TARGET=""
+ARG SPACK_BUILDCACHE_LOCAL=""
+ARG SPACK_MIRROR_OCI=""
 
 RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=locked \
     --mount=type=cache,target=/opt/spack-source-cache,id=spack-source-cache,sharing=locked \
@@ -241,7 +243,11 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     spack_target="${SPACK_TARGET}"; \
     if [ -z "${spack_target}" ]; then \
       case "$arch" in \
-        x86_64) spack_target=x86_64 ;; \
+        # Prefer x86_64_v3 when building on x86_64: this dramatically increases
+        # the chance of hitting upstream buildcache binaries (and thus reduces
+        # total build time). Override with `--build-arg SPACK_TARGET=x86_64`
+        # if you need a more portable image for older CPUs.
+        x86_64) spack_target=x86_64_v3 ;; \
         aarch64) spack_target=aarch64 ;; \
         *) spack_target="$arch" ;; \
       esac; \
@@ -255,9 +261,17 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     spack config add "config:source_cache:/opt/spack-source-cache"; \
     spack config add "config:misc_cache:/opt/spack-misc-cache"; \
     spack config add "packages:all:target:[${spack_target}]"; \
-    spack config add "packages:cuda:version:[12.2.2]"; \
+    spack config add "packages:cuda:version:[${CUDA_VERSION}]"; \
     spack config add "config:build_jobs:4"; \
-    # spack mirror add --autopush --unsigned mycache file:///opt/buildcache; \
+    # Local buildcache persisted via BuildKit cache mount (fast retries / iterations).
+    if [ -n "${SPACK_BUILDCACHE_LOCAL}" ]; then \
+        spack mirror add --autopush --unsigned mycache file:///opt/buildcache; \
+        # Ensure the index exists so subsequent builds can actually *pull* from it.
+        spack buildcache update-index /opt/buildcache || true; \
+    fi; \
+    # Optional OCI buildcache mirror (ska-sdp-spack CI uses this style of caching).
+    # Example (read-only): --build-arg SPACK_MIRROR_OCI="oci://<registry>/<path>"
+    [ -n "${SPACK_MIRROR_OCI}" ] && spack mirror add --unsigned oci-cache "${SPACK_MIRROR_OCI}"; \
     spack mirror add v1.1.0 https://binaries.spack.io/v1.1.0; \
     spack buildcache keys --install --trust || true; \
     spack add \
@@ -328,7 +342,7 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     && \
     spack concretize --force && \
     # Install cuda first to get stubs location
-    spack install --no-check-signature --no-checksum --fail-fast --fresh cuda && \
+    spack install --use-cache --no-check-signature --no-checksum --fail-fast --fresh cuda && \
     CUDA_ROOT=$(spack location -i cuda) && \
     STUBS_DIR="${CUDA_ROOT}/lib64/stubs" && \
     [ -d "${STUBS_DIR}" ] || STUBS_DIR="${CUDA_ROOT}/lib/stubs" && \
@@ -345,10 +359,13 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
         exit 1; \
     fi && \
     # CUDA HACK: Link against stubs (libcuda.so.1) to allow building wsclean/idg without a GPU driver present in Docker
-    ac_cv_lib_curl_curl_easy_init=no spack install --only dependencies --no-check-signature --no-checksum --fail-fast --fresh --show-log-on-error && \
-    ac_cv_lib_curl_curl_easy_init=no spack install --no-check-signature --no-checksum --fail-fast --fresh --show-log-on-error && \
+    ac_cv_lib_curl_curl_easy_init=no spack install --use-cache --only dependencies --no-check-signature --no-checksum --fail-fast --fresh --show-log-on-error && \
+    ac_cv_lib_curl_curl_easy_init=no spack install --use-cache --no-check-signature --no-checksum --fail-fast --fresh --show-log-on-error && \
     spack gc -y && \
     spack env view regenerate && \
+    if [ -n "${SPACK_BUILDCACHE_LOCAL}" ]; then \
+        spack buildcache update-index /opt/buildcache || true; \
+    fi && \
     fix-permissions /opt/view /opt/spack_env /opt/software
 
 #HACK: setup rascil data - create canary file that RASCIL checks for
