@@ -243,11 +243,10 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     spack_target="${SPACK_TARGET}"; \
     if [ -z "${spack_target}" ]; then \
       case "$arch" in \
-        # Prefer x86_64_v3 when building on x86_64: this dramatically increases
-        # the chance of hitting upstream buildcache binaries (and thus reduces
-        # total build time). Override with `--build-arg SPACK_TARGET=x86_64`
+        # Prefer x86_64_v2 when building on x86_64, v3 is available but segfaults in CI.
+        # Override with `--build-arg SPACK_TARGET=x86_64`
         # if you need a more portable image for older CPUs.
-        x86_64) spack_target=x86_64_v3 ;; \
+        x86_64) spack_target=x86_64_v2 ;; \
         aarch64) spack_target=aarch64 ;; \
         *) spack_target="$arch" ;; \
       esac; \
