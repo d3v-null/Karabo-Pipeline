@@ -121,7 +121,9 @@ jobs:
           outputs: type=image,name=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
           build-args: |
             SKIP_TESTS=1
-            SPACK_TARGET=${{ matrix.platform == 'linux/amd64' && 'x86_64' || 'aarch64' }}
+            # Use a micro-arch target that exists in public buildcaches. v3 isn't
+            # supported by GitHub-hosted runners CPUs; v2 is the safe choice.
+            SPACK_TARGET=${{ matrix.platform == 'linux/amd64' && 'x86_64_v2' || 'aarch64' }}
           # cache-from: |
           #   type=registry,ref=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:buildcache-${{ env.PLATFORM_PAIR }}
           # cache-to: |
