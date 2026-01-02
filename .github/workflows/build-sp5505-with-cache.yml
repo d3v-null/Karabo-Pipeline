@@ -124,6 +124,13 @@ jobs:
             # Use a micro-arch target that exists in public buildcaches. v3 isn't
             # supported by GitHub-hosted runners CPUs; v2 is the safe choice.
             SPACK_TARGET=${{ matrix.platform == 'linux/amd64' && 'x86_64_v2' || 'aarch64' }}
+            # Populate and consume an OCI Spack buildcache (ska-sdp-spack CI uses this approach).
+            # This makes repeat CI builds much faster even when binaries.spack.io has no matches
+            # for our overlay / pinned specs.
+            SPACK_MIRROR_OCI=oci://${{ env.REGISTRY }}/${{ github.repository_owner }}/sp5505-spack-buildcache
+          secrets: |
+            spack_oci_username=${{ github.actor }}
+            spack_oci_password=${{ github.token }}
           # cache-from: |
           #   type=registry,ref=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:buildcache-${{ env.PLATFORM_PAIR }}
           # cache-to: |

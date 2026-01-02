@@ -238,6 +238,8 @@ ARG SPACK_MIRROR_OCI=""
 RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=locked \
     --mount=type=cache,target=/opt/spack-source-cache,id=spack-source-cache,sharing=locked \
     --mount=type=cache,target=/opt/spack-misc-cache,id=spack-misc-cache,sharing=locked \
+    --mount=type=secret,id=spack_oci_username,required=false \
+    --mount=type=secret,id=spack_oci_password,required=false \
     mkdir -p /opt/{software,view,buildcache,spack-source-cache,spack-misc-cache}; \
     arch=$(uname -m); \
     spack_target="${SPACK_TARGET}"; \
@@ -270,7 +272,21 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     fi; \
     # Optional OCI buildcache mirror (ska-sdp-spack CI uses this style of caching).
     # Example (read-only): --build-arg SPACK_MIRROR_OCI="oci://<registry>/<path>"
-    [ -n "${SPACK_MIRROR_OCI}" ] && spack mirror add --unsigned oci-cache "${SPACK_MIRROR_OCI}"; \
+    if [ -n "${SPACK_MIRROR_OCI}" ]; then \
+        # If credentials are provided as BuildKit secrets,
+        if [ -f /run/secrets/spack_oci_username ] && [ -f /run/secrets/spack_oci_password ]; then \
+            # enable autopush so CI can populate the cache for future runs.
+            SPACK_OCI_USERNAME="$(cat /run/secrets/spack_oci_username)"; \
+            export SPACK_OCI_PASSWORD="$(cat /run/secrets/spack_oci_password)"; \
+            spack mirror add --autopush --unsigned \
+                --oci-username "${SPACK_OCI_USERNAME}" \
+                --oci-password-variable SPACK_OCI_PASSWORD \
+                oci-push "${SPACK_MIRROR_OCI}"; \
+        else \
+            # Read-only mirror for pulling binaries (works without credentials).
+            spack mirror add --unsigned oci-cache "${SPACK_MIRROR_OCI}"; \
+        fi; \
+    fi; \
     spack mirror add v1.1.0 https://binaries.spack.io/v1.1.0; \
     spack buildcache keys --install --trust || true; \
     spack add \
