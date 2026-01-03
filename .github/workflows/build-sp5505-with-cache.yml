@@ -131,12 +131,10 @@ jobs:
           secrets: |
             spack_oci_username=${{ github.actor }}
             spack_oci_password=${{ github.token }}
-          # cache-from: |
-          #   type=registry,ref=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:buildcache-${{ env.PLATFORM_PAIR }}
-          # cache-to: |
-          #   type=registry,ref=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:buildcache-${{ env.PLATFORM_PAIR }},mode=max,compression=zstd,compression-level=3
-          # build-contexts: |
-          #   spack-cache=docker-image://ghcr.io/spack/ubuntu-jammy:v0.23.0
+          cache-from: |
+            type=registry,ref=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:buildcache-${{ env.PLATFORM_PAIR }}
+          cache-to: |
+            type=registry,ref=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:buildcache-${{ env.PLATFORM_PAIR }},mode=max,compression=zstd,compression-level=3
 
       - name: Check disk space after build
         if: always()
