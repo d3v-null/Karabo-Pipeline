@@ -359,10 +359,29 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     spack concretize --force && \
     # Install cuda first to get stubs location
     spack install --use-cache --no-check-signature --no-checksum --fail-fast --fresh cuda && \
-    CUDA_ROOT=$(spack location -i cuda) && \
-    STUBS_DIR="${CUDA_ROOT}/lib64/stubs" && \
-    [ -d "${STUBS_DIR}" ] || STUBS_DIR="${CUDA_ROOT}/lib/stubs" && \
-    if [ -d "${STUBS_DIR}" ]; then \
+    CUDA_ROOT="$(spack location -i cuda 2>/dev/null || true)" && \
+    if [ -z "${CUDA_ROOT}" ] || [ ! -d "${CUDA_ROOT}" ]; then \
+        echo "ERROR: Could not determine CUDA install prefix (CUDA_ROOT='${CUDA_ROOT}')."; \
+        spack find --paths cuda || true; \
+        exit 1; \
+    fi && \
+    # CUDA toolkit stubs location differs by architecture:
+    # - x86_64 typically:   ${CUDA_ROOT}/lib64/stubs
+    # - aarch64 typically:  ${CUDA_ROOT}/targets/aarch64-linux/lib/stubs
+    case "$arch" in \
+        x86_64) cuda_target="x86_64-linux" ;; \
+        aarch64) cuda_target="aarch64-linux" ;; \
+        *) cuda_target="${arch}-linux" ;; \
+    esac && \
+    STUBS_DIR="" && \
+    for d in \
+        "${CUDA_ROOT}/lib64/stubs" \
+        "${CUDA_ROOT}/lib/stubs" \
+        "${CUDA_ROOT}/targets/${cuda_target}/lib/stubs" \
+        "${CUDA_ROOT}/targets/${cuda_target}/lib64/stubs"; do \
+        if [ -e "${d}/libcuda.so" ]; then STUBS_DIR="${d}"; break; fi; \
+    done && \
+    if [ -n "${STUBS_DIR}" ]; then \
         echo "Found CUDA stubs at ${STUBS_DIR}"; \
         ln -sf "${STUBS_DIR}/libcuda.so" "${STUBS_DIR}/libcuda.so.1"; \
         ln -sf "${STUBS_DIR}/libcuda.so" "/usr/lib/${arch}-linux-gnu/libcuda.so.1"; \
@@ -371,7 +390,8 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
         export LD_LIBRARY_PATH="${STUBS_DIR}:${LD_LIBRARY_PATH}"; \
         export LIBRARY_PATH="${STUBS_DIR}:${LIBRARY_PATH}"; \
     else \
-        echo "WARNING: CUDA stubs not found in ${CUDA_ROOT}"; \
+        echo "ERROR: CUDA stubs not found under CUDA_ROOT='${CUDA_ROOT}' (checked lib64/stubs, lib/stubs, and targets/${cuda_target}/lib*/stubs)"; \
+        find "${CUDA_ROOT}" -maxdepth 5 -type f -name 'libcuda.so*' -path '*/stubs/*' -print || true; \
         exit 1; \
     fi && \
     # CUDA HACK: Link against stubs (libcuda.so.1) to allow building wsclean/idg without a GPU driver present in Docker
