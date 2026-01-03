@@ -265,7 +265,8 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     spack config add "packages:cuda:version:[${CUDA_VERSION}]"; \
     spack config add "config:build_jobs:4"; \
     # Local buildcache persisted via BuildKit cache mount (fast retries / iterations).
-    if [ -n "${SPACK_BUILDCACHE_LOCAL}" ]; then \
+    # Disable by setting SPACK_BUILDCACHE_LOCAL=0 or empty.
+    if [ "${SPACK_BUILDCACHE_LOCAL:-0}" != "0" ] && [ -n "${SPACK_BUILDCACHE_LOCAL:-}" ]; then \
         spack mirror add --autopush --unsigned mycache file:///opt/buildcache; \
         # Ensure the index exists so subsequent builds can actually *pull* from it.
         spack buildcache update-index /opt/buildcache || true; \
@@ -378,7 +379,13 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     ac_cv_lib_curl_curl_easy_init=no spack install --use-cache --no-check-signature --no-checksum --fail-fast --fresh --show-log-on-error && \
     spack gc -y && \
     spack env view regenerate && \
-    if [ -n "${SPACK_BUILDCACHE_LOCAL}" ]; then \
+    # If we're using an OCI buildcache, publish the buildcache index so *pulling*
+    # works. Without this, consumers see 404 for `index.spack` and can't discover
+    # binaries even though packages were pushed.
+    if [ -n "${SPACK_MIRROR_OCI}" ] && spack mirror list | awk '{print $1}' | grep -qx 'oci-push'; then \
+        spack buildcache update-index -k oci-push || spack buildcache update-index oci-push || true; \
+    fi && \
+    if [ "${SPACK_BUILDCACHE_LOCAL:-0}" != "0" ] && [ -n "${SPACK_BUILDCACHE_LOCAL:-}" ]; then \
         spack buildcache update-index /opt/buildcache || true; \
     fi && \
     fix-permissions /opt/view /opt/spack_env /opt/software
@@ -498,12 +505,12 @@ RUN wget -O$MWA_BEAM_FILE http://ws.mwatelescope.org/static/mwa_full_embedded_el
 # tests
 RUN python -c "import ska_sdp_func_python" || exit 1 && \
     python -c "import ska_sdp_func" || exit 1 && \
+    python -c "import ska_sdp_datamodels" || exit 1 && \
     python -c "import casacore, casacore.tables, casacore.quanta; print('python-casacore OK')" && \
     python - <<"PY"
 import importlib, os, sys
 
 checks = [
-    # ('aoflagger','3.0'),
     ('ARatmospy','1.0'),
     ('astropy','5.1'),
     ('astropy_healpix','1.0'),
@@ -519,15 +526,22 @@ checks = [
     ('lazy_loader','0.0'),
     ('mpi4py','0.0'),
     ('numpy','1.23.5'),
+    ('pandas', '2.3.3'),
+    ('photutils', '1.11.0'),
     ('pyfftw','0.0'),
     ('pyuvdata','2.4'),
     ('rascil','1.0'),
+    ('reproject','0.9'),
     ('rfc3986','2.0'),
     ('skimage', '0.24'),
     ('sklearn', '1.3'),
+    ('tabulate', '0.9'),
     ('tools21cm','2.0.3'),
     ('toolz','0.0'),
     ('tqdm','4.0'),
+    ('xarray', '2023.2.0'),
+    # not karabo related:
+    # ('aoflagger','3.0'),
     ('mwa_hyperbeam','0.10'),
 ]
 
