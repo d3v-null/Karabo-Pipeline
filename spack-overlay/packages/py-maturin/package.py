@@ -47,3 +47,4 @@ class PyMaturin(PythonPackage):
 
     # May be an accidental dependency, remove in the future
     depends_on("bzip2", when="platform=darwin")
+
