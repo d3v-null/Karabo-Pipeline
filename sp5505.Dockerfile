@@ -42,7 +42,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     ; # not required because of buildcache: rm -rf /var/lib/apt/lists/*
 
 # Install Rust before any Spack setup, because Spack rust is unbelievably slow.
-ARG RUST_VERSION=1.81.0
+ARG RUST_VERSION=1.86.0
 ENV CARGO_HOME=/opt/cargo \
     RUSTUP_HOME=/opt/rustup
 RUN curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain $RUST_VERSION --no-modify-path && \
