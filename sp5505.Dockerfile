@@ -324,28 +324,27 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     # 'aoflagger@3.4.0' \
     && \
     spack concretize --force && \
+    # first install cuda to get the stubs
     spack install --use-cache --no-check-signature --no-checksum --fail-fast --show-log-on-error cuda && \
+    # Locate CUDA libraries and stubs (lib64/stubs or lib/stubs)
     CUDA_ROOT=$(spack location -i cuda) && \
-    # Prefer lib64/stubs if it exists, otherwise use lib/stubs, otherwise fail with a clear error.
-    STUBS_DIR="" && \
     if [ -d "${CUDA_ROOT}/lib64/stubs" ]; then \
-        STUBS_DIR="${CUDA_ROOT}/lib64/stubs"; \
+        LIB_DIR="${CUDA_ROOT}/lib64"; \
     elif [ -d "${CUDA_ROOT}/lib/stubs" ]; then \
-        STUBS_DIR="${CUDA_ROOT}/lib/stubs"; \
+        LIB_DIR="${CUDA_ROOT}/lib"; \
     else \
-        echo "ERROR: CUDA stubs directory not found in ${CUDA_ROOT} (checked lib64/stubs and lib/stubs)" >&2 && \
+        echo "ERROR: CUDA stubs directory not found in ${CUDA_ROOT}. $(ls -laR ${CUDA_ROOT})" >&2; \
         exit 1; \
     fi && \
-    if [ -d "${STUBS_DIR}" ]; then \
-        echo "Found CUDA stubs at ${STUBS_DIR}"; \
-        ln -sf "${STUBS_DIR}/libcuda.so" "${STUBS_DIR}/libcuda.so.1"; \
-        ln -sf "${STUBS_DIR}/libcuda.so" "/usr/lib/${arch}-linux-gnu/libcuda.so.1"; \
-        spack config add "config:build_environment:prepend_path:LD_LIBRARY_PATH:${STUBS_DIR}"; \
-        spack config add "config:build_environment:prepend_path:LIBRARY_PATH:${STUBS_DIR}"; \
-    else \
-        echo "WARNING: CUDA stubs not found in ${CUDA_ROOT}"; \
-        exit 1; \
-    fi && \
+    echo "Found CUDA stubs at ${LIB_DIR}/stubs" && \
+    # Create libcuda.so.1 symlink for the stubs
+    ln -sf "${LIB_DIR}/stubs/libcuda.so" "${LIB_DIR}/stubs/libcuda.so.1" && \
+    ln -sf "${LIB_DIR}/stubs/libcuda.so" "/usr/lib/${arch}-linux-gnu/libcuda.so.1" && \
+    # Add paths to Spack build environment for:
+    #  -> Stubs (for libcuda.so / -lcuda)
+    #  -> Real libraries (for libcudart.so / -lcudart, required by hyperbeam)
+    spack config add "config:build_environment:prepend_path:LD_LIBRARY_PATH:${LIB_DIR}/stubs:${LIB_DIR}" && \
+    spack config add "config:build_environment:prepend_path:LIBRARY_PATH:${LIB_DIR}/stubs:${LIB_DIR}" && \
     # install everything else.
     ac_cv_lib_curl_curl_easy_init=no spack install --use-cache --no-check-signature --no-checksum --fail-fast --show-log-on-error && \
     spack gc -y && \
