@@ -85,6 +85,13 @@ RUN spack compiler find && \
     pkgconf \
     rust
 
+# Add SKA SDP Spack repo and overlay
+RUN git clone --depth=1 --single-branch --branch=2025.12.3 https://gitlab.com/ska-telescope/sdp/ska-sdp-spack.git /opt/ska-sdp-spack && \
+    rm -rf /opt/ska-sdp-spack/.git && \
+    spack repo add /opt/ska-sdp-spack
+COPY spack-overlay /opt/karabo-spack
+RUN spack repo add /opt/karabo-spack
+
 ARG NUMPY_VERSION=1.23.5
 # numpy needed by pyuvdata montagepy numexpr scipy rascil scikit-image pywavelets astroml ducc0 imageio ska-sdp-func-python contourpy aratmospy bokeh astroplan coda harp astropy-healpix katbeam tensorboard h5py dask ml_dtypes ska-gridder-nifty-cuda libboost-python-devel python-casacore tifffile pytest-arraydiff shapely bdsf casacore finufft reproject numcodecs matplotlib-base tools21cm libboost-python numba gwcs tensorflow-base pyfftw boost xarray asdf pyside6 photutils astropy bottleneck pandas oskarpy ska-sdp-datamodels ska-sdp-func healpy keras scikit-learn pyerfa eidos asdf-astropy zarr bluebild
 # TODO: conda has numpy 1.26.4
@@ -260,66 +267,23 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     fi; \
     spack mirror add v1.1.0 https://binaries.spack.io/v1.1.0; \
     spack buildcache keys --install --trust || true; \
-    # Layer 1: Concretize + install only the Jupyter stack (and its dependencies).
-    # This pulls in node-js/npm and the large Python dependency tree early, so later
-    # changes don't force rebuilding node-js from source.
     spack add \
+    'python@'$PYTHON_VERSION \
+    'py-pip' \
+    'py-numpy@'$NUMPY_VERSION \
     'py-jupyterlab-server@2.27:' \
     'py-jupyterlab@4' \
     'py-notebook@7' \
     'py-matplotlib@'$MATPLOTLIB_VERSION \
-    'py-numpy@'$NUMPY_VERSION \
-    'python@'$PYTHON_VERSION \
-    'py-maturin@1.6.0' \
     'cuda' \
-    && \
-    spack concretize --force && \
-    spack install --use-cache --no-check-signature --no-checksum --fail-fast --show-log-on-error && \
-    CUDA_ROOT=$(spack location -i cuda) && \
-    # Prefer lib64/stubs if it exists, otherwise use lib/stubs, otherwise fail with a clear error.
-    STUBS_DIR="" && \
-    if [ -d "${CUDA_ROOT}/lib64/stubs" ]; then \
-        STUBS_DIR="${CUDA_ROOT}/lib64/stubs"; \
-    elif [ -d "${CUDA_ROOT}/lib/stubs" ]; then \
-        STUBS_DIR="${CUDA_ROOT}/lib/stubs"; \
-    else \
-        echo "ERROR: CUDA stubs directory not found in ${CUDA_ROOT} (checked lib64/stubs and lib/stubs)" >&2 && \
-        exit 1; \
-    fi && \
-    if [ -d "${STUBS_DIR}" ]; then \
-        echo "Found CUDA stubs at ${STUBS_DIR}"; \
-        ln -sf "${STUBS_DIR}/libcuda.so" "${STUBS_DIR}/libcuda.so.1"; \
-        ln -sf "${STUBS_DIR}/libcuda.so" "/usr/lib/${arch}-linux-gnu/libcuda.so.1"; \
-        spack config add "config:build_environment:prepend_path:LD_LIBRARY_PATH:${STUBS_DIR}"; \
-        spack config add "config:build_environment:prepend_path:LIBRARY_PATH:${STUBS_DIR}"; \
-    else \
-        echo "WARNING: CUDA stubs not found in ${CUDA_ROOT}"; \
-        exit 1; \
-    fi
-
-# Add SKA SDP Spack repo and overlay
-RUN git clone --depth=1 --single-branch --branch=2025.12.3 https://gitlab.com/ska-telescope/sdp/ska-sdp-spack.git /opt/ska-sdp-spack && \
-    rm -rf /opt/ska-sdp-spack/.git && \
-    spack repo add /opt/ska-sdp-spack
-COPY spack-overlay /opt/karabo-spack
-RUN spack repo add /opt/karabo-spack
-
-# Concretize + install everything else.
-RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=locked \
-    --mount=type=cache,target=/opt/spack-source-cache,id=spack-source-cache,sharing=locked \
-    --mount=type=cache,target=/opt/spack-misc-cache,id=spack-misc-cache,sharing=locked \
-    --mount=type=secret,id=spack_oci_username,required=false \
-    --mount=type=secret,id=spack_oci_password,required=false \
-    spack add \
-    'cfitsio@'$CFITSIO_VERSION \
     'boost@'$BOOST_VERSION'+python+numpy' \
+    'hdf5@'$HDF5_VERSION'+hl~mpi' \
+    'py-maturin@1.6.0' \
+    'cfitsio@'$CFITSIO_VERSION \
     'py-astropy@'$ASTROPY_VERSION \
     'py-bdsf@'$BDSF_VERSION \
     'py-scipy@'$SCIPY_VERSION \
     'casacore@'$CASACORE_VERSION'+python' \
-    # 'fftw~mpi~openmp' \
-    'hdf5@'$HDF5_VERSION'+hl~mpi' \
-    'py-pip' \
     'py-joblib' \
     'py-lazy-loader' \
     'py-dask@'$DASK_VERSION \
@@ -340,7 +304,6 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     'py-ska-sdp-func-python@'$SDP_FUNC_PYTHON_VERSION \
     'py-tabulate@'$TABULATE_VERSION \
     'py-xarray@'$XARRAY_VERSION \
-    # 'oskar@'$OSKAR_VERSION'+cuda+python~openmp cuda_arch=75,80,86,90' \ # todo: https://github.com/i4Ds/Karabo-Pipeline/issues/673
     'oskar@'$OSKAR_VERSION'+cuda+python~openmp cuda_arch=75,80,86' \
     'py-pyuvdata@'$PYUVDATA_VERSION'+casa' \
     'py-aratmospy@'$ARATMOSPY_VERSION \
@@ -361,6 +324,29 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     # 'aoflagger@3.4.0' \
     && \
     spack concretize --force && \
+    spack install --use-cache --no-check-signature --no-checksum --fail-fast --show-log-on-error cuda && \
+    CUDA_ROOT=$(spack location -i cuda) && \
+    # Prefer lib64/stubs if it exists, otherwise use lib/stubs, otherwise fail with a clear error.
+    STUBS_DIR="" && \
+    if [ -d "${CUDA_ROOT}/lib64/stubs" ]; then \
+        STUBS_DIR="${CUDA_ROOT}/lib64/stubs"; \
+    elif [ -d "${CUDA_ROOT}/lib/stubs" ]; then \
+        STUBS_DIR="${CUDA_ROOT}/lib/stubs"; \
+    else \
+        echo "ERROR: CUDA stubs directory not found in ${CUDA_ROOT} (checked lib64/stubs and lib/stubs)" >&2 && \
+        exit 1; \
+    fi && \
+    if [ -d "${STUBS_DIR}" ]; then \
+        echo "Found CUDA stubs at ${STUBS_DIR}"; \
+        ln -sf "${STUBS_DIR}/libcuda.so" "${STUBS_DIR}/libcuda.so.1"; \
+        ln -sf "${STUBS_DIR}/libcuda.so" "/usr/lib/${arch}-linux-gnu/libcuda.so.1"; \
+        spack config add "config:build_environment:prepend_path:LD_LIBRARY_PATH:${STUBS_DIR}"; \
+        spack config add "config:build_environment:prepend_path:LIBRARY_PATH:${STUBS_DIR}"; \
+    else \
+        echo "WARNING: CUDA stubs not found in ${CUDA_ROOT}"; \
+        exit 1; \
+    fi && \
+    # install everything else.
     ac_cv_lib_curl_curl_easy_init=no spack install --use-cache --no-check-signature --no-checksum --fail-fast --show-log-on-error && \
     spack gc -y && \
     spack env view regenerate && \
