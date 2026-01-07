@@ -42,7 +42,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     ; # not required because of buildcache: rm -rf /var/lib/apt/lists/*
 
 # Install Rust before any Spack setup, because Spack rust is unbelievably slow.
-ARG RUST_VERSION=1.86.0
+ARG RUST_VERSION=1.80.0
+# rust 1.86 cannot find -lcudart in hyperdrive on arm64
 ENV CARGO_HOME=/opt/cargo \
     RUSTUP_HOME=/opt/rustup
 RUN curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain $RUST_VERSION --no-modify-path && \
@@ -83,13 +84,6 @@ RUN spack compiler find && \
     perl \
     pkgconf \
     rust
-
-# Add SKA SDP Spack repo and overlay
-RUN git clone --depth=1 --single-branch --branch=2025.12.3 https://gitlab.com/ska-telescope/sdp/ska-sdp-spack.git /opt/ska-sdp-spack && \
-    rm -rf /opt/ska-sdp-spack/.git && \
-    spack repo add /opt/ska-sdp-spack
-COPY spack-overlay /opt/karabo-spack
-RUN spack repo add /opt/karabo-spack
 
 ARG NUMPY_VERSION=1.23.5
 # numpy needed by pyuvdata montagepy numexpr scipy rascil scikit-image pywavelets astroml ducc0 imageio ska-sdp-func-python contourpy aratmospy bokeh astroplan coda harp astropy-healpix katbeam tensorboard h5py dask ml_dtypes ska-gridder-nifty-cuda libboost-python-devel python-casacore tifffile pytest-arraydiff shapely bdsf casacore finufft reproject numcodecs matplotlib-base tools21cm libboost-python numba gwcs tensorflow-base pyfftw boost xarray asdf pyside6 photutils astropy bottleneck pandas oskarpy ska-sdp-datamodels ska-sdp-func healpy keras scikit-learn pyerfa eidos asdf-astropy zarr bluebild
@@ -156,18 +150,6 @@ ARG TOOLS21CM_VERSION=2.3.8
 # tools21cm 2.3.8 is available
 ARG TABULATE_VERSION=0.9.0
 # conda has 0.9.0
-ARG NUMEXPR_VERSION=2.10.2
-# conda has 2.10.2
-ARG BOTTLENECK_VERSION=1.3.7
-# TODO: conda has 1.5.0
-# 1.3.7 works too
-ARG SEQFILE_VERSION=0.2.0
-# conda has 0.2.0
-ARG OPENBLAS_VERSION=0.3.25
-# conda has 0.3.30
-# 0.3.27 works on arm64
-# 0.3.28 is the latest supported in builtin
-# SciPy 1.9.x in Spack conflicts with OpenBLAS >=0.3.26; use 0.3.25 to satisfy
 ARG BOOST_VERSION=1.82.0
 # conda has 1.82.0
 # 1.86.0 works too
@@ -185,12 +167,6 @@ ARG PYUVDATA_VERSION=2.4.2
 # conda installs 2.4.2 but it has a bug in MWA beams pointed away from zenith
 # 3.2.1 is the last one that works with Python 3.10 but is yanked and unbuildable
 # 3.2.0 has the beam fix
-ARG ASTROPLAN_VERSION=0.10.1
-# conda uses 0.10.1
-# 0.8 may have worked at some point
-ARG ASTROPY_HEALPIX_VERSION=1.1.2
-# conda uses 1.1.2
-# 1.0.0 was installed at some point
 ARG BDSF_VERSION=1.12.0
 # 1.12.0 is easier to install because of setuptools nonsense
 # conda uses 1.10.2
@@ -213,10 +189,6 @@ ARG REPROJECT_VERSION=0.9.1
 ARG SDP_DATAMODELS_VERSION=0.1.3
 # conda uses 0.1.3
 # 0.2 needed by rascil 1.1, closest is 0.2.10
-ARG SDP_FUNC_VERSION=1.2.2
-# conda uses 0.0.6
-# TODO: earliest 1.1.7 in sdp-spack
-# 0.1.5 and 1.2.2 work too
 ARG SDP_FUNC_PYTHON_VERSION=0.1.4
 # conda uses 0.1.4
 # 0.1.5 works too
@@ -257,13 +229,11 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     spack config add "config:install_tree:root:/opt/software"; \
     # DO NOT MODIFY CONCRETIZATION OR VIEW SETTINGS
     spack config add "concretizer:unify:when_possible"; \
-    spack config add "concretizer:reuse:false"; \
     spack config add "view:/opt/view"; \
     spack config add "config:source_cache:/opt/spack-source-cache"; \
     spack config add "config:misc_cache:/opt/spack-misc-cache"; \
     spack config add "packages:all:target:[${spack_target}]"; \
     spack config add "packages:cuda:version:[${CUDA_VERSION}]"; \
-    spack config add "config:build_jobs:4"; \
     # Local buildcache persisted via BuildKit cache mount (fast retries / iterations).
     # Disable by setting SPACK_BUILDCACHE_LOCAL=0 or empty.
     if [ "${SPACK_BUILDCACHE_LOCAL:-0}" != "0" ] && [ -n "${SPACK_BUILDCACHE_LOCAL:-}" ]; then \
@@ -290,33 +260,74 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     fi; \
     spack mirror add v1.1.0 https://binaries.spack.io/v1.1.0; \
     spack buildcache keys --install --trust || true; \
+    # Layer 1: Concretize + install only the Jupyter stack (and its dependencies).
+    # This pulls in node-js/npm and the large Python dependency tree early, so later
+    # changes don't force rebuilding node-js from source.
+    spack add \
+    'py-jupyterlab-server@2.27:' \
+    'py-jupyterlab@4' \
+    'py-notebook@7' \
+    'py-matplotlib@'$MATPLOTLIB_VERSION \
+    'py-numpy@'$NUMPY_VERSION \
+    'python@'$PYTHON_VERSION \
+    'py-maturin@1.6.0' \
+    'cuda' \
+    && \
+    spack concretize --force && \
+    spack install --use-cache --no-check-signature --no-checksum --fail-fast --show-log-on-error && \
+    CUDA_ROOT=$(spack location -i cuda) && \
+    # Prefer lib64/stubs if it exists, otherwise use lib/stubs, otherwise fail with a clear error.
+    STUBS_DIR="" && \
+    if [ -d "${CUDA_ROOT}/lib64/stubs" ]; then \
+        STUBS_DIR="${CUDA_ROOT}/lib64/stubs"; \
+    elif [ -d "${CUDA_ROOT}/lib/stubs" ]; then \
+        STUBS_DIR="${CUDA_ROOT}/lib/stubs"; \
+    else \
+        echo "ERROR: CUDA stubs directory not found in ${CUDA_ROOT} (checked lib64/stubs and lib/stubs)" >&2 && \
+        exit 1; \
+    fi && \
+    if [ -d "${STUBS_DIR}" ]; then \
+        echo "Found CUDA stubs at ${STUBS_DIR}"; \
+        ln -sf "${STUBS_DIR}/libcuda.so" "${STUBS_DIR}/libcuda.so.1"; \
+        ln -sf "${STUBS_DIR}/libcuda.so" "/usr/lib/${arch}-linux-gnu/libcuda.so.1"; \
+        spack config add "config:build_environment:prepend_path:LD_LIBRARY_PATH:${STUBS_DIR}"; \
+        spack config add "config:build_environment:prepend_path:LIBRARY_PATH:${STUBS_DIR}"; \
+    else \
+        echo "WARNING: CUDA stubs not found in ${CUDA_ROOT}"; \
+        exit 1; \
+    fi
+
+# Add SKA SDP Spack repo and overlay
+RUN git clone --depth=1 --single-branch --branch=2025.12.3 https://gitlab.com/ska-telescope/sdp/ska-sdp-spack.git /opt/ska-sdp-spack && \
+    rm -rf /opt/ska-sdp-spack/.git && \
+    spack repo add /opt/ska-sdp-spack
+COPY spack-overlay /opt/karabo-spack
+RUN spack repo add /opt/karabo-spack
+
+# Concretize + install everything else.
+RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=locked \
+    --mount=type=cache,target=/opt/spack-source-cache,id=spack-source-cache,sharing=locked \
+    --mount=type=cache,target=/opt/spack-misc-cache,id=spack-misc-cache,sharing=locked \
+    --mount=type=secret,id=spack_oci_username,required=false \
+    --mount=type=secret,id=spack_oci_password,required=false \
     spack add \
     'cfitsio@'$CFITSIO_VERSION \
     'boost@'$BOOST_VERSION'+python+numpy' \
     'py-astropy@'$ASTROPY_VERSION \
-    # 'py-astropy-healpix@'$ASTROPY_HEALPIX_VERSION \ # transitive
     'py-bdsf@'$BDSF_VERSION \
-    'py-matplotlib@'$MATPLOTLIB_VERSION \
-    'py-numpy@'$NUMPY_VERSION \
     'py-scipy@'$SCIPY_VERSION \
-    'python@'$PYTHON_VERSION \
     'casacore@'$CASACORE_VERSION'+python' \
     # 'fftw~mpi~openmp' \
     'hdf5@'$HDF5_VERSION'+hl~mpi' \
-    'py-maturin@1.6.0' \
     'py-pip' \
     'py-joblib' \
     'py-lazy-loader' \
-    # 'openblas@'$OPENBLAS_VERSION \ # transitive
-    # 'py-astroplan@'$ASTROPLAN_VERSION \ # transitive
-    # 'py-casacore@'$CASACORE_VERSION \ # transitive
     'py-dask@'$DASK_VERSION \
     'py-distributed@'$DISTRIBUTED_VERSION \
     'py-ducc@'$DUCC_VERSION \
     # h5py is not pulled transitively once we pin photutils; keep explicitly for karabo tests
     'py-h5py@'$H5PY_VERSION \
     'py-healpy@'$HEALPY_VERSION'+internal-healpix' \
-    # 'py-numexpr@'$NUMEXPR_VERSION \ # transitive
     'py-pandas@'$PANDAS_VERSION \
     'py-photutils@'$PHOTUTILS_VERSION \
     'py-rascil@'$RASCIL_VERSION \
@@ -325,25 +336,18 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     'py-tqdm@'$TQDM_VERSION \
     'py-reproject@:0.13' \
     # (0.14+ breaks rascil 1.0.0)
-    # 'py-seqfile@'$SEQFILE_VERSION \ # transitive
     'py-ska-sdp-datamodels@'$SDP_DATAMODELS_VERSION \
     'py-ska-sdp-func-python@'$SDP_FUNC_PYTHON_VERSION \
-    # 'py-ska-sdp-func@'$SDP_FUNC_VERSION \ # transitive
     'py-tabulate@'$TABULATE_VERSION \
     'py-xarray@'$XARRAY_VERSION \
     # 'oskar@'$OSKAR_VERSION'+cuda+python~openmp cuda_arch=75,80,86,90' \ # todo: https://github.com/i4Ds/Karabo-Pipeline/issues/673
     'oskar@'$OSKAR_VERSION'+cuda+python~openmp cuda_arch=75,80,86' \
-    # 'py-bottleneck@'$BOTTLENECK_VERSION \ # transitive
     'py-pyuvdata@'$PYUVDATA_VERSION'+casa' \
     'py-aratmospy@'$ARATMOSPY_VERSION \
     'py-eidos@'$EIDOS_VERSION \
     'py-katbeam@'$KATBEAM_VERSION \
     'wsclean@'$WSCLEAN_VERSION'~mpi+cuda~python' \
     'py-tools21cm@'$TOOLS21CM_VERSION \
-    'py-jupyterlab-server@2.27:' \
-    'py-jupyterlab@4' \
-    'py-notebook@7' \
-    # NOTE: py-karabo@$KARABO_VERSION removed - installing from local source instead \
     'py-dask-mpi' \
     'py-mpi4py' \
     'py-packaging' \
@@ -357,26 +361,7 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     # 'aoflagger@3.4.0' \
     && \
     spack concretize --force && \
-    # Install cuda first to get stubs location
-    spack install --use-cache --no-check-signature --no-checksum --fail-fast --fresh cuda && \
-    CUDA_ROOT=$(spack location -i cuda) && \
-    STUBS_DIR="${CUDA_ROOT}/lib64/stubs" && \
-    [ -d "${STUBS_DIR}" ] || STUBS_DIR="${CUDA_ROOT}/lib/stubs" && \
-    if [ -d "${STUBS_DIR}" ]; then \
-        echo "Found CUDA stubs at ${STUBS_DIR}"; \
-        ln -sf "${STUBS_DIR}/libcuda.so" "${STUBS_DIR}/libcuda.so.1"; \
-        ln -sf "${STUBS_DIR}/libcuda.so" "/usr/lib/${arch}-linux-gnu/libcuda.so.1"; \
-        spack config add "config:build_environment:prepend_path:LD_LIBRARY_PATH:${STUBS_DIR}"; \
-        spack config add "config:build_environment:prepend_path:LIBRARY_PATH:${STUBS_DIR}"; \
-        export LD_LIBRARY_PATH="${STUBS_DIR}:${LD_LIBRARY_PATH}"; \
-        export LIBRARY_PATH="${STUBS_DIR}:${LIBRARY_PATH}"; \
-    else \
-        echo "WARNING: CUDA stubs not found in ${CUDA_ROOT}"; \
-        exit 1; \
-    fi && \
-    # CUDA HACK: Link against stubs (libcuda.so.1) to allow building wsclean/idg without a GPU driver present in Docker
-    ac_cv_lib_curl_curl_easy_init=no spack install --use-cache --only dependencies --no-check-signature --no-checksum --fail-fast --fresh --show-log-on-error && \
-    ac_cv_lib_curl_curl_easy_init=no spack install --use-cache --no-check-signature --no-checksum --fail-fast --fresh --show-log-on-error && \
+    ac_cv_lib_curl_curl_easy_init=no spack install --use-cache --no-check-signature --no-checksum --fail-fast --show-log-on-error && \
     spack gc -y && \
     spack env view regenerate && \
     # If we're using an OCI buildcache, publish the buildcache index so *pulling*
