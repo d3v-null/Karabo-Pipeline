@@ -207,7 +207,7 @@ ARG EIDOS_VERSION=1.1.0
 ARG KATBEAM_VERSION=0.1.0
 ARG KARABO_VERSION=0.34.0
 ARG WSCLEAN_VERSION=3.4
-ARG CUDA_VERSION=12.5.1
+ARG CUDA_VERSION=12.2.2
 
 # Create Spack environment and install deps
 ARG SPACK_TARGET=""
@@ -240,7 +240,6 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     spack config add "config:source_cache:/opt/spack-source-cache"; \
     spack config add "config:misc_cache:/opt/spack-misc-cache"; \
     spack config add "packages:all:target:[${spack_target}]"; \
-    spack config add "packages:cuda:version:[${CUDA_VERSION}]"; \
     # Local buildcache persisted via BuildKit cache mount (fast retries / iterations).
     # Disable by setting SPACK_BUILDCACHE_LOCAL=0 or empty.
     if [ "${SPACK_BUILDCACHE_LOCAL:-0}" != "0" ] && [ -n "${SPACK_BUILDCACHE_LOCAL:-}" ]; then \
@@ -275,7 +274,7 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     'py-jupyterlab@4' \
     'py-notebook@7' \
     'py-matplotlib@'$MATPLOTLIB_VERSION \
-    'cuda' \
+    'cuda@'$CUDA_VERSION \
     'boost@'$BOOST_VERSION'+python+numpy' \
     'hdf5@'$HDF5_VERSION'+hl~mpi' \
     'py-maturin@1.6.0' \
