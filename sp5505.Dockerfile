@@ -206,8 +206,9 @@ ARG RASCIL_VERSION=1.0.0
 ARG ARATMOSPY_VERSION=1.0.0
 ARG EIDOS_VERSION=1.1.0
 ARG KATBEAM_VERSION=0.1.0
-ARG KARABO_VERSION=0.34.0
-ARG WSCLEAN_VERSION=3.4
+ARG WSCLEAN_VERSION=3.5
+# karabo uses wsclean 3.4, but 3.5 selected for everybeam 0.7.4 compatibility
+ARG EVERYBEAM_VERSION=0.7.4
 ARG CUDA_VERSION=12.2.2
 
 # Create Spack environment and install deps
@@ -309,6 +310,7 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     'py-aratmospy@'$ARATMOSPY_VERSION \
     'py-eidos@'$EIDOS_VERSION \
     'py-katbeam@'$KATBEAM_VERSION \
+    'everybeam@'$EVERYBEAM_VERSION \
     'wsclean@'$WSCLEAN_VERSION'~mpi+cuda~python' \
     'py-tools21cm@'$TOOLS21CM_VERSION \
     'py-dask-mpi' \
