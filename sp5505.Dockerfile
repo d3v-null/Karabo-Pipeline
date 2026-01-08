@@ -339,11 +339,6 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     # Create libcuda.so.1 symlink for the stubs
     ln -sf "${LIB_DIR}/stubs/libcuda.so" "${LIB_DIR}/stubs/libcuda.so.1" && \
     ln -sf "${LIB_DIR}/stubs/libcuda.so" "/usr/lib/${arch}-linux-gnu/libcuda.so.1" && \
-    # Add paths to Spack build environment for:
-    #  -> Stubs (for libcuda.so / -lcuda)
-    #  -> Real libraries (for libcudart.so / -lcudart, required by hyperbeam)
-    spack config add "config:build_environment:prepend_path:LD_LIBRARY_PATH:${LIB_DIR}/stubs:${LIB_DIR}" && \
-    spack config add "config:build_environment:prepend_path:LIBRARY_PATH:${LIB_DIR}/stubs:${LIB_DIR}" && \
     # install everything else.
     ac_cv_lib_curl_curl_easy_init=no spack install --use-cache --no-check-signature --no-checksum --fail-fast --show-log-on-error && \
     spack gc -y && \

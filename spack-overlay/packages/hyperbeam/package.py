@@ -104,6 +104,21 @@ class Hyperbeam(Package, ROCmPackage, CudaPackage):
                 pass
             env.set("HYPERBEAM_CUDA_COMPUTE", cuda_arch)
             cuda_dir = self.spec["cuda"].prefix
+
+            # Add CUDA library paths for the linker (needed for ARM builds)
+            lib_dirs = []
+            if os.path.isdir(f"{cuda_dir}/lib64"):
+                lib_dirs.append(f"{cuda_dir}/lib64")
+                if os.path.isdir(f"{cuda_dir}/lib64/stubs"):
+                    lib_dirs.append(f"{cuda_dir}/lib64/stubs")
+            elif os.path.isdir(f"{cuda_dir}/lib"):
+                lib_dirs.append(f"{cuda_dir}/lib")
+                if os.path.isdir(f"{cuda_dir}/lib/stubs"):
+                    lib_dirs.append(f"{cuda_dir}/lib/stubs")
+
+            for d in lib_dirs:
+                env.prepend_path("LIBRARY_PATH", d)
+                env.prepend_path("LD_LIBRARY_PATH", d)
         if self.spec.satisfies("~portable"):
             env.append_flags("RUSTFLAGS", f"-C target-cpu=native")
 
