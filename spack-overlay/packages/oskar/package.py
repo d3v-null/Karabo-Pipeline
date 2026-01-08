@@ -69,9 +69,9 @@ class Oskar(CMakePackage, CudaPackage):
     # OpenCL dependency when variant is enabled
     depends_on("opencl", when="+opencl")
     # Casacore dependency for MS functionality
-    # using 3.5 because casacore 3.7 headers require C++14 constexpr semantics,
+    # casacore 3.7 headers require C++14 constexpr semantics,
     # but OSKAR is being compiled with an older C++ standard.
-    depends_on("casacore@3.5.0:3.5", when="+casacore")
+    depends_on("casacore@3.5.0:3.6", when="+casacore")
 
     def cmake_args(self):
         """Configure CMake build arguments."""

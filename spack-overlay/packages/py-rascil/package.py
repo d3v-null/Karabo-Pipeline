@@ -25,7 +25,7 @@ class PyRascil(PythonPackage):
     depends_on("py-astroplan@0.8:", type=("build", "run"))
     depends_on("py-astropy@5.1:", type=("build", "run"))
     depends_on("py-bdsf@1.12.0", type=("build", "run"))
-    depends_on("py-casacore@3.5.0", type=("build", "run"))
+    depends_on("py-casacore@3.5.0:3.6", type=("build", "run"))
     depends_on("py-dask-memusage", type=("build", "run"))
     depends_on("py-dask@2022.10.2:", type=("build", "run"))
     depends_on("py-dask-memusage@1.1:", type=("build", "run"))
@@ -43,7 +43,7 @@ class PyRascil(PythonPackage):
     depends_on("py-xarray@2022.12.0:2023.2.0", type=("build", "run"))  # Match py-ska-sdp-datamodels constraint
 
     # Transitively required C/C++ libs via other Python deps
-    depends_on("casacore@3.5.0:+python")
+    depends_on("casacore@3.5.0:3.6+python")
     depends_on("cfitsio")
     depends_on("fftw")
     depends_on("hdf5@1.12:")

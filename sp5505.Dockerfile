@@ -143,8 +143,9 @@ ARG ASTROPY_VERSION=5.1.1
 # astropy 6 deprecates utils.decorators which is used by healpy 1.16.2
 # astropy>5.2 has no ._erfa
 # 5.2.2 works with numpy 1.23.5
-ARG CASACORE_VERSION=3.5.0
+ARG CASACORE_VERSION=3.6.1
 # casacore needed by everybeam wsclean oskar rascil
+# conda has 3.5.0, issues compiling 3.7
 ARG HEALPY_VERSION=1.16.6
 # healpy needed by rascil ska-sdp-func-python aratmospy bdsf tools21cm gwcs photutils ska-sdp-datamodels eidos bluebild
 # conda has 1.16.6

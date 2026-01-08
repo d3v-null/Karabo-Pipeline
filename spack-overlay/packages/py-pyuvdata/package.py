@@ -110,7 +110,7 @@ class PyPyuvdata(PythonPackage):
     #     depends_on("py-novas-de405@3.1:", type=("build", "run"))
 
     with when("+casa"):
-        depends_on("py-casacore@3.5.0:", type=("build", "run"))
+        depends_on("py-casacore@3.5.0:3.6", type=("build", "run"))
         # TODO: depends_on("py-casacore@3.5.2:", type=("build", "run"), when="@2.4.3:")
 
     # Basic import test
