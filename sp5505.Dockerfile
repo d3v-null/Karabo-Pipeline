@@ -303,7 +303,7 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     'py-ska-sdp-func-python@'$SDP_FUNC_PYTHON_VERSION \
     'py-tabulate@'$TABULATE_VERSION \
     'py-xarray@'$XARRAY_VERSION \
-    'oskar@'$OSKAR_VERSION'+cuda+python~openmp cuda_arch=75,80,86' \
+    'oskar@'$OSKAR_VERSION'+cuda+python~openmp cuda_arch=75,80,86,90' \
     'py-pyuvdata@'$PYUVDATA_VERSION'+casa' \
     'py-aratmospy@'$ARATMOSPY_VERSION \
     'py-eidos@'$EIDOS_VERSION \
