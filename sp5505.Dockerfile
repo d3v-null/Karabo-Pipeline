@@ -323,7 +323,8 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     # not karabo-related
     'hyperbeam+cuda+python cuda_arch=75,80,86,90' \
     'hyperdrive+cuda cuda_arch=75,80,86,90' \
-    # 'aoflagger@3.4.0' \
+    'aoflagger@3.4.0' \
+    # 'dp3' \
     && \
     spack concretize --force && \
     # first install cuda to get the stubs
