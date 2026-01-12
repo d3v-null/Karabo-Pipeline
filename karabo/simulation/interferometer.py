@@ -344,7 +344,9 @@ class InterferometerSimulation:
             else:
                 assert_never(visibility_format)
         else:
-            os.makedirs(os.path.dirname(visibility_path), exist_ok=True)
+            dirname = os.path.dirname(visibility_path)
+            if dirname:
+                os.makedirs(dirname, exist_ok=True)
 
         if not VisibilityFormatUtil.is_valid_path_for_format(
             visibility_path,

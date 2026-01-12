@@ -209,6 +209,12 @@ Examples:
         help="Enable GPU acceleration (if available)",
     )
 
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Enable debug mode",
+    )
+
     return parser.parse_args()
 
 
@@ -550,6 +556,84 @@ def main():
     print("Running simulation...")
     print()
     try:
+        if backend == SimulatorBackend.OSKAR:
+            import json
+            import os
+
+            # Write sky model to OSM
+            osm_path = "oskar_model.osm"
+            with open(osm_path, "w") as f:
+                # Write header
+                f.write("#\n")
+                f.write("#  RA,    Dec,   I,    Q,    U,    V,   freq0, spix,  RM,      maj,      min,      pa\n")
+                f.write("# (deg), (deg), (Jy), (Jy), (Jy), (Jy), (Hz), (-), (rad/m^2), (arcsec), (arcsec), (deg)\n")
+                f.write("#\n\n")
+
+                # Write data
+                # SkyModel sources structure:
+                # [0] right ascension (deg)
+                # [1] declination (deg)
+                # [2] stokes I Flux (Jy)
+                # [3] stokes Q Flux (Jy)
+                # [4] stokes U Flux (Jy)
+                # [5] stokes V Flux (Jy)
+                # [6] reference_frequency (Hz)
+                # [7] spectral index (N/A)
+                # [8] rotation measure (rad / m^2)
+                # [9] major axis FWHM (arcsec)
+                # [10] minor axis FWHM (arcsec)
+                # [11] position angle (deg)
+                # [12] true redshift (not in OSM)
+                # [13] observed redshift (not in OSM)
+                # [14] source id (not in OSM)
+
+                # We need columns 0-11 for the OSM format
+                # The columns match exactly with SkyModel sources structure for the first 12 columns
+
+                if sky_model.sources is not None:
+                    sources_np = sky_model.sources.values
+                    for row in sources_np:
+                        # Format each value. Use general formatting but ensure spacing
+                        # Adjust formatting to look nice like the example
+                        line = (
+                            f"{row[0]:.6f} {row[1]:.6f} "
+                            f"{row[2]:.6g} {row[3]:.6g} {row[4]:.6g} {row[5]:.6g} "
+                            f"{row[6]:.6e} {row[7]:.6g} {row[8]:.6g} "
+                            f"{row[9]:.6g} {row[10]:.6g} {row[11]:.6g}\n"
+                        )
+                        f.write(line)
+                    f.write("\n")
+
+            print(f"Sky model written to {osm_path}")
+
+            filename_key = "ms_filename" if visibility_format == "MS" else "oskar_vis_filename"
+            # pylint: disable=protected-access
+            interferometer_params = simulation._InterferometerSimulation__get_OSKAR_settings_tree(
+                input_telpath=telescope.path,
+                visibility_filename_key=filename_key,
+                visibility_path=output_path,
+            )
+            observation_params = observation.get_OSKAR_settings_tree()
+            params_total = {**interferometer_params, **observation_params}
+
+            # Add sky model path to params
+            if "sky" not in params_total:
+                params_total["sky"] = {}
+            params_total["sky"]["oskar_sky_model/file"] = os.path.realpath(osm_path)
+
+            # Write to INI file
+            ini_path = "oskar_sim_interferometer.ini"
+            with open(ini_path, "w") as f:
+                # Top-level keys in params_total correspond to sections
+                for section, settings in params_total.items():
+                    f.write(f"\n[{section}]\n")
+                    for key, value in settings.items():
+                        # Handle nested keys with slashes which OSKAR supports in Python dicts
+                        # but typically represent subgroups in INI
+                        f.write(f"{key}={value}\n")
+
+            print(f"OSKAR settings written to {ini_path}")
+
         visibility = simulation.run_simulation(
             telescope,
             sky_model,
@@ -563,6 +647,8 @@ def main():
         print(f"  Format: {visibility.format}")
 
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         print(f"\n✗ Error during simulation: {e}", file=sys.stderr)
         sys.exit(1)
 
