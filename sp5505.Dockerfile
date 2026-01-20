@@ -210,6 +210,8 @@ ARG WSCLEAN_VERSION=3.5
 # karabo uses wsclean 3.4, but 3.5 selected for everybeam 0.7.4 compatibility
 ARG EVERYBEAM_VERSION=0.7.4
 ARG CUDA_VERSION=12.2.2
+ARG CUDA_ARCH="75,80,86,90"
+# covers RTX2000, A100, RTX3000, GH200
 
 # Create Spack environment and install deps
 ARG SPACK_TARGET=""
@@ -268,6 +270,23 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     fi; \
     spack mirror add v1.1.0 https://binaries.spack.io/v1.1.0; \
     spack buildcache keys --install --trust || true; \
+    WSCLEAN_SPEC="wsclean@${WSCLEAN_VERSION}~mpi~python"; \
+    IDG_SPEC="idg"; \
+    if [ -n "${CUDA_ARCH}" ]; then \
+        CUDA_PKG="cuda@${CUDA_VERSION}"; \
+        CUDA_SUFFIX="+cuda cuda_arch=${CUDA_ARCH}"; \
+        # idg and wsclean don't support cuda_arch
+        WSCLEAN_SPEC="${WSCLEAN_SPEC}+cuda"; \
+        IDG_SPEC="${IDG_SPEC}+cuda"; \
+    else \
+        CUDA_PKG=""; \
+        CUDA_SUFFIX="~cuda"; \
+        WSCLEAN_SPEC="${WSCLEAN_SPEC}~cuda"; \
+        IDG_SPEC="${IDG_SPEC}~cuda"; \
+    fi; \
+    OSKAR_SPEC="oskar@${OSKAR_VERSION}+python~openmp${CUDA_SUFFIX}"; \
+    HYPERBEAM_SPEC="hyperbeam+python${CUDA_SUFFIX}"; \
+    HYPERDRIVE_SPEC="hyperdrive${CUDA_SUFFIX}"; \
     spack add \
     'python@'$PYTHON_VERSION \
     'py-pip' \
@@ -276,7 +295,7 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     'py-jupyterlab@4' \
     'py-notebook@7' \
     'py-matplotlib@'$MATPLOTLIB_VERSION \
-    'cuda@'$CUDA_VERSION \
+    ${CUDA_PKG:+"$CUDA_PKG"} \
     'boost@'$BOOST_VERSION'+python+numpy' \
     'hdf5@'$HDF5_VERSION'+hl~mpi' \
     'py-maturin@1.6.0' \
@@ -305,13 +324,13 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     'py-ska-sdp-func-python@'$SDP_FUNC_PYTHON_VERSION \
     'py-tabulate@'$TABULATE_VERSION \
     'py-xarray@'$XARRAY_VERSION \
-    'oskar@'$OSKAR_VERSION'+cuda+python~openmp cuda_arch=75,80,86,90' \
+    "${OSKAR_SPEC}" \
     'py-pyuvdata@'$PYUVDATA_VERSION'+casa' \
     'py-aratmospy@'$ARATMOSPY_VERSION \
     'py-eidos@'$EIDOS_VERSION \
     'py-katbeam@'$KATBEAM_VERSION \
     'everybeam@'$EVERYBEAM_VERSION \
-    'wsclean@'$WSCLEAN_VERSION'~mpi+cuda~python' \
+    "${WSCLEAN_SPEC}" \
     'py-tools21cm@'$TOOLS21CM_VERSION \
     'py-dask-mpi' \
     'py-mpi4py' \
@@ -321,28 +340,31 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     # for testing karabo itself:
     'py-pytest@8' \
     # not karabo-related
-    'hyperbeam+cuda+python cuda_arch=75,80,86,90' \
-    'hyperdrive+cuda cuda_arch=75,80,86,90' \
+    "${HYPERBEAM_SPEC}" \
+    "${HYPERDRIVE_SPEC}" \
     'aoflagger@3.4.0' \
     'dp3+idg' \
+    "${IDG_SPEC}" \
     && \
     spack concretize --force && \
-    # first install cuda to get the stubs
-    spack install --use-cache --no-check-signature --no-checksum --fail-fast --show-log-on-error cuda && \
-    # Locate CUDA libraries and stubs (lib64/stubs or lib/stubs)
-    CUDA_ROOT=$(spack location -i cuda) && \
-    if [ -d "${CUDA_ROOT}/lib64/stubs" ]; then \
-        LIB_DIR="${CUDA_ROOT}/lib64"; \
-    elif [ -d "${CUDA_ROOT}/lib/stubs" ]; then \
-        LIB_DIR="${CUDA_ROOT}/lib"; \
-    else \
-        echo "ERROR: CUDA stubs directory not found in ${CUDA_ROOT}. $(ls -laR ${CUDA_ROOT})" >&2; \
-        exit 1; \
+    if [ -n "${CUDA_ARCH}" ]; then \
+        # first install cuda to get the stubs
+        spack install --use-cache --no-check-signature --no-checksum --fail-fast --show-log-on-error cuda && \
+        # Locate CUDA libraries and stubs (lib64/stubs or lib/stubs)
+        CUDA_ROOT=$(spack location -i cuda) && \
+        if [ -d "${CUDA_ROOT}/lib64/stubs" ]; then \
+            LIB_DIR="${CUDA_ROOT}/lib64"; \
+        elif [ -d "${CUDA_ROOT}/lib/stubs" ]; then \
+            LIB_DIR="${CUDA_ROOT}/lib"; \
+        else \
+            echo "ERROR: CUDA stubs directory not found in ${CUDA_ROOT}. $(ls -laR ${CUDA_ROOT})" >&2; \
+            exit 1; \
+        fi && \
+        echo "Found CUDA stubs at ${LIB_DIR}/stubs" && \
+        # Create libcuda.so.1 symlink for the stubs
+        ln -sf "${LIB_DIR}/stubs/libcuda.so" "${LIB_DIR}/stubs/libcuda.so.1" && \
+        ln -sf "${LIB_DIR}/stubs/libcuda.so" "/usr/lib/${arch}-linux-gnu/libcuda.so.1"; \
     fi && \
-    echo "Found CUDA stubs at ${LIB_DIR}/stubs" && \
-    # Create libcuda.so.1 symlink for the stubs
-    ln -sf "${LIB_DIR}/stubs/libcuda.so" "${LIB_DIR}/stubs/libcuda.so.1" && \
-    ln -sf "${LIB_DIR}/stubs/libcuda.so" "/usr/lib/${arch}-linux-gnu/libcuda.so.1" && \
     # install everything else.
     ac_cv_lib_curl_curl_easy_init=no spack install --use-cache --no-check-signature --no-checksum --fail-fast --show-log-on-error && \
     spack gc -y && \

@@ -18,12 +18,14 @@ SKIP_TESTS=${SKIP_TESTS:-0}
 SPACK_BUILDCACHE_LOCAL=${SPACK_BUILDCACHE_LOCAL:-1}
 SPACK_TARGET=${SPACK_TARGET:-""}
 SPACK_MIRROR_OCI=${SPACK_MIRROR_OCI:-""}
+CUDA_ARCH=${CUDA_ARCH:-"75,80,86,90"}
 DOCKERFILE=${DOCKERFILE:-"sp5505.Dockerfile"}
 
 echo "Configuration:"
 echo "  Image name: $IMAGE_NAME"
 echo "  Dockerfile: $DOCKERFILE"
 echo "  Skip tests: $SKIP_TESTS"
+echo "  CUDA Arch:  $CUDA_ARCH"
 echo ""
 
 echo -e "${GREEN}Starting build...${NC}"
@@ -42,6 +44,7 @@ docker build \
   --build-arg SPACK_BUILDCACHE_LOCAL="${SPACK_BUILDCACHE_LOCAL}" \
   --build-arg SPACK_TARGET="${SPACK_TARGET}" \
   --build-arg SPACK_MIRROR_OCI="${SPACK_MIRROR_OCI}" \
+  --build-arg CUDA_ARCH="${CUDA_ARCH}" \
   -t "${IMAGE_NAME}" \
   -f "${DOCKERFILE}" \
   . 2>&1 | tee "${LOG_FILE}"
