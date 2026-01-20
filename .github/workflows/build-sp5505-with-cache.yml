@@ -150,8 +150,8 @@ jobs:
             SKIP_TESTS=${{ env.SKIP_TESTS }}
             SPACK_TARGET=${{ matrix.platform == 'linux/amd64' && 'x86_64_v2' || 'aarch64' }}
             SPACK_MIRROR_OCI=oci://${{ env.REGISTRY }}/${{ github.repository_owner }}/sp5505-spack-buildcache-cpu
-            CUDA_ARCH=""
-            CUDA_VERSION=""
+            CUDA_ARCH=
+            CUDA_VERSION=
             PIP_EXTRAS=${{ env.PIP_EXTRAS }}
             PIP_GIT_EXTRAS=${{ env.PIP_GIT_EXTRAS }}
           secrets: |
