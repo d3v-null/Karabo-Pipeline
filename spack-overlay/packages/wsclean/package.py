@@ -45,6 +45,7 @@ class Wsclean(CMakePackage):
     # a dependency on it. When the flag is off, WSClean will still build
     # wsclean-mp if there's an MPI implementation outside the Spack tree.
     variant("mpi", default=True, description="Use MPI from Spack")
+    variant("portable", default=True, description="Disable native instruction set optimizations")
 
     depends_on("c", type="build", when="@:3.6.0")
     depends_on("cxx", type="build")
@@ -83,6 +84,9 @@ class Wsclean(CMakePackage):
         # stale system MPI configurations
         if "~mpi" in self.spec:
             args.append(self.define("CMAKE_DISABLE_FIND_PACKAGE_MPI", "ON"))
+
+        if "+portable" in self.spec:
+            args.append(self.define("PORTABLE", "ON"))
 
         return args
 
