@@ -514,12 +514,17 @@ RUN spack test run 'py-astropy-healpix' && \
 # TODO: Verify hyperbeam (Spack-installed) can be imported
 # RUN python -c "from mwa_hyperbeam import FEEBeam; print('mwa_hyperbeam (Spack) import successful')"
 
-ARG PIP_EXTRAS="psrecord==1.4 click aoquality git+https://github.com/d3v-null/SSINS.git@eavils-copilot git+https://github.com/d3v-null/mwa_qa.git@dev git+https://github.com/tjgalvin/fits_warp.git losoto"
+ARG PIP_EXTRAS="psrecord==1.4 click aoquality losoto kneed seaborn"
+ARG PIP_GIT_EXTRAS="git+https://github.com/d3v-null/SSINS.git@eavils-copilot git+https://github.com/d3v-null/mwa_qa.git@dev git+https://github.com/tjgalvin/fits_warp.git"
 
 # Install optional extras via pip (not available in Spack)
 # Use python -m pip instead of pip directly to avoid shebang issues!
+# Install cython first as it's required by tools21cm metadata check
+# Install git packages with --no-deps to avoid pulling in incompatible numpy/pandas/matplotlib
 RUN --mount=type=cache,target=/root/.cache/pip \
-    [ -z "${PIP_EXTRAS}" ] || python -m pip install ${PIP_EXTRAS}
+    python -m pip install cython && \
+    ( [ -z "${PIP_EXTRAS}" ] || python -m pip install ${PIP_EXTRAS} ) && \
+    ( [ -z "${PIP_GIT_EXTRAS}" ] || python -m pip install --no-deps ${PIP_GIT_EXTRAS} )
 
 # distributed 2022.12.1 requires msgpack>=0.6.0, which is not installed.
 # rascil 1.0.0 requires h5py<3.8,>=3.7, but you have h5py 3.12.1 which is incompatible.
