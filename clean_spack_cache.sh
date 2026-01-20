@@ -4,9 +4,14 @@ set -euo pipefail
 # Script to clean (delete) the Spack OCI buildcache stored in GHCR.
 # Uses 'gh' CLI to delete the package versions.
 #
-# Usage: ./clean_spack_cache.sh [package_name] [--force]
+# Usage: ./clean_spack_cache.sh [options] [package_name]
 #
-# Defaults to 'sp5505-spack-buildcache' if not provided.
+# Options:
+#   --force             Skip confirmation prompt
+#   --older-than DAYS   Delete versions older than DAYS (default: delete all)
+#   --keep-last N       Keep the N most recent versions (default: 0, delete all)
+#
+# Defaults to 'sp5505-spack-buildcache' if package_name is not provided.
 #
 # The CI pipeline uses a multi-layer caching strategy including Docker BuildKit,
 # pip, system packages, and a remote Spack OCI buildcache stored in GHCR.
@@ -23,14 +28,39 @@ NC='\033[0m'
 
 FORCE=0
 PACKAGE_NAME=""
+OLDER_THAN_DAYS=""
+KEEP_LAST=""
 
 # Parse arguments
-for arg in "$@"; do
-    if [ "$arg" == "--force" ]; then
-        FORCE=1
-    else
-        PACKAGE_NAME="$arg"
-    fi
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --force)
+            FORCE=1
+            shift
+            ;;
+        --older-than)
+            OLDER_THAN_DAYS="$2"
+            shift 2
+            ;;
+        --keep-last)
+            KEEP_LAST="$2"
+            shift 2
+            ;;
+        -*)
+            echo "Unknown option: $1"
+            echo "Usage: ./clean_spack_cache.sh [--force] [--older-than DAYS] [--keep-last N] [package_name]"
+            exit 1
+            ;;
+        *)
+            if [ -z "$PACKAGE_NAME" ]; then
+                PACKAGE_NAME="$1"
+            else
+                echo "Error: Package name already specified as '$PACKAGE_NAME', unexpected argument '$1'"
+                exit 1
+            fi
+            shift
+            ;;
+    esac
 done
 
 if ! command -v gh &> /dev/null; then
@@ -60,8 +90,24 @@ fi
 echo "Target: $USER_NAME/$PACKAGE_NAME"
 
 if [ "$FORCE" -ne 1 ]; then
-    echo -e "${YELLOW}WARNING: This will delete ALL versions of package '$USER_NAME/$PACKAGE_NAME'.${NC}"
-    echo "This effectively wipes the Spack buildcache."
+    MSG="WARNING: This will delete versions of package '$USER_NAME/$PACKAGE_NAME'"
+
+    if [ -n "$OLDER_THAN_DAYS" ]; then
+        MSG="$MSG older than $OLDER_THAN_DAYS days"
+    fi
+
+    if [ -n "$KEEP_LAST" ]; then
+        MSG="$MSG, keeping the last $KEEP_LAST versions"
+    fi
+
+    if [ -z "$OLDER_THAN_DAYS" ] && [ -z "$KEEP_LAST" ]; then
+        MSG="$MSG (ALL VERSIONS)"
+        echo -e "${YELLOW}$MSG.${NC}"
+        echo "This effectively wipes the Spack buildcache."
+    else
+        echo -e "${YELLOW}$MSG.${NC}"
+    fi
+
     echo "Are you sure? (type 'yes' to confirm)"
     read -r CONFIRM
     if [ "$CONFIRM" != "yes" ]; then
@@ -71,21 +117,52 @@ if [ "$FORCE" -ne 1 ]; then
 fi
 
 echo "Fetching versions..."
-# Get all version IDs
-VERSION_IDS=$(gh api "users/$USER_NAME/packages/container/$PACKAGE_NAME/versions" --paginate -q '.[].id')
+
+# Build jq filter based on criteria
+JQ_FILTER='.'
+
+# Filter by age if requested
+if [ -n "$OLDER_THAN_DAYS" ]; then
+    # Calculate cutoff date in ISO8601 format
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        CUTOFF_DATE=$(date -v-${OLDER_THAN_DAYS}d -u +"%Y-%m-%dT%H:%M:%SZ")
+    else
+        CUTOFF_DATE=$(date -d "-${OLDER_THAN_DAYS} days" -u +"%Y-%m-%dT%H:%M:%SZ")
+    fi
+    echo "Filtering versions older than $CUTOFF_DATE..."
+    JQ_FILTER="$JQ_FILTER | map(select(.created_at < \"$CUTOFF_DATE\"))"
+fi
+
+# Apply keep-last if requested (sort by created_at desc, then drop first N)
+if [ -n "$KEEP_LAST" ]; then
+    echo "Keeping last $KEEP_LAST versions..."
+    # Sort by creation date descending, then skip the first N
+    JQ_FILTER="$JQ_FILTER | sort_by(.created_at) | reverse | .[$KEEP_LAST:]"
+fi
+
+# Final projection to get IDs
+JQ_FILTER="$JQ_FILTER | .[].id"
+
+# Get version IDs with filtering
+VERSION_IDS=$(gh api "users/$USER_NAME/packages/container/$PACKAGE_NAME/versions" --paginate --jq "$JQ_FILTER")
 
 if [ -z "$VERSION_IDS" ]; then
-    echo "No versions found for package $PACKAGE_NAME."
+    echo "No matching versions found for package $PACKAGE_NAME."
     exit 0
 fi
 
 COUNT=$(echo "$VERSION_IDS" | wc -l)
-echo "Found $COUNT versions. Deleting..."
+echo "Found $COUNT versions. Deleting in parallel (batch size 10)..."
 
-for id in $VERSION_IDS; do
+# Export variables for subshells
+export USER_NAME
+export PACKAGE_NAME
+
+# Use xargs to run in parallel
+echo "$VERSION_IDS" | xargs -P 10 -I {} bash -c '
+    id="{}"
     echo "Deleting version $id..."
-    # We use || true to continue if one fails (e.g. race condition)
-    gh api -X DELETE "users/$USER_NAME/packages/container/$PACKAGE_NAME/versions/$id" || true
-done
+    gh api -X DELETE "users/$USER_NAME/packages/container/$PACKAGE_NAME/versions/$id" >/dev/null 2>&1 || echo "Failed to delete $id"
+'
 
 echo -e "${GREEN}Cache cleaned!${NC}"

@@ -639,27 +639,6 @@ RUN if [ "${SKIP_TESTS:-0}" = "1" ]; then exit 0; fi; \
     find /opt/Karabo-Pipeline -type d -name '__pycache__' -exec rm -rf {} + 2>/dev/null || true && \
     find /opt/Karabo-Pipeline -type d -name '.pytest_cache' -exec rm -rf {} + 2>/dev/null || true
 
-# ss.s..........................................................ssssssssss [ 20%]
-# s...................................s.................................F
-# =================================== FAILURES ===================================
-# __________________________ test_source_detection_plot __________________________
-# Karabo-Pipeline/karabo/test/test_source_detection.py:73: in test_source_detection_plot
-#     np.testing.assert_array_equal(
-# /opt/software/linux-ubuntu24.04-icelake/gcc-13.3.0/python-3.10.14-uxbm3oqvyzmduqqgdgab7log6e7rsidv/lib/python3.10/contextlib.py:79: in inner
-#     return func(*args, **kwds)
-# E   AssertionError:
-# E   Arrays are not equal
-# E   The assignment has changed!
-# E   Mismatched elements: 33 / 111 (29.7%)
-# E   Max absolute difference: 23.
-# E   Max relative difference: 4.4
-# E    x: array([[-1.      ,  7.      ,       inf],
-# E          [-1.      ,  5.      ,       inf],
-# E          [-1.      , 13.      ,       inf],...
-# E    y: array([[-1.      , 18.      ,       inf],
-# E          [-1.      , 20.      ,       inf],
-# E          [-1.      , 21.      ,       inf],...
-
 # download latest Leap_Second.dat, IERS finals2000A.all
 RUN python -c "from astropy.time import Time; t=Time.now(); from astropy.utils.data import download_file; download_file('http://data.astropy.org/coordinates/sites.json', cache=True); print(t.gps, t.ut1)"
 
