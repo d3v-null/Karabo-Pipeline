@@ -3,6 +3,27 @@ name: Build SP5505 Container with Caching
 
 on:
   workflow_dispatch:
+    inputs:
+      cuda_arch:
+        description: "CUDA architectures (semicolon separated)"
+        required: false
+        default: "75,80,86,90"
+      cuda_version:
+        description: "CUDA version"
+        required: false
+        default: "12.2.2"
+      skip_tests:
+        description: "Skip tests during build (1=yes, 0=no)"
+        required: false
+        default: "0"
+      pip_extras:
+        description: "Additional pip packages to install"
+        required: false
+        default: "psrecord==1.4 click aoquality losoto kneed seaborn"
+      pip_git_extras:
+        description: "Additional pip git packages"
+        required: false
+        default: "git+https://github.com/d3v-null/SSINS.git@eavils-copilot git+https://github.com/d3v-null/mwa_qa.git@dev git+https://github.com/tjgalvin/fits_warp.git"
   pull_request:
     paths:
       - "sp5505.Dockerfile"
@@ -24,10 +45,142 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: sp5505
+  CUDA_ARCH: ${{ inputs.cuda_arch || '75,80,86,90' }}
+  CUDA_VERSION: ${{ inputs.cuda_version || '12.2.2' }}
+  SKIP_TESTS: ${{ inputs.skip_tests || '0' }}
+  PIP_EXTRAS: ${{ inputs.pip_extras || 'psrecord==1.4 click aoquality losoto kneed seaborn' }}
+  PIP_GIT_EXTRAS: ${{ inputs.pip_git_extras || 'git+https://github.com/d3v-null/SSINS.git@eavils-copilot git+https://github.com/d3v-null/mwa_qa.git@dev git+https://github.com/tjgalvin/fits_warp.git' }}
 
 jobs:
+  build-cpu-pretest:
+    name: Build CPU-only and publish -cpu-pretest by digest
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+      packages: write
+      actions: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            platform: linux/amd64
+          - os: ubuntu-22.04-arm
+            platform: linux/arm64
+    steps:
+      - name: Prepare
+        run: |
+          platform=${{ matrix.platform }}
+          echo "PLATFORM_PAIR=${platform//\//-}" >> $GITHUB_ENV
+          wf="${{ github.workflow }}"
+          safe_wf=$(echo "$wf" | sed -E 's/[^A-Za-z0-9._-]+/-/g')
+          echo "CACHE_SCOPE=${safe_wf}-cpu-${platform//\//-}" >> $GITHUB_ENV
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check disk space
+        run: df -h
+
+      - name: Free up disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /usr/local/share/boost
+          [ -n "$AGENT_TOOLSDIRECTORY" ] && sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /usr/share/swift
+          sudo rm -rf /usr/local/.ghcup
+          sudo rm -rf /usr/lib/jvm
+          sudo rm -rf /usr/local/share/powershell
+          sudo rm -rf /usr/share/miniconda
+          sudo docker system prune -af --volumes
+          sudo apt-get clean
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: |
+            image=moby/buildkit:v0.13.2
+            network=host
+          buildkitd-config-inline: |
+            [worker.oci]
+              max-parallelism = 1
+              gc = true
+              gckeepstorage = 5000
+            [worker.containerd]
+              max-parallelism = 1
+              gc = true
+              gckeepstorage = 5000
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (-cpu-pretest)
+        id: meta-cpu
+        uses: docker/metadata-action@v5
+        with:
+          images: >-
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch,suffix=-cpu
+            type=ref,event=pr,suffix=-cpu
+            type=sha,prefix=sha-,suffix=-cpu
+            type=raw,value=latest-cpu,enable={{is_default_branch}}
+          flavor: |
+            suffix=-pretest
+          labels: |
+            org.opencontainers.image.title=SP5505 Karabo Pipeline (CPU)
+            org.opencontainers.image.description=CPU-only Karabo Pipeline
+
+      - name: Build CPU - by digest (always push)
+        id: build-cpu
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./sp5505.Dockerfile
+          platforms: ${{ matrix.platform }}
+          labels: ${{ steps.meta-cpu.outputs.labels }}
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
+          build-args: |
+            SKIP_TESTS=${{ env.SKIP_TESTS }}
+            SPACK_TARGET=${{ matrix.platform == 'linux/amd64' && 'x86_64_v2' || 'aarch64' }}
+            SPACK_MIRROR_OCI=oci://${{ env.REGISTRY }}/${{ github.repository_owner }}/sp5505-spack-buildcache-cpu
+            CUDA_ARCH=""
+            CUDA_VERSION=""
+            PIP_EXTRAS=${{ env.PIP_EXTRAS }}
+            PIP_GIT_EXTRAS=${{ env.PIP_GIT_EXTRAS }}
+          secrets: |
+            spack_oci_username=${{ github.actor }}
+            spack_oci_password=${{ github.token }}
+          cache-from: |
+            type=registry,ref=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:buildcache-cpu-${{ env.PLATFORM_PAIR }}
+          cache-to: |
+            type=registry,ref=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:buildcache-cpu-${{ env.PLATFORM_PAIR }},mode=max,compression=zstd,compression-level=3
+
+      - name: Export digest (push)
+        if: steps.build-cpu.outcome == 'success'
+        run: |
+          mkdir -p /tmp/digests-cpu
+          digest="${{ steps.build-cpu.outputs.digest }}"
+          touch "/tmp/digests-cpu/${digest#sha256:}"
+
+      - name: Upload digest (push)
+        if: steps.build-cpu.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-cpu-${{ env.PLATFORM_PAIR }}
+          path: /tmp/digests-cpu/*
+          if-no-files-found: error
+          retention-days: 1
+
   build-pretest:
     name: Build and publish -pretest by digest
+    needs: [build-cpu-pretest]
     runs-on: ${{ matrix.os }}
     permissions:
       contents: read
@@ -64,7 +217,13 @@ jobs:
           sudo rm -rf /usr/share/dotnet
           sudo rm -rf /opt/ghc
           sudo rm -rf /usr/local/share/boost
-          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+          [ -n "$AGENT_TOOLSDIRECTORY" ] && sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /usr/share/swift
+          sudo rm -rf /usr/local/.ghcup
+          sudo rm -rf /usr/lib/jvm
+          sudo rm -rf /usr/local/share/powershell
+          sudo rm -rf /usr/share/miniconda
           sudo docker system prune -af --volumes
           sudo apt-get clean
           echo "Disk space after cleanup:"
@@ -120,7 +279,7 @@ jobs:
           labels: ${{ steps.meta-pretest.outputs.labels }}
           outputs: type=image,name=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
           build-args: |
-            SKIP_TESTS=1
+            SKIP_TESTS=${{ env.SKIP_TESTS }}
             # Use a micro-arch target that exists in public buildcaches. v3 isn't
             # supported by GitHub-hosted runners CPUs; v2 is the safe choice.
             SPACK_TARGET=${{ matrix.platform == 'linux/amd64' && 'x86_64_v2' || 'aarch64' }}
@@ -128,6 +287,10 @@ jobs:
             # This makes repeat CI builds much faster even when binaries.spack.io has no matches
             # for our overlay / pinned specs.
             SPACK_MIRROR_OCI=oci://${{ env.REGISTRY }}/${{ github.repository_owner }}/sp5505-spack-buildcache
+            CUDA_ARCH=${{ env.CUDA_ARCH }}
+            CUDA_VERSION=${{ env.CUDA_VERSION }}
+            PIP_EXTRAS=${{ env.PIP_EXTRAS }}
+            PIP_GIT_EXTRAS=${{ env.PIP_GIT_EXTRAS }}
           secrets: |
             spack_oci_username=${{ github.actor }}
             spack_oci_password=${{ github.token }}
@@ -155,6 +318,48 @@ jobs:
           path: /tmp/digests/*
           if-no-files-found: error
           retention-days: 1
+
+  merge-cpu-pretest:
+    name: Publish multi-arch -cpu-pretest tag
+    runs-on: ubuntu-latest
+    needs: build-cpu-pretest
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests-cpu
+          pattern: digests-cpu-*
+          merge-multiple: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Docker meta (-cpu-pretest)
+        id: meta-cpu
+        uses: docker/metadata-action@v5
+        with:
+          images: >-
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch,suffix=-cpu
+            type=ref,event=pr,suffix=-cpu
+            type=sha,prefix=sha-,suffix=-cpu
+            type=raw,value=latest-cpu,enable={{is_default_branch}}
+          flavor: |
+            suffix=-pretest
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create manifest list and push (-cpu-pretest)
+        working-directory: /tmp/digests-cpu
+        run: |
+          docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf '${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}@sha256:%s ' *)
 
   merge-pretest:
     name: Publish multi-arch -pretest tag
@@ -203,6 +408,68 @@ jobs:
           IMAGE_REF="${{ fromJSON(steps.meta-pretest.outputs.json).tags[0] }}"
           docker buildx imagetools inspect "$IMAGE_REF"
 
+  test-cpu:
+    name: Run tests in CPU image
+    needs: [build-cpu-pretest, merge-cpu-pretest]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            platform: linux/amd64
+          - os: ubuntu-22.04-arm
+            platform: linux/arm64
+    steps:
+      - name: Prepare
+        run: |
+          platform=${{ matrix.platform }}
+          echo "PLATFORM_PAIR=${platform//\//-}" >> $GITHUB_ENV
+
+      - name: Docker meta (-cpu-pretest)
+        id: meta-cpu
+        uses: docker/metadata-action@v5
+        with:
+          images: >-
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch,suffix=-cpu
+            type=ref,event=pr,suffix=-cpu
+            type=sha,prefix=sha-,suffix=-cpu
+            type=raw,value=latest-cpu,enable={{is_default_branch}}
+          flavor: |
+            suffix=-pretest
+
+      - name: Free up disk space for tests
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /usr/local/share/boost
+          [ -n "$AGENT_TOOLSDIRECTORY" ] && sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /usr/share/swift
+          sudo rm -rf /usr/local/.ghcup
+          sudo rm -rf /usr/lib/jvm
+          sudo rm -rf /usr/local/share/powershell
+          sudo rm -rf /usr/share/miniconda
+          sudo docker system prune -af --volumes
+          sudo apt-get clean
+
+      - name: Run smoke tests
+        run: |
+          IMAGE_REF="${{ fromJSON(steps.meta-cpu.outputs.json).tags[0] }}"
+          docker run --rm "${IMAGE_REF}" python --version
+          docker run --rm "${IMAGE_REF}" python -c "import karabo; print('Karabo import successful')"
+
+      - name: Run repo tests inside image
+        run: |
+          IMAGE_REF="${{ fromJSON(steps.meta-cpu.outputs.json).tags[0] }}"
+          docker run --rm "${IMAGE_REF}" bash -lc '
+            set -euo pipefail
+            export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1
+            pytest -q -x --tb=short -k "not (test_suppress_rascil_warning or test_source_detection_plot)" /opt/Karabo-Pipeline
+          '
+
   test:
     name: Run tests in image
     needs: [build-pretest, merge-pretest]
@@ -242,7 +509,13 @@ jobs:
           sudo rm -rf /usr/share/dotnet
           sudo rm -rf /opt/ghc
           sudo rm -rf /usr/local/share/boost
-          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+          [ -n "$AGENT_TOOLSDIRECTORY" ] && sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /usr/share/swift
+          sudo rm -rf /usr/local/.ghcup
+          sudo rm -rf /usr/lib/jvm
+          sudo rm -rf /usr/local/share/powershell
+          sudo rm -rf /usr/share/miniconda
           sudo docker system prune -af --volumes
           sudo apt-get clean
           echo "Disk space after cleanup:"
