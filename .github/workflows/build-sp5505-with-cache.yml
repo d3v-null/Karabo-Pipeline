@@ -545,6 +545,54 @@ jobs:
             pytest -q -x --tb=short -k "not (test_suppress_rascil_warning or test_source_detection_plot)" /opt/Karabo-Pipeline
           '
 
+  promote-cpu-pass:
+    name: Publish -cpu-pass tag after tests pass
+    needs: [build-cpu-pretest, test-cpu]
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request'
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests-cpu
+          pattern: digests-cpu-*
+          merge-multiple: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Docker meta (-cpu-pass)
+        id: meta-cpu-pass
+        uses: docker/metadata-action@v5
+        with:
+          images: >-
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch,suffix=-cpu
+            type=ref,event=pr,suffix=-cpu
+            type=sha,prefix=sha-,suffix=-cpu
+            type=raw,value=latest-cpu,enable={{is_default_branch}}
+          flavor: |
+            suffix=-pass
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create manifest list and push (-cpu-pass)
+        working-directory: /tmp/digests-cpu
+        run: |
+          docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf '${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}@sha256:%s ' *)
+
+      - name: Inspect -cpu-pass image
+        run: |
+          IMAGE_REF="${{ fromJSON(steps.meta-cpu-pass.outputs.json).tags[0] }}"
+          docker buildx imagetools inspect "$IMAGE_REF"
+
   promote-pass:
     name: Publish -pass tag after tests pass
     needs: [build-pretest, test]
