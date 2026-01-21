@@ -272,7 +272,7 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     fi; \
     spack mirror add v1.1.0 https://binaries.spack.io/v1.1.0; \
     spack buildcache keys --install --trust || true; \
-    WSCLEAN_SPEC="wsclean@${WSCLEAN_VERSION}~mpi~python"; \
+    WSCLEAN_SPEC="wsclean@${WSCLEAN_VERSION}~mpi~python+portable"; \
     IDG_SPEC="idg"; \
     if [ -n "${CUDA_ARCH}" ]; then \
         CUDA_PKG="cuda@${CUDA_VERSION}"; \
