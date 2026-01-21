@@ -365,7 +365,9 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
         echo "Found CUDA stubs at ${LIB_DIR}/stubs" && \
         # Create libcuda.so.1 symlink for the stubs
         ln -sf "${LIB_DIR}/stubs/libcuda.so" "${LIB_DIR}/stubs/libcuda.so.1" && \
-        ln -sf "${LIB_DIR}/stubs/libcuda.so" "/usr/lib/${arch}-linux-gnu/libcuda.so.1"; \
+        ln -sf "${LIB_DIR}/stubs/libcuda.so" "/usr/lib/${arch}-linux-gnu/libcuda.so.1" && \
+        # Fix for rust linking against cudart on aarch64
+        ln -sf "${LIB_DIR}/libcudart.so" "/usr/lib/${arch}-linux-gnu/libcudart.so"; \
     fi && \
     # install everything else.
     ac_cv_lib_curl_curl_easy_init=no spack install --use-cache --no-check-signature --no-checksum --fail-fast --show-log-on-error && \
