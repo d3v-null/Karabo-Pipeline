@@ -413,6 +413,19 @@ COPY --from=builder /opt/spack /opt/spack
 COPY --from=builder /opt/ska-sdp-spack /opt/ska-sdp-spack
 COPY --from=builder /opt/karabo-spack /opt/karabo-spack
 
+# Copy CUDA stub symlinks from builder if they exist (for both amd64 and arm64)
+# This handles the case where we need to run GPU-enabled binaries on CPU-only nodes (like Github Actions)
+# using the stubs to satisfy the dynamic linker.
+COPY --from=builder /usr/lib/*-linux-gnu/libcuda.so.1 /usr/lib/
+COPY --from=builder /usr/lib/*-linux-gnu/libcudart.so /usr/lib/
+
+# Move them to the correct location for the arch (COPY flattens structure if wildcard is used)
+# This is a bit hacky but Docker COPY with wildcards is limited.
+RUN arch=$(uname -m) && \
+    mkdir -p /usr/lib/${arch}-linux-gnu && \
+    [ -f /usr/lib/libcuda.so.1 ] && mv /usr/lib/libcuda.so.1 /usr/lib/${arch}-linux-gnu/ || true && \
+    [ -f /usr/lib/libcudart.so ] && mv /usr/lib/libcudart.so /usr/lib/${arch}-linux-gnu/ || true
+
 ENV SPACK_ROOT=/opt/spack \
     SPACK_DISABLE_LOCAL_CONFIG=1 \
     CARGO_HOME=/opt/cargo \
