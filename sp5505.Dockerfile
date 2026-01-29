@@ -399,7 +399,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     curl \
     gfortran \
     git \
-    gnuplot \
+    gnuplot-nox \
     libcurl4-openssl-dev \
     libgomp1 \
     time \
