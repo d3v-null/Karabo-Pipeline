@@ -399,11 +399,18 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     curl \
     gfortran \
     git \
+    gnuplot \
     libcurl4-openssl-dev \
     libgomp1 \
     time \
     wget \
     zstd
+
+# Install audria
+RUN git clone --depth=1 https://github.com/scaidermern/audria.git /opt/audria && \
+    cd /opt/audria && \
+    make && \
+    cp audria /usr/local/bin/
 
 COPY --from=builder /opt/software /opt/software
 COPY --from=builder /opt/view /opt/view
