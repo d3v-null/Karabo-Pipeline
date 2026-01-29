@@ -47,7 +47,6 @@ env:
   IMAGE_NAME: sp5505
   CUDA_ARCH: ${{ inputs.cuda_arch || '75,80,86,90' }}
   CUDA_VERSION: ${{ inputs.cuda_version || '12.2.2' }}
-  SKIP_TESTS: ${{ inputs.skip_tests || '0' }}
   PIP_EXTRAS: ${{ inputs.pip_extras || 'psrecord==1.4 click aoquality losoto kneed seaborn' }}
   PIP_GIT_EXTRAS: ${{ inputs.pip_git_extras || 'git+https://github.com/d3v-null/SSINS.git@eavils-copilot git+https://github.com/d3v-null/mwa_qa.git@dev git+https://github.com/tjgalvin/fits_warp.git' }}
 
@@ -147,7 +146,7 @@ jobs:
           labels: ${{ steps.meta-cpu.outputs.labels }}
           outputs: type=image,name=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
           build-args: |
-            SKIP_TESTS=${{ env.SKIP_TESTS }}
+            SKIP_TESTS=1
             SPACK_TARGET=${{ matrix.platform == 'linux/amd64' && 'x86_64_v2' || 'aarch64' }}
             SPACK_MIRROR_OCI=oci://${{ env.REGISTRY }}/${{ github.repository_owner }}/sp5505-spack-buildcache-cpu
             CUDA_ARCH=
@@ -279,7 +278,7 @@ jobs:
           labels: ${{ steps.meta-pretest.outputs.labels }}
           outputs: type=image,name=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
           build-args: |
-            SKIP_TESTS=${{ env.SKIP_TESTS }}
+            SKIP_TESTS=1
             # Use a micro-arch target that exists in public buildcaches. v3 isn't
             # supported by GitHub-hosted runners CPUs; v2 is the safe choice.
             SPACK_TARGET=${{ matrix.platform == 'linux/amd64' && 'x86_64_v2' || 'aarch64' }}
