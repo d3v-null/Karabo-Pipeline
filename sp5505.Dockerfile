@@ -426,12 +426,14 @@ COPY --from=builder /opt/karabo-spack /opt/karabo-spack
 # Copy CUDA stub symlinks from builder if they exist (for both amd64 and arm64)
 # This handles the case where we need to run GPU-enabled binaries on CPU-only nodes (like Github Actions)
 # using the stubs to satisfy the dynamic linker.
-# We DO NOT copy libcuda.so.1 (the driver stub) to the runtime image!
-# If the stub exists in the image, it can mask the real libcuda.so.1 provided by the
-# NVIDIA container runtime (via --gpus all), causing "CUDA Version: ERR!" in nvidia-smi
-# and preventing applications from initializing the GPU.
-# The real driver library must always come from the host at runtime.
-# COPY --from=builder /usr/lib/*-linux-gnu/libcuda.so.1 /usr/lib/
+#
+# STRATEGY FOR LIBCUDA (Driver API):
+# We need libcuda.so.1 to be present for binaries (like wsclean) linked against it to start on CPU nodes.
+# However, we must NOT put it in standard paths (like /usr/lib/x86_64-linux-gnu) because it would mask
+# the real NVIDIA driver library injected by the runtime on GPU nodes (causing "CUDA Version: ERR!").
+#
+# Solution: Put the stub in a low-priority separate directory (/opt/cuda-stub).
+COPY --from=builder /usr/lib/*-linux-gnu/libcuda.so.1 /opt/cuda-stub/
 COPY --from=builder /usr/lib/*-linux-gnu/libcudart.so* /usr/lib/
 
 # Move them to the correct location for the arch (COPY flattens structure if wildcard is used)
@@ -439,8 +441,10 @@ COPY --from=builder /usr/lib/*-linux-gnu/libcudart.so* /usr/lib/
 # Also recreate CUDA runtime library symlinks pointing to /opt/view libraries
 RUN arch=$(uname -m) && \
     mkdir -p /usr/lib/${arch}-linux-gnu && \
-    # See note above: we intentionally skip moving/installing libcuda.so.1
-    # [ -f /usr/lib/libcuda.so.1 ] && mv /usr/lib/libcuda.so.1 /usr/lib/${arch}-linux-gnu/ || true && \
+    # Move stubs to the correct place
+    mkdir -p /opt/cuda-stub && \
+    [ -f /opt/cuda-stub/libcuda.so.1 ] && chmod 755 /opt/cuda-stub/libcuda.so.1 || true && \
+    # Move runtime libs to system path
     mv /usr/lib/libcudart.so* /usr/lib/${arch}-linux-gnu/ 2>/dev/null || true
 
 ENV SPACK_ROOT=/opt/spack \
@@ -488,8 +492,10 @@ RUN chmod +x /usr/local/bin/before-notebook.d/20-activate-spack.sh && \
 # This ldconfig configuration ensures shared libraries are found even without
 # LD_LIBRARY_PATH being set. DO NOT REMOVE - Python extensions will fail to import.
 # Example error without this: "ImportError: libboost_numpy310.so.1.82.0: cannot open shared object file"
+# We add /opt/cuda-stub last so it serves as a fallback for libcuda.so.1 on CPU nodes,
+# but assumes standard paths (where real driver is mounted) are searched first or prioritized.
 RUN arch=$(uname -m) && \
-    printf "%s\n" "/opt/view/lib" "/opt/view/lib64" "/usr/lib/${arch}-linux-gnu" > /etc/ld.so.conf.d/karabo-spack-view.conf && \
+    printf "%s\n" "/opt/view/lib" "/opt/view/lib64" "/usr/lib/${arch}-linux-gnu" "/opt/cuda-stub" > /etc/ld.so.conf.d/karabo-spack-view.conf && \
     ldconfig
 
 # Set PATH for non-login shells and direct command execution.
