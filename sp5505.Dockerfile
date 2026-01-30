@@ -444,6 +444,7 @@ RUN arch=$(uname -m) && \
     # Move stubs to the correct place
     mkdir -p /opt/cuda-stub && \
     [ -f /opt/cuda-stub/libcuda.so.1 ] && chmod 755 /opt/cuda-stub/libcuda.so.1 || true && \
+    chmod -R a+rX /opt/cuda-stub && \
     # Move runtime libs to system path
     mv /usr/lib/libcudart.so* /usr/lib/${arch}-linux-gnu/ 2>/dev/null || true
 
@@ -637,35 +638,6 @@ for (name, target) in checks:
 sys.exit(0)
 PY
 
-# Verify CUDA runtime libraries are loadable, only if CUDA_VERSION and CUDA_ARCH are set as ARG or ENV
-# This ensures that the symlinks we created manually (libcudart.so -> libcudart.so.12 -> ...)
-# are correct and that the libraries can be found by the dynamic linker.
-# We explicitly skip checking libcuda.so.1 (Driver API) because we removed the stub,
-# and the real driver library is only available at runtime with --gpus.
-RUN if [ -z "${CUDA_VERSION:-}" ] || [ -z "${CUDA_ARCH:-}" ]; then \
-    exit 0; \
-    fi; \
-    export CUDA_VERSION="$CUDA_VERSION"; \
-    python - <<"PY"
-import ctypes
-import os
-import sys
-
-cuda_version = os.environ.get("CUDA_VERSION", "")
-major = cuda_version.split('.')[0] if cuda_version else ""
-libs = ["libcudart.so"]
-if major:
-    libs.append(f"libcudart.so.{major}")
-
-# We skip libcuda.so.1 as it might fail in build environments without GPU/driver
-for lib in libs:
-    try:
-        ctypes.CDLL(lib)
-        print(f"SUCCESS: {lib} loaded")
-    except OSError as e:
-        print(f"FAILURE: {lib} failed to load: {e}")
-        sys.exit(1)
-PY
 
 # bdsf 1.12.0 requires backports.shutil-get-terminal-size, which is not installed.
 # astropy-healpix 1.1.2 requires numpy>=1.25, but you have numpy 1.23.5 which is incompatible.
@@ -716,5 +688,36 @@ RUN if [ "${SKIP_TESTS:-0}" = "1" ]; then exit 0; fi; \
 
 # download latest Leap_Second.dat, IERS finals2000A.all
 RUN python -c "from astropy.time import Time; t=Time.now(); from astropy.utils.data import download_file; download_file('http://data.astropy.org/coordinates/sites.json', cache=True); print(t.gps, t.ut1)"
+
+# Verify CUDA runtime libraries are loadable, only if CUDA_VERSION and CUDA_ARCH are set as ARG or ENV
+# This ensures that the symlinks we created manually (libcudart.so -> libcudart.so.12 -> ...)
+# are correct and that the libraries can be found by the dynamic linker.
+# We explicitly skip checking libcuda.so.1 (Driver API) because we removed the stub,
+# and the real driver library is only available at runtime with --gpus.
+# We run this check as NB_USER to ensure permissions are correct.
+RUN if [ -z "${CUDA_VERSION:-}" ] || [ -z "${CUDA_ARCH:-}" ]; then \
+    exit 0; \
+    fi; \
+    export CUDA_VERSION="$CUDA_VERSION"; \
+    python - <<"PY"
+import ctypes
+import os
+import sys
+
+cuda_version = os.environ.get("CUDA_VERSION", "")
+major = cuda_version.split('.')[0] if cuda_version else ""
+libs = ["libcudart.so"]
+if major:
+    libs.append(f"libcudart.so.{major}")
+
+# We skip libcuda.so.1 as it might fail in build environments without GPU/driver
+for lib in libs:
+    try:
+        ctypes.CDLL(lib)
+        print(f"SUCCESS: {lib} loaded")
+    except OSError as e:
+        print(f"FAILURE: {lib} failed to load: {e}")
+        sys.exit(1)
+PY
 
 WORKDIR "/home/${NB_USER}"
