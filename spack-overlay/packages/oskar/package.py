@@ -230,7 +230,15 @@ class Oskar(CMakePackage, CudaPackage):
             if bdir and os.path.isdir(bdir):
                 return bdir
         # Fallback: scan stage for spack-build*
-        stage_root = getattr(self.stage, "path", None) or getattr(self.stage, "source_path", None)
+        try:
+            # Accessing self.stage can trigger patch verification.
+            # If the installed spec expects a different patch checksum (e.g. from buildcache)
+            # than what is currently in the repo, this access might raise an error.
+            # We catch it here to avoid breaking "spack test run" on binary installs.
+            stage_root = getattr(self.stage, "path", None) or getattr(self.stage, "source_path", None)
+        except Exception:
+            stage_root = None
+            
         if stage_root and os.path.isdir(stage_root):
             for entry in os.listdir(stage_root):
                 if entry.startswith("spack-build"):
