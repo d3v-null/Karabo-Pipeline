@@ -21,7 +21,7 @@ class Oskar(CMakePackage, CudaPackage):
 
     # Variants
     variant("cuda", default=False, description="Enable CUDA support")
-    patch("cuda_90_support.patch", when="@2.8.3")
+    patch("cuda_90_support.patch", sha256="fede5722945ee45c01895671bf572de378d0e22feddc6c74d28e43f6b759add4", when="@2.8.3")
     variant("opencl", default=False, description="Enable OpenCL support")
     variant("openmp", default=False, description="Enable OpenMP support")
     variant("mpi", default=False, description="Enable MPI support")

@@ -16,9 +16,7 @@ echo ""
 IMAGE_NAME=${IMAGE_NAME:-"karabo-pipeline:sp5505"}
 SKIP_TESTS=${SKIP_TESTS:-0}
 SPACK_BUILDCACHE_LOCAL=${SPACK_BUILDCACHE_LOCAL:-1}
-SPACK_TARGET=${SPACK_TARGET:-""}
-SPACK_MIRROR_OCI=${SPACK_MIRROR_OCI:-""}
-CUDA_ARCH=${CUDA_ARCH:-"75,80,86,90"}
+CUDA_ARCH=${CUDA_ARCH:-"75,80,86,89,90"}
 DOCKERFILE=${DOCKERFILE:-"sp5505.Dockerfile"}
 
 echo "Configuration:"
@@ -42,9 +40,9 @@ docker build \
   --progress=plain \
   --build-arg SKIP_TESTS="${SKIP_TESTS}" \
   --build-arg SPACK_BUILDCACHE_LOCAL="${SPACK_BUILDCACHE_LOCAL}" \
-  --build-arg SPACK_TARGET="${SPACK_TARGET}" \
-  --build-arg SPACK_MIRROR_OCI="${SPACK_MIRROR_OCI}" \
   --build-arg CUDA_ARCH="${CUDA_ARCH}" \
+  $([ -n "${SPACK_TARGET:-}" ] && echo "--build-arg SPACK_TARGET=\"${SPACK_TARGET}\"") \
+  $([ -n "${SPACK_MIRROR_OCI:-}" ] && echo "--build-arg SPACK_MIRROR_OCI=\"${SPACK_MIRROR_OCI}\"") \
   -t "${IMAGE_NAME}" \
   -f "${DOCKERFILE}" \
   . 2>&1 | tee "${LOG_FILE}"

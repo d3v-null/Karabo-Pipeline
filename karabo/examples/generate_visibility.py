@@ -371,6 +371,9 @@ def main():
         else SimulatorBackend.RASCIL
     )
 
+    if args.use_gpus and backend == SimulatorBackend.OSKAR:
+        gpu_diagnostics()
+
     # Parse telescope version
     try:
         telescope_version = parse_telescope_version(
@@ -651,6 +654,154 @@ def main():
         traceback.print_exc()
         print(f"\n✗ Error during simulation: {e}", file=sys.stderr)
         sys.exit(1)
+
+def gpu_diagnostics():
+    """Quick, noisy GPU/CUDA/OSKAR visibility checks to debug why OSKAR can't use GPUs."""
+    import os
+    import shutil
+    import subprocess
+    import ctypes
+    import glob
+    from textwrap import indent
+
+    def run(cmd):
+        try:
+            p = subprocess.run(cmd, check=False, text=True, capture_output=True)
+            out = (p.stdout or "").strip()
+            err = (p.stderr or "").strip()
+            return p.returncode, out, err
+        except FileNotFoundError:
+            return 127, "", f"not found: {cmd[0]}"
+        except Exception as e:
+            return 1, "", repr(e)
+
+    def banner(title):
+        print("\n" + "=" * 80)
+        print(title)
+        print("=" * 80)
+
+    banner("GPU DIAGNOSTICS")
+
+    # 1) Basic env + device nodes
+    keys = [
+        "CUDA_VISIBLE_DEVICES",
+        "NVIDIA_VISIBLE_DEVICES",
+        "NVIDIA_DRIVER_CAPABILITIES",
+        "NVIDIA_REQUIRE_CUDA",
+        "CUDA_DEVICE_ORDER",
+        "LD_LIBRARY_PATH",
+        "PATH",
+    ]
+    print("Environment:")
+    for k in keys:
+        v = os.environ.get(k)
+        if v is not None:
+            print(f"  {k}={v}")
+
+    devs = sorted(glob.glob("/dev/nvidia*"))
+    print("\nDevice nodes:")
+    if devs:
+        for d in devs:
+            try:
+                st = os.stat(d)
+                print(f"  {d} (mode {oct(st.st_mode)})")
+            except Exception:
+                print(f"  {d} (stat failed)")
+    else:
+        print("  (none)  -> container/job probably has no GPU passthrough")
+
+    # 2) nvidia-smi (most informative when available)
+    banner("nvidia-smi")
+    rc, out, err = run(["nvidia-smi", "-L"])
+    print(f"rc={rc}")
+    if out:
+        print(out)
+    if err:
+        print(indent(err, "  "))
+
+    rc2, out2, err2 = run(["nvidia-smi"])
+    if out2:
+        print("\nFull nvidia-smi:")
+        print(out2)
+    if err2:
+        print(indent(err2, "  "))
+
+    # 3) Can we dlopen driver/runtime libs?
+    banner("CUDA library load checks")
+    libs_to_try = [
+        # driver API (comes from NVIDIA driver)
+        "libcuda.so.1",
+        "libcuda.so",
+        # runtime API (comes from CUDA toolkit / CUDA runtime package)
+        "libcudart.so.12",
+        "libcudart.so.11.0",
+        "libcudart.so",
+    ]
+
+    for lib in libs_to_try:
+        try:
+            ctypes.CDLL(lib)
+            print(f"  OK: loaded {lib}")
+        except OSError as e:
+            print(f"  FAIL: {lib} -> {e}")
+
+    # 4) OSKAR presence + (best-effort) version/build hints
+    banner("OSKAR checks")
+    try:
+        import oskar  # type: ignore
+
+        print("Python import: import oskar -> OK")
+        # Not all builds expose a clean version API; try common patterns safely.
+        ver = getattr(oskar, "__version__", None)
+        if ver:
+            print(f"oskar.__version__ = {ver}")
+        else:
+            print("oskar.__version__ not present")
+
+        # Some builds expose a version() function; try if it exists.
+        if hasattr(oskar, "version"):
+            try:
+                print(f"oskar.version() = {oskar.version()}")
+            except Exception as e:
+                print(f"oskar.version() exists but failed: {e}")
+
+    except Exception as e:
+        print(f"Python import: import oskar -> FAIL: {e}")
+
+    # Try OSKAR CLI binaries (often reveal CUDA enablement in --version output)
+    for exe in ["oskar_sim_interferometer", "oskar_settings_set", "oskar_settings_get"]:
+        path = shutil.which(exe)
+        if not path:
+            continue
+        print(f"\nFound {exe} at {path}")
+        rc, out, err = run([exe, "--version"])
+        print(f"  {exe} --version rc={rc}")
+        if out:
+            print(indent(out, "    "))
+        if err:
+            print(indent(err, "    "))
+
+    # 5) Optional: can CuPy actually execute on GPU?
+    banner("Optional: CuPy smoke test")
+    try:
+        import cupy as cp  # type: ignore
+
+        ndev = cp.cuda.runtime.getDeviceCount()
+        print(f"CuPy: device count = {ndev}")
+        if ndev > 0:
+            d = cp.cuda.Device(0)
+            with d:
+                name = cp.cuda.runtime.getDeviceProperties(0)["name"].decode("utf-8", "ignore")
+                print(f"CuPy: device[0] = {name}")
+                a = cp.arange(16, dtype=cp.float32)
+                b = (a * 2).sum()
+                print(f"CuPy: kernel OK, sum={float(b)}")
+    except ModuleNotFoundError:
+        print("CuPy not installed (fine) — skipping.")
+    except Exception as e:
+        print(f"CuPy present but failed to use GPU: {e}")
+
+    banner("GPU DIAGNOSTICS DONE")
 
 if __name__ == "__main__":
     main()

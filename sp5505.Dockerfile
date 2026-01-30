@@ -212,8 +212,8 @@ ARG WSCLEAN_VERSION=3.5
 # karabo uses wsclean 3.4, but 3.5 selected for everybeam 0.7.4 compatibility
 ARG EVERYBEAM_VERSION=0.7.4
 ARG CUDA_VERSION=12.2.2
-ARG CUDA_ARCH="75,80,86,90"
-# covers RTX2000, A100, RTX3000, GH200
+ARG CUDA_ARCH="75,80,86,89,90"
+# covers T4/RTX2000, A100, RTX3000, L40, GH200
 
 # Create Spack environment and install deps
 ARG SPACK_TARGET=""
@@ -363,11 +363,14 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
             exit 1; \
         fi && \
         echo "Found CUDA stubs at ${LIB_DIR}/stubs" && \
+        mkdir -p "/usr/lib/${arch}-linux-gnu" && \
         # Create libcuda.so.1 symlink for the stubs
         ln -sf "${LIB_DIR}/stubs/libcuda.so" "${LIB_DIR}/stubs/libcuda.so.1" && \
         ln -sf "${LIB_DIR}/stubs/libcuda.so" "/usr/lib/${arch}-linux-gnu/libcuda.so.1" && \
-        # Fix for rust linking against cudart on aarch64
-        ln -sf "${LIB_DIR}/libcudart.so" "/usr/lib/${arch}-linux-gnu/libcudart.so"; \
+        # Link all libcudart versions so the runtime linker can find .so.12, .so.11, etc.
+        for lib in "${LIB_DIR}"/libcudart.so*; do \
+            ln -sf "${lib}" "/usr/lib/${arch}-linux-gnu/$(basename "${lib}")"; \
+        done; \
     fi && \
     # install everything else.
     ac_cv_lib_curl_curl_easy_init=no spack install --use-cache --no-check-signature --no-checksum --fail-fast --show-log-on-error && \
@@ -423,15 +426,22 @@ COPY --from=builder /opt/karabo-spack /opt/karabo-spack
 # Copy CUDA stub symlinks from builder if they exist (for both amd64 and arm64)
 # This handles the case where we need to run GPU-enabled binaries on CPU-only nodes (like Github Actions)
 # using the stubs to satisfy the dynamic linker.
-COPY --from=builder /usr/lib/*-linux-gnu/libcuda.so.1 /usr/lib/
-COPY --from=builder /usr/lib/*-linux-gnu/libcudart.so /usr/lib/
+# We DO NOT copy libcuda.so.1 (the driver stub) to the runtime image!
+# If the stub exists in the image, it can mask the real libcuda.so.1 provided by the
+# NVIDIA container runtime (via --gpus all), causing "CUDA Version: ERR!" in nvidia-smi
+# and preventing applications from initializing the GPU.
+# The real driver library must always come from the host at runtime.
+# COPY --from=builder /usr/lib/*-linux-gnu/libcuda.so.1 /usr/lib/
+COPY --from=builder /usr/lib/*-linux-gnu/libcudart.so* /usr/lib/
 
 # Move them to the correct location for the arch (COPY flattens structure if wildcard is used)
 # This is a bit hacky but Docker COPY with wildcards is limited.
+# Also recreate CUDA runtime library symlinks pointing to /opt/view libraries
 RUN arch=$(uname -m) && \
     mkdir -p /usr/lib/${arch}-linux-gnu && \
-    [ -f /usr/lib/libcuda.so.1 ] && mv /usr/lib/libcuda.so.1 /usr/lib/${arch}-linux-gnu/ || true && \
-    [ -f /usr/lib/libcudart.so ] && mv /usr/lib/libcudart.so /usr/lib/${arch}-linux-gnu/ || true
+    # See note above: we intentionally skip moving/installing libcuda.so.1
+    # [ -f /usr/lib/libcuda.so.1 ] && mv /usr/lib/libcuda.so.1 /usr/lib/${arch}-linux-gnu/ || true && \
+    mv /usr/lib/libcudart.so* /usr/lib/${arch}-linux-gnu/ 2>/dev/null || true
 
 ENV SPACK_ROOT=/opt/spack \
     SPACK_DISABLE_LOCAL_CONFIG=1 \
@@ -478,7 +488,9 @@ RUN chmod +x /usr/local/bin/before-notebook.d/20-activate-spack.sh && \
 # This ldconfig configuration ensures shared libraries are found even without
 # LD_LIBRARY_PATH being set. DO NOT REMOVE - Python extensions will fail to import.
 # Example error without this: "ImportError: libboost_numpy310.so.1.82.0: cannot open shared object file"
-RUN printf "%s\n" "/opt/view/lib" "/opt/view/lib64" > /etc/ld.so.conf.d/karabo-spack-view.conf && ldconfig
+RUN arch=$(uname -m) && \
+    printf "%s\n" "/opt/view/lib" "/opt/view/lib64" "/usr/lib/${arch}-linux-gnu" > /etc/ld.so.conf.d/karabo-spack-view.conf && \
+    ldconfig
 
 # Set PATH for non-login shells and direct command execution.
 # hree execution contexts require different approaches:
@@ -557,7 +569,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 # Successfully installed anyio-4.11.0 argon2-cffi-25.1.0 argon2-cffi-bindings-25.1.0 arrow-1.4.0 asttokens-3.0.0 async-lru-2.0.5 attrs-25.4.0 babel-2.17.0 beautifulsoup4-4.14.2 bleach-6.2.0 cffi-2.0.0 comm-0.2.3 debugpy-1.8.17 decorator-5.2.1 defusedxml-0.7.1 executing-2.2.1 fastjsonschema-2.21.2 fqdn-1.5.1 h11-0.16.0 httpcore-1.0.9 httpx-0.28.1 ipykernel-6.31.0 ipython-8.37.0 isoduration-20.11.0 jedi-0.19.2 json5-0.12.1 jsonpointer-3.0.0 jsonschema-4.25.1 jsonschema-specifications-2025.9.1 jupyter-events-0.12.0 jupyter-lsp-2.3.0 jupyter-server-terminals-0.5.3 jupyter_client-8.6.3 jupyter_core-5.9.1 jupyter_server-2.17.0 jupyterlab-4.4.10 jupyterlab-pygments-0.3.0 jupyterlab_server-2.28.0 lark-1.3.0 matplotlib-inline-0.2.1 mistune-3.1.4 nbclient-0.10.2 nbconvert-7.16.6 nbformat-5.10.4 nest-asyncio-1.6.0 notebook-7.4.7 notebook-shim-0.2.4 overrides-7.7.0 pandocfilters-1.5.1 parso-0.8.5 pexpect-4.9.0 platformdirs-4.5.0 prometheus-client-0.23.1 prompt_toolkit-3.0.52 ptyprocess-0.7.0 pure-eval-0.2.3 pycparser-2.23 pygments-2.19.2 python-json-logger-4.0.0 pyzmq-27.1.0 referencing-0.37.0 rfc3339-validator-0.1.4 rfc3986-validator-0.1.1 rfc3987-syntax-1.1.0 rpds-py-0.28.0 send2trash-1.8.3 sniffio-1.3.1 soupsieve-2.8 stack_data-0.6.3 terminado-0.18.1 tinycss2-1.4.0 tornado-6.5.2 traitlets-5.14.3 tzdata-2025.2 uri-template-1.3.0 wcwidth-0.2.14 webcolors-24.11.1 webencodings-0.5.1 websocket-client-1.9.0
 
 ENV MWA_BEAM_FILE=/opt/mwa_full_embedded_element_pattern.h5
-RUN wget -O$MWA_BEAM_FILE http://ws.mwatelescope.org/static/mwa_full_embedded_element_pattern.h5
+RUN wget -O$MWA_BEAM_FILE http://ws.mwatelescope.org/static/mwa_full_embedded_element_pattern.h5 --progress=dot:mega
 
 # tests
 RUN python -c "import ska_sdp_func_python" || exit 1 && \
@@ -617,6 +629,36 @@ for (name, target) in checks:
         continue
     print(f'{name} version {ver}, target {target}')
 sys.exit(0)
+PY
+
+# Verify CUDA runtime libraries are loadable, only if CUDA_VERSION and CUDA_ARCH are set as ARG or ENV
+# This ensures that the symlinks we created manually (libcudart.so -> libcudart.so.12 -> ...)
+# are correct and that the libraries can be found by the dynamic linker.
+# We explicitly skip checking libcuda.so.1 (Driver API) because we removed the stub,
+# and the real driver library is only available at runtime with --gpus.
+RUN if [ -z "${CUDA_VERSION:-}" ] || [ -z "${CUDA_ARCH:-}" ]; then \
+    exit 0; \
+    fi; \
+    export CUDA_VERSION="$CUDA_VERSION"; \
+    python - <<"PY"
+import ctypes
+import os
+import sys
+
+cuda_version = os.environ.get("CUDA_VERSION", "")
+major = cuda_version.split('.')[0] if cuda_version else ""
+libs = ["libcudart.so"]
+if major:
+    libs.append(f"libcudart.so.{major}")
+
+# We skip libcuda.so.1 as it might fail in build environments without GPU/driver
+for lib in libs:
+    try:
+        ctypes.CDLL(lib)
+        print(f"SUCCESS: {lib} loaded")
+    except OSError as e:
+        print(f"FAILURE: {lib} failed to load: {e}")
+        sys.exit(1)
 PY
 
 # bdsf 1.12.0 requires backports.shutil-get-terminal-size, which is not installed.
