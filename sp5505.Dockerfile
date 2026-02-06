@@ -356,41 +356,13 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     'dp3@'$DP3_VERSION'+idg' \
     "${IDG_SPEC}" \
     && \
-    spack concretize --force
-
-RUN python - <<PY
-import json, sys
-data = json.load(open("/opt/spack_env/spack.lock"))
-specs = data.get("concrete_specs", {})
-counts = {}
-for h, spec in specs.items():
-    name = spec.get("name")
-    counts.setdefault(name, []).append(h)
-troublemakers = [
-    "py-astropy",
-    "py-bdsf",
-    "casacore",
-    "py-casacore",
-    "py-dask",
-    "py-ducc",
-    "oskar",
-    "py-pyuvdata",
-    "ska-sdp-func",
-    "py-rascil",
-    "everybeam",
-    "aoflagger",
-]
-errors = [name for name in troublemakers if len(counts.get(name, [])) > 1]
-if errors:
-    print(f"Duplicate packages found: {errors}")
-    sys.exit(1)
-PY
-
-RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=locked \
-    --mount=type=cache,target=/opt/spack-source-cache,id=spack-source-cache,sharing=locked \
-    --mount=type=cache,target=/opt/spack-misc-cache,id=spack-misc-cache,sharing=locked \
-    --mount=type=secret,id=spack_oci_username,required=false \
-    --mount=type=secret,id=spack_oci_password,required=false \
+    spack concretize --force && \
+    # sanity check avoids 4 hours wasted build time for it to fail regenerating view
+    python3 -c "import json,sys;d=json.load(open('/opt/spack_env/spack.lock'));\
+    t=['py-astropy','py-bdsf','casacore','py-casacore','py-dask','py-ducc','oskar','py-pyuvdata','ska-sdp-func','py-rascil','everybeam','aoflagger'];\
+    c={};[c.setdefault(s.get('name'),[]).append(0) for s in d.get('concrete_specs',{}).values()];\
+    e=[x for x in t if len(c.get(x,[]))>1];\
+    print(f'Duplicate packages found: {e}')or sys.exit(1) if e else None" && \
     if [ -n "${CUDA_ARCH}" ]; then \
         # first install cuda to get the stubs
         spack install --use-cache --no-check-signature --no-checksum --fail-fast --show-log-on-error cuda && \
