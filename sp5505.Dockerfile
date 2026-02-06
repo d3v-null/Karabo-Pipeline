@@ -88,7 +88,7 @@ RUN spack compiler find && \
     rust
 
 # Add SKA SDP Spack repo and overlay
-RUN git clone --depth=1 --single-branch --branch=2025.12.3 https://gitlab.com/ska-telescope/sdp/ska-sdp-spack.git /opt/ska-sdp-spack && \
+RUN git clone --depth=1 --single-branch --branch=2026.02.1 https://gitlab.com/ska-telescope/sdp/ska-sdp-spack.git /opt/ska-sdp-spack && \
     rm -rf /opt/ska-sdp-spack/.git && \
     spack repo add /opt/ska-sdp-spack
 COPY spack-overlay /opt/karabo-spack
@@ -145,9 +145,10 @@ ARG ASTROPY_VERSION=5.1.1
 # astropy 6 deprecates utils.decorators which is used by healpy 1.16.2
 # astropy>5.2 has no ._erfa
 # 5.2.2 works with numpy 1.23.5
-ARG CASACORE_VERSION=3.6.1
+ARG CASACORE_VERSION=3.7.1
 # casacore needed by everybeam wsclean oskar rascil
-# conda has 3.5.0, issues compiling 3.7
+# conda has 3.5.0
+# 3.7.1 needed by DP3@6.4:
 ARG HEALPY_VERSION=1.16.6
 # healpy needed by rascil ska-sdp-func-python aratmospy bdsf tools21cm gwcs photutils ska-sdp-datamodels eidos bluebild
 # conda has 1.16.6
@@ -208,9 +209,14 @@ ARG RASCIL_VERSION=1.0.0
 ARG ARATMOSPY_VERSION=1.0.0
 ARG EIDOS_VERSION=1.1.0
 ARG KATBEAM_VERSION=0.1.0
-ARG WSCLEAN_VERSION=3.5
-# karabo uses wsclean 3.4, but 3.5 selected for everybeam 0.7.4 compatibility
-ARG EVERYBEAM_VERSION=0.7.4
+ARG WSCLEAN_VERSION=3.6.20260109
+# karabo uses wsclean 3.4,
+# 3.5 best for everybeam 0.7.4 compatibility
+# 3.6.20260109 needed for compatibility with everybeam 0.8 for MWA support in DP3
+ARG EVERYBEAM_VERSION=0.8.0.20251125
+# 0.7.4 works, but 0.8.0.20251125 is needed for MWA support in DP3
+ARG DP3_VERSION=6.5.1.20260109
+# dp3 is outside of karabo, 6.5.1.20260109 is needed for MWA support
 ARG CUDA_VERSION=12.2.2
 ARG CUDA_ARCH="75,80,86,89,90"
 # covers T4/RTX2000, A100, RTX3000, L40, GH200
@@ -245,6 +251,7 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     spack config add "view:/opt/view"; \
     spack config add "config:source_cache:/opt/spack-source-cache"; \
     spack config add "config:misc_cache:/opt/spack-misc-cache"; \
+    spack config add "packages:casacore:variants: +data+python"; \
     spack config add "packages:all:target:[${spack_target}]"; \
     # Local buildcache persisted via BuildKit cache mount (fast retries / iterations).
     # Disable by setting SPACK_BUILDCACHE_LOCAL=0 or empty.
@@ -299,13 +306,14 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     'py-matplotlib@'$MATPLOTLIB_VERSION \
     ${CUDA_PKG:+"$CUDA_PKG"} \
     'boost@'$BOOST_VERSION'+python+numpy' \
-    'hdf5@'$HDF5_VERSION'+hl~mpi' \
+    'hdf5@'$HDF5_VERSION'+hl~mpi+threadsafe' \
     'py-maturin@1.6.0' \
     'cfitsio@'$CFITSIO_VERSION \
     'py-astropy@'$ASTROPY_VERSION \
     'py-bdsf@'$BDSF_VERSION \
     'py-scipy@'$SCIPY_VERSION \
-    'casacore@'$CASACORE_VERSION'+python' \
+    'casacore@'$CASACORE_VERSION'+python+data' \
+    'py-casacore@'$CASACORE_VERSION \
     'py-joblib' \
     'py-lazy-loader' \
     'py-dask@'$DASK_VERSION \
@@ -331,7 +339,7 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     'py-aratmospy@'$ARATMOSPY_VERSION \
     'py-eidos@'$EIDOS_VERSION \
     'py-katbeam@'$KATBEAM_VERSION \
-    'everybeam@'$EVERYBEAM_VERSION \
+    # 'everybeam@'$EVERYBEAM_VERSION \
     "${WSCLEAN_SPEC}" \
     'py-tools21cm@'$TOOLS21CM_VERSION \
     'py-dask-mpi' \
@@ -344,11 +352,45 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     # not karabo-related
     "${HYPERBEAM_SPEC}" \
     "${HYPERDRIVE_SPEC}" \
-    'aoflagger@3.4.0' \
-    'dp3+idg' \
+    # 'aoflagger@3.4.0' # transitive, DP3 \
+    'dp3@'$DP3_VERSION'+idg' \
     "${IDG_SPEC}" \
     && \
-    spack concretize --force && \
+    spack concretize --force
+
+RUN python - <<PY
+import json, sys
+data = json.load(open("/opt/spack_env/spack.lock"))
+specs = data.get("concrete_specs", {})
+counts = {}
+for h, spec in specs.items():
+    name = spec.get("name")
+    counts.setdefault(name, []).append(h)
+troublemakers = [
+    "py-astropy",
+    "py-bdsf",
+    "casacore",
+    "py-casacore",
+    "py-dask",
+    "py-ducc",
+    "oskar",
+    "py-pyuvdata",
+    "ska-sdp-func",
+    "py-rascil",
+    "everybeam",
+    "aoflagger",
+]
+errors = [name for name in troublemakers if len(counts.get(name, [])) > 1]
+if errors:
+    print(f"Duplicate packages found: {errors}")
+    sys.exit(1)
+PY
+
+RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=locked \
+    --mount=type=cache,target=/opt/spack-source-cache,id=spack-source-cache,sharing=locked \
+    --mount=type=cache,target=/opt/spack-misc-cache,id=spack-misc-cache,sharing=locked \
+    --mount=type=secret,id=spack_oci_username,required=false \
+    --mount=type=secret,id=spack_oci_password,required=false \
     if [ -n "${CUDA_ARCH}" ]; then \
         # first install cuda to get the stubs
         spack install --use-cache --no-check-signature --no-checksum --fail-fast --show-log-on-error cuda && \
@@ -444,6 +486,8 @@ RUN arch=$(uname -m) && \
     # Move stubs to the correct place
     mkdir -p /opt/cuda-stub && \
     [ -f /opt/cuda-stub/libcuda.so.1 ] && chmod 755 /opt/cuda-stub/libcuda.so.1 || true && \
+    # [ -f /opt/cuda-stub/libcuda.so.1 ] && chmod 755 /opt/cuda-stub/libcuda.so.1 && \
+    # ln -sf libcuda.so.1 /opt/cuda-stub/libcuda.so || true && \
     chmod -R a+rX /opt/cuda-stub && \
     # Move runtime libs to system path
     mv /usr/lib/libcudart.so* /usr/lib/${arch}-linux-gnu/ 2>/dev/null || true

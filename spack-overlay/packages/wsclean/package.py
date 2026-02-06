@@ -1,3 +1,4 @@
+import os
 from spack.package import depends_on, variant, version
 from spack_repo.builtin.build_systems.cmake import CMakePackage
 
@@ -22,10 +23,16 @@ class Wsclean(CMakePackage):
         commit="d7d89fddf472ffac05a2fa1820ec7d0027da38ee",
         submodules=True,
     )
-    version("3.6", tag="v3.6", submodules=True)
+    version("3.6.0", tag="v3.6", submodules=True)
     version(  # master branch at 2025-06-30
         "3.6.20250630",
         commit="012778d4b9ca9a5e46815f7aae95f3f469539f99",
+        submodules=True,
+        preferred=True,
+    )
+    version(  # master branch at 2026-01-09
+        "3.6.20260109",
+        commit="f3071fa68c052ec452c0c6ad0ec66a16e980daad",
         submodules=True,
         preferred=True,
     )
@@ -61,24 +68,35 @@ class Wsclean(CMakePackage):
     depends_on("everybeam@0.4.0", when="@3.2")
     depends_on("everybeam@0.5.1", when="@3.3")
     depends_on("everybeam@0.5.3", when="@3.4")
-    depends_on("everybeam@0.6:0.7", when="@3.5")
-    depends_on("everybeam@0.6:0.7", when="@3.6:3")
-    depends_on("everybeam@0.6:", when="@latest,master")
+    depends_on("everybeam@0.7.4:0.7", when="@3.5:3.6.20250630")
+    depends_on("everybeam@0.7.4:0.9", when="@3.6.20260109:")
+    depends_on("everybeam@0.7.4:", when="@latest,master")
     depends_on("idg@1.0.0", when="@3.1")
     depends_on("idg@1.1.0", when="@3.2")
     depends_on("idg@1.1.0", when="@3.3")
     depends_on("idg@1.2.0:", when="@3.4:")
     depends_on("idg+cuda", when="+cuda")
     depends_on("idg+python", when="+python")
+    depends_on("cuda", when="+cuda")
     depends_on("boost+date_time+program_options")
     depends_on("openblas threads=pthreads")
     depends_on("gsl")
     depends_on("git")
     depends_on("python")
     depends_on("mpi", when="+mpi")
+    depends_on("py-pybind11", when="@3.6.20260109:")
 
     def cmake_args(self):
         args = []
+
+        if "+cuda" in self.spec:
+            cuda_prefix = self.spec["cuda"].prefix
+            stubs_dirs = [os.path.join(cuda_prefix, "lib64", "stubs"), os.path.join(cuda_prefix, "lib", "stubs")]
+            for stub in stubs_dirs:
+                if os.path.isdir(stub):
+                    args.append(self.define("CMAKE_EXE_LINKER_FLAGS", f"-L{stub} -Wl,-rpath-link,{stub}"))
+                    args.append(self.define("CMAKE_SHARED_LINKER_FLAGS", f"-L{stub} -Wl,-rpath-link,{stub}"))
+                    break
 
         # Disable MPI when ~mpi variant is used to prevent CMake from finding
         # stale system MPI configurations

@@ -11,6 +11,7 @@ class PyCasacore(PythonPackage):
     license("GPL-2.0-or-later")
 
     version("3.5.0", tag="v3.5.0")
+    version("3.7.1", tag="v3.7.1")
     version("3.6.1", tag="v3.6.1")
 
     # Build deps

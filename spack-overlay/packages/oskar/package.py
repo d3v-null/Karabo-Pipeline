@@ -68,10 +68,7 @@ class Oskar(CMakePackage, CudaPackage):
     depends_on("cuda", when="+cuda")
     # OpenCL dependency when variant is enabled
     depends_on("opencl", when="+opencl")
-    # Casacore dependency for MS functionality
-    # casacore 3.7 headers require C++14 constexpr semantics,
-    # but OSKAR is being compiled with an older C++ standard.
-    depends_on("casacore@3.5.0:3.6", when="+casacore")
+    depends_on("casacore@3.5.0:3.7.1", when="+casacore")
 
     def cmake_args(self):
         """Configure CMake build arguments."""
@@ -238,7 +235,7 @@ class Oskar(CMakePackage, CudaPackage):
             stage_root = getattr(self.stage, "path", None) or getattr(self.stage, "source_path", None)
         except Exception:
             stage_root = None
-            
+
         if stage_root and os.path.isdir(stage_root):
             for entry in os.listdir(stage_root):
                 if entry.startswith("spack-build"):
