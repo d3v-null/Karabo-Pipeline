@@ -553,11 +553,71 @@ def normalized_norm_diff() -> NNImageDiffCallable:
 
 @pytest.fixture(scope="session")
 def minimal_oskar_vis() -> Visibility:
+    """Return a minimal OSKAR .vis file.
+
+    Historically this test downloaded a pre-generated .vis file.
+    OSKAR binary formats can change across OSKAR versions; when the pinned
+    OSKAR version in the Docker image is bumped, older .vis files may become
+    unreadable (e.g. oskar_vis_header_read() failing with -115).
+
+    Strategy:
+    - Try the downloaded golden file first (fast path).
+    - If OSKAR can't read its header, regenerate a tiny .vis using the current
+      OSKAR backend so tests remain stable across OSKAR upgrades.
+    """
+
     vis_path = SingleFileDownloadObject(
         remote_file_path="test_minimal_visibility.vis",
         remote_base_url=cscs_karabo_public_testing_base_url,
     ).get()
-    return Visibility(vis_path)
+
+    # Validate the file is readable by the installed OSKAR python bindings.
+    try:
+        from oskar.vis_header import VisHeader  # type: ignore
+
+        _hdr, _ = VisHeader.read(vis_path)
+        return Visibility(vis_path)
+    except Exception:
+        # Fallback: regenerate with the installed OSKAR version.
+        from datetime import datetime
+
+        from karabo.simulation.interferometer import InterferometerSimulation
+        from karabo.simulation.sky_model import SkyModel
+
+        # Match the expected metadata in test_obscore.py
+        exp_time_start, exp_ntimes = datetime(2024, 3, 15, 10, 46, 0), 24
+        exp_freq_start, exp_freq_res, exp_nfreqs = 100e6, 1e6, 16
+        exp_ra, exp_dec = 250.0, -80.0
+
+        sky = SkyModel()
+        # A single point source is sufficient; ObsCoreMeta checks header/obs.
+        sky.add_point_sources(
+            np.array([[exp_ra, exp_dec, 1.0, 0.0, 0.0, 0.0]], dtype=float)
+        )
+
+        telescope = Telescope.constructor("ASKAP", backend=SimulatorBackend.OSKAR)
+        observation = Observation(
+            start_frequency_hz=exp_freq_start,
+            start_date_and_time=exp_time_start,
+            phase_centre_ra_deg=exp_ra,
+            phase_centre_dec_deg=exp_dec,
+            number_of_channels=exp_nfreqs,
+            frequency_increment_hz=exp_freq_res,
+            number_of_time_steps=exp_ntimes,
+        )
+        simulation = InterferometerSimulation(
+            channel_bandwidth_hz=exp_freq_res,
+            time_average_sec=600.0,
+            use_gpus=False,
+            use_dask=False,
+        )
+        regenerated = simulation.run_simulation(
+            telescope=telescope,
+            sky=sky,
+            observation=observation,
+            backend=SimulatorBackend.OSKAR,
+        )
+        return regenerated
 
 
 @pytest.fixture(scope="session")
