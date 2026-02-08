@@ -582,7 +582,10 @@ def minimal_oskar_vis() -> Visibility:
         from datetime import datetime
 
         from karabo.simulation.interferometer import InterferometerSimulation
+        from karabo.simulation.observation import Observation
         from karabo.simulation.sky_model import SkyModel
+        from karabo.simulation.telescope import Telescope
+        from karabo.simulator_backend import SimulatorBackend
 
         # Match the expected metadata in test_obscore.py
         exp_time_start, exp_ntimes = datetime(2024, 3, 15, 10, 46, 0), 24
