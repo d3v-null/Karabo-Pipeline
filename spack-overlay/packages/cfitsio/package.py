@@ -15,11 +15,12 @@ class Cfitsio(AutotoolsPackage):
     homepage = "https://heasarc.gsfc.nasa.gov/fitsio/"
     # url = "https://heasarc.gsfc.nasa.gov/FTP/software/fitsio/c/cfitsio-3.49.tar.gz"
     # nasa has been down for weeks.
-    url = "https://projects.pawsey.org.au/birli-test/cfitsio-4.3.1.tar.gz"
+    url = "https://heasarc.gsfc.nasa.gov/FTP/software/fitsio/c/cfitsio-4.6.3.tar.gz"
 
     license("custom")
 
-    # version("4.6.3", sha256="fad44fff274fdda5ffcc0c0fff3bc3c596362722b9292fc8944db91187813600")
+    version("4.6.3", sha256="fad44fff274fdda5ffcc0c0fff3bc3c596362722b9292fc8944db91187813600")
+    version("4.6.2", sha256="66fd078cc0bea896b0d44b120d46d6805421a5361d3a5ad84d9f397b1b5de2cb")
     # version("4.4.0", sha256="95900cf95ae760839e7cb9678a7b2fad0858d6ac12234f934bd1cb6bfc246ba9")
     version("4.3.1", sha256="a3b9502090e49aaa3a9fe464654820ea4957cc30e9c9bf0d3def37c50ab5aff7", preferred=True)
     # version("4.3.0", sha256="fdadc01d09cf9f54253802c5ec87eb10de51ce4130411415ae88c30940621b8b")

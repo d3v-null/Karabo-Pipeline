@@ -15,6 +15,8 @@ class Oskar(CMakePackage, CudaPackage):
     # Karabo uses 2.8.3 specifically
     # 2.10.0 works on arm64 but gives code -115 when reading vis files
     # 2.11.x includes important fixes and updates to build system
+    # 2.12.0 adds sky model spectral profiles + beam/coord fixes (see ChangeLog)
+    version("2.12.0", tag="2.12.0")
     version("2.11.1", tag="2.11.1")
     version("2.10.0", tag="2.10.0")
     version("2.8.3", tag="2.8.3", preferred=True)

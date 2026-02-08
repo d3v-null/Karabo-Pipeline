@@ -2,7 +2,7 @@
 # run me:
 # docker build -t d3vnull0/oskar:latest -f oskar.Dockerfile .
 # docker run --rm -it d3vnull0/oskar:latest bash -lc ". /opt/spack/share/spack/setup-env.sh && spack env activate /opt/spack_env && oskar_sim_interferometer --help && python -c 'import oskar; print(oskar.__version__)'"
-FROM quay.io/jupyter/minimal-notebook:notebook-7.2.2
+FROM quay.io/jupyter/minimal-notebook:notebook-7.0.6
 
 # Minimal OSKAR-only build for testing OSKAR installation and test suite
 USER root
@@ -13,9 +13,8 @@ RUN rm -f /usr/local/bin/before-notebook.d/10activate-conda-env.sh || true; \
     rm -rf /opt/conda || true
 
 # Essential system dependencies for OSKAR build
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update && apt-get --no-install-recommends install -y \
+# NOTE: Avoid BuildKit cache mounts here; they have triggered Spack lock/cache issues in this environment.
+RUN apt-get update && apt-get --no-install-recommends install -y \
         build-essential \
         ca-certificates \
         cmake \
@@ -30,44 +29,57 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         zstd \
     ;
 
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install Spack and detect compilers (match sp5505.Dockerfile)
 ENV SPACK_ROOT=/opt/spack \
-    SPACK_DISABLE_LOCAL_CONFIG=1 \
-    DEBIAN_FRONTEND=noninteractive
-
-# Install Spack v0.23
-RUN git clone --depth=2 --branch=releases/v0.23 https://github.com/spack/spack.git ${SPACK_ROOT} && \
+    SPACK_DISABLE_LOCAL_CONFIG=1
+RUN git clone --depth=1 --single-branch --branch=v1.1.0 https://github.com/spack/spack.git ${SPACK_ROOT} && \
+    cd ${SPACK_ROOT} && \
+    rm -rf .git && \
+    # Spack v1.1.0 ships some dangling symlinks in docs assets which can cause
+    # `fix-permissions` (from the Jupyter base image) to fail the build.
+    find ${SPACK_ROOT}/lib/spack/docs -xtype l -delete || true && \
     . ${SPACK_ROOT}/share/spack/setup-env.sh && \
-    spack compiler find
+    spack env create --dir /opt/spack_env && \
+    fix-permissions ${SPACK_ROOT} /opt/spack_env
 
-# Add SKA SDP Spack repo for OSKAR and related packages
-RUN git clone --depth=2 --branch=2025.07.3 https://gitlab.com/ska-telescope/sdp/ska-sdp-spack.git /opt/ska-sdp-spack && \
-    . ${SPACK_ROOT}/share/spack/setup-env.sh && spack repo add /opt/ska-sdp-spack
+RUN echo ". ${SPACK_ROOT}/share/spack/setup-env.sh 2>/dev/null || true" > /etc/profile.d/spack.sh && \
+    echo "spack env activate -p /opt/spack_env 2>/dev/null || true" >> /etc/profile.d/spack.sh
+
+RUN . ${SPACK_ROOT}/share/spack/setup-env.sh && \
+    spack env activate /opt/spack_env && \
+    spack compiler find && \
+    spack compiler list
+
+# Add SKA SDP Spack repo for OSKAR and related packages (match sp5505.Dockerfile)
+RUN git clone --depth=1 --single-branch --branch=2026.02.1 https://gitlab.com/ska-telescope/sdp/ska-sdp-spack.git /opt/ska-sdp-spack && \
+    rm -rf /opt/ska-sdp-spack/.git && \
+    . ${SPACK_ROOT}/share/spack/setup-env.sh && \
+    spack -e /opt/spack_env repo add /opt/ska-sdp-spack
 
 # Add our custom OSKAR package with test methods
 COPY spack-overlay /opt/karabo-spack
-RUN . ${SPACK_ROOT}/share/spack/setup-env.sh && spack repo add /opt/karabo-spack
+RUN . ${SPACK_ROOT}/share/spack/setup-env.sh && \
+    spack -e /opt/spack_env repo add /opt/karabo-spack && \
+    # Debug: show repo order + available OSKAR versions so concretize failures are obvious in logs
+    spack -e /opt/spack_env repo list && \
+    spack -e /opt/spack_env versions oskar
 
 # Version variables matching main Dockerfile
-ARG OSKAR_VERSION=2.11.1
+ARG OSKAR_VERSION=2.12.0
 ARG NUMPY_VERSION=1.23.5
 ARG HDF5_VERSION=1.12.3
 
 # Create Spack environment and install minimal OSKAR dependencies
-RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=locked \
-    --mount=type=cache,target=/opt/spack-source-cache,id=spack-source-cache,sharing=locked \
-    --mount=type=cache,target=/opt/spack-misc-cache,id=spack-misc-cache,sharing=locked \
-    . ${SPACK_ROOT}/share/spack/setup-env.sh; \
-    mkdir -p /opt/{software,view,buildcache,spack-source-cache,spack-misc-cache}; \
-    spack env create --dir /opt/spack_env; \
+# NOTE: Avoid BuildKit cache mounts here; they have triggered Spack lock/cache issues in this environment.
+RUN . ${SPACK_ROOT}/share/spack/setup-env.sh; \
     spack env activate /opt/spack_env; \
+    mkdir -p /opt/{software,view,buildcache,spack-source-cache}; \
     spack config add "config:install_tree:root:/opt/software"; \
     spack config add "concretizer:unify:when_possible"; \
     spack config add "view:/opt/view"; \
-    # Avoid over-optimizing for specific Intel CPUs (e.g. icelake) which can
-    # cause illegal instructions/segfaults on other hosts. Target generic x86_64.
-    # spack config add "packages:all:target:[x86_64]"; \
     spack config add "config:source_cache:/opt/spack-source-cache"; \
-    spack config add "config:misc_cache:/opt/spack-misc-cache"; \
     spack mirror add --autopush --unsigned mycache file:///opt/buildcache; \
     spack buildcache keys --install --trust || true; \
     # Install minimal dependencies for OSKAR

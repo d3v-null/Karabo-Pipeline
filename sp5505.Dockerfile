@@ -100,8 +100,9 @@ ARG NUMPY_VERSION=1.23.5
 # numpy>=1.24 required by zarr 2.18.3
 # numpy 1.23 needed by rascil 1.0.0 and ska-sdp-func-python 0.1.5
 # numpy>=1.25 required by astropy-healpix 1.1.2
-ARG CFITSIO_VERSION=4.3.1
+ARG CFITSIO_VERSION=4.6.3
 # conda has cfitsio 4.3.1
+# OSKAR >=2.11 requires CFITSIO >=4.6.2
 ARG PANDAS_VERSION=1.5.3
 # pandas needed by rascil dask xarray ska-sdp-datamodels bluebild
 # conda has pandas 1.5.3
@@ -154,7 +155,7 @@ ARG HEALPY_VERSION=1.16.6
 # conda has 1.16.6
 # 1.16.2 works too
 # astropy 6.0.1 wants 1.17.3
-ARG OSKAR_VERSION=2.8.3
+ARG OSKAR_VERSION=2.12.0
 ARG TOOLS21CM_VERSION=2.3.8
 # tools21cm needed by rascil ska-sdp-func-python aratmospy bdsf tools21cm gwcs photutils ska-sdp-datamodels eidos bluebild
 # conda has tools21cm 2.0.3
