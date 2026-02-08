@@ -199,7 +199,56 @@ Examples:
         default="Isotropic beam",
         help=(
             "Station type for simulation (default: 'Isotropic beam'). "
-            "Other options: 'Gaussian beam', 'Aperture array'"
+            "Other options include: 'Gaussian beam', 'Aperture array', 'VLA (PBCOR)'.\n"
+            "Note: For OSKAR, station/primary-beam effects are configured via the beam options below."
+        ),
+    )
+
+    # --- Beam / station response options (OSKAR backend) ---
+    parser.add_argument(
+        "--enable-array-beam",
+        action="store_true",
+        help=(
+            "Enable the aperture-array (station) array-factor contribution to the station beam "
+            "(OSKAR: telescope.aperture_array/array_pattern/enable)."
+        ),
+    )
+
+    parser.add_argument(
+        "--enable-numerical-beam",
+        action="store_true",
+        help=(
+            "Enable use of numerical element pattern data if available in the telescope model "
+            "(OSKAR: telescope.aperture_array/element_pattern/enable_numerical)."
+        ),
+    )
+
+    parser.add_argument(
+        "--gauss-beam-fwhm-deg",
+        type=float,
+        default=0.0,
+        help=(
+            "Gaussian beam FWHM in degrees at the reference frequency. "
+            "Only used when --station-type='Gaussian beam'."
+        ),
+    )
+
+    parser.add_argument(
+        "--gauss-ref-freq-hz",
+        type=float,
+        default=0.0,
+        help=(
+            "Reference frequency for --gauss-beam-fwhm-deg in Hz. "
+            "Only used when --station-type='Gaussian beam'."
+        ),
+    )
+
+    parser.add_argument(
+        "--enable-power-pattern",
+        action="store_true",
+        help=(
+            "Interpret --gauss-beam-fwhm-deg as a power-pattern FWHM rather than a field-pattern FWHM "
+            "(Karabo will internally convert if required)."
         ),
     )
 
@@ -539,6 +588,11 @@ def main():
     simulation = InterferometerSimulation(
         channel_bandwidth_hz=args.frequency_resolution,
         station_type=args.station_type,
+        enable_array_beam=args.enable_array_beam,
+        enable_numerical_beam=args.enable_numerical_beam,
+        enable_power_pattern=args.enable_power_pattern,
+        gauss_beam_fwhm_deg=args.gauss_beam_fwhm_deg,
+        gauss_ref_freq_hz=args.gauss_ref_freq_hz,
         use_gpus=args.use_gpus,
     )
 
