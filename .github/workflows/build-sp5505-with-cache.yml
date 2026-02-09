@@ -12,6 +12,10 @@ on:
         description: "CUDA version"
         required: false
         default: "12.2.2"
+      repo_test_cmd:
+        description: "Command to run repository tests inside image"
+        required: false
+        default: 'pytest -q -x --tb=short -k "not (test_suppress_rascil_warning or test_source_detection_plot or test_simulation_noise_meerkat)" /opt/Karabo-Pipeline'
       skip_tests:
         description: "Skip tests during build (1=yes, 0=no)"
         required: false
@@ -49,6 +53,7 @@ env:
   CUDA_VERSION: ${{ inputs.cuda_version || '12.2.2' }}
   PIP_EXTRAS: ${{ inputs.pip_extras || 'psrecord==1.4 click aoquality losoto kneed seaborn' }}
   PIP_GIT_EXTRAS: ${{ inputs.pip_git_extras || 'git+https://github.com/d3v-null/SSINS.git@eavils-copilot git+https://github.com/d3v-null/mwa_qa.git@dev git+https://github.com/tjgalvin/fits_warp.git' }}
+  REPO_TEST_CMD: ${{ inputs.repo_test_cmd || 'pytest -q -x --tb=short -k "not (test_suppress_rascil_warning or test_source_detection_plot or test_simulation_noise_meerkat)" /opt/Karabo-Pipeline' }}
 
 jobs:
   build-cpu-pretest:
@@ -463,10 +468,10 @@ jobs:
       - name: Run repo tests inside image
         run: |
           IMAGE_REF="${{ fromJSON(steps.meta-cpu.outputs.json).tags[0] }}"
-          docker run --rm "${IMAGE_REF}" bash -lc '
+          docker run --rm -e REPO_TEST_CMD="${{ env.REPO_TEST_CMD }}" "${IMAGE_REF}" bash -lc '
             set -euo pipefail
             export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1
-            pytest -q -x --tb=short -k "not (test_suppress_rascil_warning or test_source_detection_plot or test_simulation_noise_meerkat)" /opt/Karabo-Pipeline
+            eval "$REPO_TEST_CMD"
           '
 
   test:
@@ -538,10 +543,10 @@ jobs:
       - name: Run repo tests inside image
         run: |
           IMAGE_REF="${{ fromJSON(steps.meta-pretest.outputs.json).tags[0] }}"
-          docker run --rm "${IMAGE_REF}" bash -lc '
+          docker run --rm -e REPO_TEST_CMD="${{ env.REPO_TEST_CMD }}" "${IMAGE_REF}" bash -lc '
             set -euo pipefail
             export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1
-            pytest -q -x --tb=short -k "not (test_suppress_rascil_warning or test_source_detection_plot)" /opt/Karabo-Pipeline
+            eval "$REPO_TEST_CMD"
           '
 
   promote-cpu-pass:
