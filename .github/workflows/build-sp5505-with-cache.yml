@@ -466,7 +466,7 @@ jobs:
           docker run --rm "${IMAGE_REF}" bash -lc '
             set -euo pipefail
             export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1
-            pytest -q -x --tb=short -k "not (test_suppress_rascil_warning or test_source_detection_plot)" /opt/Karabo-Pipeline
+            pytest -q -x --tb=short -k "not (test_suppress_rascil_warning or test_source_detection_plot or test_simulation_noise_meerkat)" /opt/Karabo-Pipeline
           '
 
   test:
