@@ -468,7 +468,7 @@ jobs:
       - name: Run repo tests inside image
         run: |
           IMAGE_REF="${{ fromJSON(steps.meta-cpu.outputs.json).tags[0] }}"
-          docker run --rm -e REPO_TEST_CMD="${{ env.REPO_TEST_CMD }}" "${IMAGE_REF}" bash -lc '
+          docker run --rm -e REPO_TEST_CMD='\''${{ env.REPO_TEST_CMD }}'\'' "${IMAGE_REF}" bash -lc '
             set -euo pipefail
             export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1
             eval "$REPO_TEST_CMD"
@@ -543,7 +543,7 @@ jobs:
       - name: Run repo tests inside image
         run: |
           IMAGE_REF="${{ fromJSON(steps.meta-pretest.outputs.json).tags[0] }}"
-          docker run --rm -e REPO_TEST_CMD="${{ env.REPO_TEST_CMD }}" "${IMAGE_REF}" bash -lc '
+          docker run --rm -e REPO_TEST_CMD='\''${{ env.REPO_TEST_CMD }}'\'' "${IMAGE_REF}" bash -lc '
             set -euo pipefail
             export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1
             eval "$REPO_TEST_CMD"
