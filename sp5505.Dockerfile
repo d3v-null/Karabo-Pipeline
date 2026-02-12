@@ -44,7 +44,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     ; # not required because of buildcache: rm -rf /var/lib/apt/lists/*
 
 # Install Rust before any Spack setup, because Spack rust is unbelievably slow.
-ARG RUST_VERSION=1.80.0
+ARG RUST_VERSION=1.85.1
 # rust 1.86 cannot find -lcudart in hyperdrive on arm64
 ENV CARGO_HOME=/opt/cargo \
     RUSTUP_HOME=/opt/rustup
