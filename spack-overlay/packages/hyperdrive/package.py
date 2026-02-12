@@ -20,11 +20,13 @@ class Hyperdrive(Package, ROCmPackage, CudaPackage):
 
     # Versions
     version("main", branch="main")
-    version("0.7.0", tag="v0.7.0")
+    # version("0.7.0", tag="v0.7.0")
+    version("0.7.0.bmetrics", commit="77069266f74428e26486804ac4f98035dbea2d34")
 
     # Variants
     variant("cuda", default=False, description="Enable CUDA support for GPU acceleration")
     variant("hip", default=False, description="Enable HIP support for AMD GPU acceleration")
+    variant("bmetrics", default=False, description="Enable bmetrics subcommand")
 
     # Build dependencies
     depends_on("rust@1.64:", type="build")
@@ -46,6 +48,10 @@ class Hyperdrive(Package, ROCmPackage, CudaPackage):
     # GPU dependencies
     depends_on("cuda@11.0:", when="+cuda", type=("build", "link", "run"))
     depends_on("hip@4.0:", when="+hip", type=("build", "link", "run"))
+
+    # aoflagger is needed for bmetrics in v0.7.0-devel
+    # Note: when="@0.7.0-devel" doesn't match due to Spack version parsing quirks
+    depends_on("aoflagger@3.4.0:~gui~ipo", type=("build", "link", "run"), when="+bmetrics")
 
     # Conflicts
     conflicts("+cuda", when="+hip", msg="CUDA and HIP cannot be enabled simultaneously")
@@ -71,6 +77,28 @@ class Hyperdrive(Package, ROCmPackage, CudaPackage):
         # Set HDF5 paths
         env.set("HDF5_DIR", self.spec["hdf5"].prefix)
         env.prepend_path("PKG_CONFIG_PATH", join_path(self.spec["hdf5"].prefix, "lib", "pkgconfig"))
+
+        # Set aoflagger paths (needed for v0.7.0-devel)
+        if "aoflagger" in self.spec:
+            aoflagger_spec = self.spec["aoflagger"]
+            inc = join_path(aoflagger_spec.prefix, "include")
+            lib = join_path(aoflagger_spec.prefix, "lib")
+
+            # Set include paths for C/C++ compilers (cc crate uses these)
+            env.prepend_path("C_INCLUDE_PATH", inc)
+            env.prepend_path("CPLUS_INCLUDE_PATH", inc)
+            env.prepend_path("CPATH", inc)
+
+            # Also set CXXFLAGS for direct compiler invocations
+            # Use append_flags to ensure we don't overwrite existing flags
+            env.append_flags("CXXFLAGS", f"-I{inc}")
+            env.append_flags("CFLAGS", f"-I{inc}")
+
+            env.prepend_path("LIBRARY_PATH", lib)
+            env.prepend_path("LD_LIBRARY_PATH", lib)
+
+            env.prepend_path("PKG_CONFIG_PATH", join_path(aoflagger_spec.prefix, "lib", "pkgconfig"))
+            env.prepend_path("PKG_CONFIG_PATH", join_path(aoflagger_spec.prefix, "lib64", "pkgconfig"))
 
         # Ensure fontconfig and dependencies are in PKG_CONFIG_PATH
         for dep in ["fontconfig", "freetype", "libxml2", "util-linux-uuid"]:
@@ -133,25 +161,6 @@ class Hyperdrive(Package, ROCmPackage, CudaPackage):
         env.set("CARGO_PROFILE_RELEASE_OPT_LEVEL", "3")
         env.set("CARGO_PROFILE_RELEASE_LTO", "thin")
 
-    def install(self, spec, prefix):
-        """Install hyperdrive using cargo."""
-        cargo = which("cargo")
-
-        # Build Rust features list
-        features = self.get_features()
-
-        # Build the binary
-        with fs.working_dir(self.stage.source_path):
-            build_args = ["build", "--locked", "--release"]
-            if features:
-                build_args.extend(["--features", ",".join(features)])
-            cargo(*build_args)
-
-            # Install the binary
-            install_dir = prefix.bin
-            os.makedirs(install_dir, exist_ok=True)
-            shutil.copy2("target/release/hyperdrive", join_path(install_dir, "hyperdrive"))
-
     def get_features(self):
         """Get list of Cargo features based on active variants."""
         features = []
@@ -159,5 +168,86 @@ class Hyperdrive(Package, ROCmPackage, CudaPackage):
             features.append("hip")
         if self.spec.satisfies("+cuda"):
             features.append("cuda")
+        if self.spec.satisfies("+bmetrics"):
+            features.append("bmetrics")
         return features
 
+    def install(self, spec, prefix):
+        """Install hyperdrive using cargo."""
+        import os
+        import subprocess
+        import llnl.util.tty as tty
+
+        with fs.working_dir(self.stage.source_path):
+            # Find aoflagger prefix -- it may not be a direct Spack dep of
+            # hyperdrive (depends_on when= matching is fragile for -devel
+            # versions), but it IS installed because dp3 depends on it.
+            aoflagger_inc = None
+            aoflagger_lib = None
+
+            # 1. Try the Spack spec first (if depends_on resolved)
+            if "aoflagger" in spec:
+                aoflagger_inc = join_path(spec["aoflagger"].prefix, "include")
+                aoflagger_lib = join_path(spec["aoflagger"].prefix, "lib")
+                tty.info(f"aoflagger from spec: inc={aoflagger_inc}")
+
+            # 2. Fallback: ask spack for an installed aoflagger
+            if aoflagger_inc is None:
+                try:
+                    result = subprocess.run(
+                        ["spack", "location", "-i", "aoflagger"],
+                        capture_output=True, text=True, timeout=30,
+                    )
+                    if result.returncode == 0:
+                        af_prefix = result.stdout.strip()
+                        aoflagger_inc = os.path.join(af_prefix, "include")
+                        aoflagger_lib = os.path.join(af_prefix, "lib")
+                        tty.info(f"aoflagger from spack location: inc={aoflagger_inc}")
+                except Exception as e:
+                    tty.warn(f"spack location failed: {e}")
+
+            # 3. Write .cargo/config.toml [env] section so that the cc crate
+            #    (used by aoflagger_sys build.rs) picks up the include path.
+            if aoflagger_inc and os.path.isdir(aoflagger_inc):
+                tty.info(f"Injecting aoflagger paths into .cargo/config.toml")
+                cargo_dir = os.path.join(self.stage.source_path, ".cargo")
+                os.makedirs(cargo_dir, exist_ok=True)
+                cfg = os.path.join(cargo_dir, "config.toml")
+
+                existing = ""
+                if os.path.exists(cfg):
+                    with open(cfg, "r") as fh:
+                        existing = fh.read()
+
+                with open(cfg, "w") as fh:
+                    fh.write(existing)
+                    fh.write("\n# -- injected by spack hyperdrive package --\n")
+                    fh.write("[env]\n")
+                    fh.write(f'CXXFLAGS = {{ value = "-I{aoflagger_inc}", force = true }}\n')
+                    fh.write(f'CFLAGS = {{ value = "-I{aoflagger_inc}", force = true }}\n')
+                    fh.write(f'C_INCLUDE_PATH = {{ value = "{aoflagger_inc}", force = true }}\n')
+                    fh.write(f'CPLUS_INCLUDE_PATH = {{ value = "{aoflagger_inc}", force = true }}\n')
+                    if aoflagger_lib:
+                        fh.write(f'LIBRARY_PATH = {{ value = "{aoflagger_lib}", force = true }}\n')
+
+                tty.info(f"Wrote cargo env config to {cfg}")
+            else:
+                tty.warn("aoflagger include dir not found - build may fail")
+
+            # Build
+            cargo_exe = which("cargo").path
+            features = self.get_features()
+            build_args = [cargo_exe, "build", "--locked", "--release"]
+            if features:
+                build_args.extend(["--features", ",".join(features)])
+
+            tty.info(f"Running: {' '.join(build_args)}")
+            subprocess.check_call(build_args)
+
+            # Install
+            install_dir = prefix.bin
+            os.makedirs(install_dir, exist_ok=True)
+            shutil.copy2(
+                "target/release/hyperdrive",
+                join_path(install_dir, "hyperdrive"),
+            )

@@ -296,7 +296,7 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     fi; \
     OSKAR_SPEC="oskar@${OSKAR_VERSION}+python~openmp${CUDA_SUFFIX}"; \
     HYPERBEAM_SPEC="hyperbeam+python${CUDA_SUFFIX}"; \
-    HYPERDRIVE_SPEC="hyperdrive${CUDA_SUFFIX}"; \
+    HYPERDRIVE_SPEC="hyperdrive@=0.7.0.bmetrics+bmetrics${CUDA_SUFFIX}"; \
     spack add \
     'python@'$PYTHON_VERSION \
     'py-pip' \
