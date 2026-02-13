@@ -21,7 +21,7 @@ class Hyperdrive(Package, ROCmPackage, CudaPackage):
     # Versions
     version("main", branch="main")
     # version("0.7.0", tag="v0.7.0")
-    version("0.7.0.bmetrics", commit="77069266f74428e26486804ac4f98035dbea2d34")
+    version("0.7.0.bmetrics", commit="b4338cc3f4f0dadbe4baae88cff4a48278eec970")
 
     # Variants
     variant("cuda", default=False, description="Enable CUDA support for GPU acceleration")
@@ -222,6 +222,8 @@ class Hyperdrive(Package, ROCmPackage, CudaPackage):
                 with open(cfg, "w") as fh:
                     fh.write(existing)
                     fh.write("\n# -- injected by spack hyperdrive package --\n")
+                    fh.write("[net]\n")
+                    fh.write("git-fetch-with-cli = true\n\n")
                     fh.write("[env]\n")
                     fh.write(f'CXXFLAGS = {{ value = "-I{aoflagger_inc}", force = true }}\n')
                     fh.write(f'CFLAGS = {{ value = "-I{aoflagger_inc}", force = true }}\n')
@@ -233,6 +235,17 @@ class Hyperdrive(Package, ROCmPackage, CudaPackage):
                 tty.info(f"Wrote cargo env config to {cfg}")
             else:
                 tty.warn("aoflagger include dir not found - build may fail")
+                # Still write [net] section for git-fetch-with-cli
+                cargo_dir = os.path.join(self.stage.source_path, ".cargo")
+                os.makedirs(cargo_dir, exist_ok=True)
+                cfg = os.path.join(cargo_dir, "config.toml")
+                existing = ""
+                if os.path.exists(cfg):
+                    with open(cfg, "r") as fh:
+                        existing = fh.read()
+                if "[net]" not in existing:
+                    with open(cfg, "a") as fh:
+                        fh.write("\n[net]\ngit-fetch-with-cli = true\n")
 
             # Build
             cargo_exe = which("cargo").path
