@@ -356,6 +356,8 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     # 'aoflagger@3.4.0' # transitive, DP3 \
     'dp3@'$DP3_VERSION'+idg' \
     "${IDG_SPEC}" \
+    "py-losoto" \
+    "lofartools" \
     && \
     spack concretize --force && \
     # sanity check avoids 4 hours wasted build time for it to fail regenerating view
@@ -572,7 +574,7 @@ RUN spack test run 'py-astropy-healpix' && \
 # TODO: Verify hyperbeam (Spack-installed) can be imported
 # RUN python -c "from mwa_hyperbeam import FEEBeam; print('mwa_hyperbeam (Spack) import successful')"
 
-ARG PIP_EXTRAS="psrecord==1.4 click aoquality losoto kneed seaborn"
+ARG PIP_EXTRAS="psrecord==1.4 click aoquality kneed seaborn"
 ARG PIP_GIT_EXTRAS="git+https://github.com/d3v-null/SSINS.git@eavils-copilot git+https://github.com/d3v-null/mwa_qa.git@dev git+https://github.com/tjgalvin/fits_warp.git"
 
 # Install optional extras via pip (not available in Spack)
