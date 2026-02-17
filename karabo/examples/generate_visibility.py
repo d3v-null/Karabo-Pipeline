@@ -189,10 +189,33 @@ Examples:
 
     parser.add_argument(
         "--backend",
-        choices=["OSKAR", "RASCIL"],
+        choices=["OSKAR", "RASCIL", "HYPERDRIVE"],
         default="OSKAR",
         help="Simulator backend to use (default: OSKAR)",
     )
+
+    # --- Hyperdrive backend options ---
+    parser.add_argument(
+        "--hyperdrive-metafits",
+        # don't commit me!
+        default="/opt/mwa_hyperdrive_test_files/1090008640/1090008640.metafits",
+        help=(
+            "Path to an MWA metafits file (required for HYPERDRIVE backend). "
+            "Example: /path/to/1090008640.metafits"
+        ),
+    )
+
+    parser.add_argument(
+        "--hyperdrive-bin",
+        default="hyperdrive",
+        help=(
+            "Path to the hyperdrive binary (default: 'hyperdrive' from PATH). "
+            "If you pass an absolute path, ensure its shared-library dependencies are available "
+            "in the current environment."
+        ),
+    )
+
+    # NOTE: Hyperdrive CPU/GPU selection reuses the existing --use-gpus flag.
 
     parser.add_argument(
         "--station-type",
@@ -414,14 +437,32 @@ def main():
         sys.exit(1)
 
     # Parse backend
-    backend = (
-        SimulatorBackend.OSKAR
-        if args.backend == "OSKAR"
-        else SimulatorBackend.RASCIL
-    )
+    if args.backend == "OSKAR":
+        backend = SimulatorBackend.OSKAR
+    elif args.backend == "RASCIL":
+        backend = SimulatorBackend.RASCIL
+    elif args.backend == "HYPERDRIVE":
+        backend = SimulatorBackend.HYPERDRIVE
+    else:
+        raise ValueError(f"Unknown backend: {args.backend}")
 
     if args.use_gpus and backend == SimulatorBackend.OSKAR:
         gpu_diagnostics()
+
+    if backend == SimulatorBackend.HYPERDRIVE:
+        # Hyperdrive is currently MWA-specific and requires a metafits file.
+        if args.hyperdrive_metafits is None:
+            print(
+                "Error: --hyperdrive-metafits is required when --backend=HYPERDRIVE",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        if "MWA" not in args.telescope.upper():
+            print(
+                "Error: HYPERDRIVE backend currently supports only MWA telescopes",
+                file=sys.stderr,
+            )
+            sys.exit(1)
 
     # Parse telescope version
     try:
@@ -446,8 +487,15 @@ def main():
     # Create telescope
     print(f"Creating telescope name={args.telescope} ...")
     try:
+        # Telescope model is primarily needed for OSKAR/RASCIL paths.
+        # For the HYPERDRIVE simulation backend, we still construct the MWA telescope
+        # using the OSKAR backend so we can reuse location info, etc.
+        telescope_backend = backend
+        if backend == SimulatorBackend.HYPERDRIVE:
+            telescope_backend = SimulatorBackend.OSKAR
+
         telescope = Telescope.constructor(
-            name=args.telescope, version=telescope_version, backend=backend
+            name=args.telescope, version=telescope_version, backend=telescope_backend
         )
     except Exception as e:
         print(f"Error creating telescope: {e}", file=sys.stderr)
@@ -583,7 +631,7 @@ def main():
 
     print(tabulate(sky_model.sources[:50].values, headers=["ra", "dec", "i", "q", "u", "v", "ref_freq", "alpha", "rm", "maj", "min", "pa", "z_true", "z_obs", "id"], tablefmt="github"))
 
-    # Create interferometer simulationq
+    # Create interferometer simulation
     print("Setting up interferometer simulation...")
     simulation = InterferometerSimulation(
         channel_bandwidth_hz=args.frequency_resolution,
@@ -594,6 +642,12 @@ def main():
         gauss_beam_fwhm_deg=args.gauss_beam_fwhm_deg,
         gauss_ref_freq_hz=args.gauss_ref_freq_hz,
         use_gpus=args.use_gpus,
+        # Hyperdrive backend options (ignored unless backend=HYPERDRIVE)
+        hyperdrive_metafits_path=args.hyperdrive_metafits,
+        hyperdrive_bin=args.hyperdrive_bin,
+        # Reuse existing --use-gpus flag: if enabled, allow hyperdrive to use GPU;
+        # otherwise default to CPU.
+        hyperdrive_use_cpu=(not args.use_gpus),
     )
 
     # Create observation

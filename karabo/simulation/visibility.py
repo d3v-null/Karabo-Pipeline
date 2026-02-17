@@ -5,7 +5,10 @@ import os.path
 from typing import Callable, Dict, Final, List, Literal, Optional, Union, get_args
 
 import numpy as np
-import oskar
+try:
+    import oskar  # type: ignore
+except ModuleNotFoundError:  # pragma: no cover
+    oskar = None  # type: ignore
 
 from karabo.util._types import DirPathType, FilePathType
 from karabo.util.file_handler import FileHandler
@@ -86,6 +89,10 @@ class Visibility:
         combined_ms_filepath: Optional[DirPathType] = None,
         group_by: str = "day",
     ) -> DirPathType:
+        if oskar is None:
+            raise ModuleNotFoundError(
+                "Combining visibilities requires the OSKAR python bindings (`oskar`)."
+            )
         if not all(v.format == "OSKAR_VIS" for v in visibilities):
             raise NotImplementedError("Only OSKAR_VIS visibilities supported")
 

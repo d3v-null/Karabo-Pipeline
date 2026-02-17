@@ -7,20 +7,41 @@ from typing import overload
 from warnings import warn
 
 import numpy as np
-import oskar
+try:
+    import oskar  # type: ignore
+except ModuleNotFoundError:  # pragma: no cover
+    oskar = None  # type: ignore
 import pandas as pd
 import xarray as xr
 from astropy.coordinates import SkyCoord
 from astropy.time import Time
-from dask import compute, delayed  # type: ignore[attr-defined]
-from dask.delayed import Delayed
-from dask.distributed import Client
+try:
+    from dask import compute, delayed  # type: ignore[attr-defined]
+    from dask.delayed import Delayed
+except ModuleNotFoundError:  # pragma: no cover
+    compute = None  # type: ignore
+    delayed = None  # type: ignore
+    Delayed = object  # type: ignore
+
+try:
+    from dask.distributed import Client
+except (ModuleNotFoundError, ImportError):  # pragma: no cover
+    Client = object  # type: ignore
 from numpy.typing import NDArray
-from ska_sdp_datamodels.image.image_model import Image as RASCILImage
-from ska_sdp_datamodels.science_data_model.polarisation_model import PolarisationFrame
-from ska_sdp_datamodels.visibility import create_visibility
-from ska_sdp_func_python.imaging.dft import dft_skycomponent_visibility
-from ska_sdp_func_python.sky_component import apply_beam_to_skycomponent
+try:
+    from ska_sdp_datamodels.image.image_model import Image as RASCILImage
+    from ska_sdp_datamodels.science_data_model.polarisation_model import (
+        PolarisationFrame,
+    )
+    from ska_sdp_datamodels.visibility import create_visibility
+    from ska_sdp_func_python.imaging.dft import dft_skycomponent_visibility
+    from ska_sdp_func_python.sky_component import apply_beam_to_skycomponent
+except ModuleNotFoundError:  # pragma: no cover
+    RASCILImage = object  # type: ignore
+    PolarisationFrame = object  # type: ignore
+    create_visibility = None  # type: ignore
+    dft_skycomponent_visibility = None  # type: ignore
+    apply_beam_to_skycomponent = None  # type: ignore
 from typing_extensions import assert_never
 
 from karabo.error import KaraboInterferometerSimulationError
@@ -38,6 +59,10 @@ from karabo.simulation.visibility import (
     VisibilityFormatUtil,
 )
 from karabo.simulator_backend import SimulatorBackend
+from karabo.simulation.hyperdrive_backend import (
+    HyperdriveSimulateOptions,
+    run_hyperdrive_vis_simulate,
+)
 from karabo.util._types import (
     DirPathType,
     FilePathType,
@@ -48,9 +73,12 @@ from karabo.util._types import (
 from karabo.util.dask import DaskHandler
 from karabo.util.file_handler import FileHandler
 from karabo.util.gpu_util import is_cuda_available
-from karabo.util.ska_sdp_datamodels.visibility.vis_io_ms import (  # type: ignore[attr-defined] # noqa: E501
-    export_visibility_to_ms,
-)
+try:
+    from karabo.util.ska_sdp_datamodels.visibility.vis_io_ms import (  # type: ignore[attr-defined] # noqa: E501
+        export_visibility_to_ms,
+    )
+except ModuleNotFoundError:  # pragma: no cover
+    export_visibility_to_ms = None  # type: ignore
 
 
 def format_timedelta(td: timedelta) -> str:
@@ -251,6 +279,13 @@ class InterferometerSimulation:
         ionosphere_screen_height_km: Optional[float] = 300,
         ionosphere_screen_pixel_size_m: Optional[float] = 0,
         ionosphere_isoplanatic_screen: Optional[bool] = False,
+        # --- Hyperdrive backend options ---
+        hyperdrive_metafits_path: Optional[str] = None,
+        hyperdrive_bin: str = "/home/ubuntu/.cargo/bin/hyperdrive",
+        hyperdrive_no_beam: bool = True,
+        hyperdrive_no_precession: bool = False,
+        hyperdrive_verbosity: int = 0,
+        hyperdrive_use_cpu: bool = True,
     ) -> None:
         self.channel_bandwidth_hz: IntFloat = channel_bandwidth_hz
         self.time_average_sec: IntFloat = time_average_sec
@@ -323,6 +358,14 @@ class InterferometerSimulation:
         self.ionosphere_screen_height_km = ionosphere_screen_height_km
         self.ionosphere_screen_pixel_size_m = ionosphere_screen_pixel_size_m
         self.ionosphere_isoplanatic_screen = ionosphere_isoplanatic_screen
+
+        # Hyperdrive options (only used when backend=SimulatorBackend.HYPERDRIVE)
+        self.hyperdrive_metafits_path = hyperdrive_metafits_path
+        self.hyperdrive_bin = hyperdrive_bin
+        self.hyperdrive_no_beam = hyperdrive_no_beam
+        self.hyperdrive_no_precession = hyperdrive_no_precession
+        self.hyperdrive_verbosity = hyperdrive_verbosity
+        self.hyperdrive_use_cpu = hyperdrive_use_cpu
 
     def _create_or_validate_visibility_path(
         self,
@@ -454,6 +497,11 @@ class InterferometerSimulation:
         """
 
         if backend is SimulatorBackend.OSKAR:
+            if oskar is None:
+                raise ModuleNotFoundError(
+                    "The OSKAR python bindings are not available in this environment. "
+                    "Install/import `oskar` or use backend=SimulatorBackend.HYPERDRIVE/RASCIL."
+                )
             if primary_beam is not None:
                 warn(
                     """
@@ -512,7 +560,44 @@ class InterferometerSimulation:
                         visibility_path,
                     ),
                 )
+        elif backend is SimulatorBackend.HYPERDRIVE:
+            if isinstance(observation, (ObservationLong, ObservationParallelized)):
+                raise NotImplementedError(
+                    "Hyperdrive backend currently supports only simple Observation, "
+                    "not ObservationLong/ObservationParallelized."
+                )
+            if visibility_format != "MS":
+                raise NotImplementedError(
+                    "Hyperdrive backend currently supports only MS output."
+                )
+
+            out_path = self._create_or_validate_visibility_path(
+                visibility_format,
+                visibility_path,
+            )
+
+            opts = HyperdriveSimulateOptions(
+                hyperdrive_bin=self.hyperdrive_bin,
+                metafits_path=self.hyperdrive_metafits_path,
+                no_beam=self.hyperdrive_no_beam,
+                no_precession=self.hyperdrive_no_precession,
+                use_cpu=bool(self.hyperdrive_use_cpu),
+                verbosity=int(self.hyperdrive_verbosity),
+            )
+            run_hyperdrive_vis_simulate(
+                sky=sky,
+                observation=observation,
+                output_ms_path=out_path,
+                options=opts,
+            )
+            return Visibility(out_path)
+
         elif backend is SimulatorBackend.RASCIL:
+            if create_visibility is None or dft_skycomponent_visibility is None:
+                raise ModuleNotFoundError(
+                    "RASCIL backend dependencies are not available in this environment. "
+                    "Install ska-sdp-datamodels and ska-sdp-func-python."
+                )
             return self.__run_simulation_rascil(
                 telescope=telescope,
                 sky=sky,
