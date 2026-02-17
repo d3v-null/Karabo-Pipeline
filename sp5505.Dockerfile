@@ -358,6 +358,7 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     "${IDG_SPEC}" \
     "py-losoto" \
     "lofartools" \
+    "py-lsmtool" \
     && \
     spack concretize --force && \
     # sanity check avoids 4 hours wasted build time for it to fail regenerating view
