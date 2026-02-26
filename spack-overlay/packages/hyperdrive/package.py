@@ -21,7 +21,7 @@ class Hyperdrive(Package, ROCmPackage, CudaPackage):
     # Versions
     version("main", branch="main")
     # version("0.7.0", tag="v0.7.0")
-    version("0.7.0.bmetrics", commit="b4338cc3f4f0dadbe4baae88cff4a48278eec970")
+    version("0.7.0.bmetrics", commit="a1c530589144facc3dc8bad2ac721b2378f5c2be")
 
     # Variants
     variant("cuda", default=False, description="Enable CUDA support for GPU acceleration")
