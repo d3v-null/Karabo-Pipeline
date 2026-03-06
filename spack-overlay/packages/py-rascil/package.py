@@ -31,6 +31,8 @@ class PyRascil(PythonPackage):
     depends_on("py-dask-memusage@1.1:", type=("build", "run"))
     depends_on("py-distributed@2022.10.2:", type=("build", "run"))
     depends_on("py-matplotlib@3.6:", type=("build", "run"))
+    # RASCIL 1.0.0 was pinned to numpy 1.23, but the project is abandoned.
+    # Allow numpy 2.x if someone patches RASCIL for it.
     depends_on("py-numpy@1.23:", type=("build", "run"))
     depends_on("py-pandas@1.5:", type=("build", "run"))
     depends_on("py-reproject@0.9:0.13", type=("build", "run"))

@@ -26,7 +26,12 @@ from astropy.io.fits.header import Header
 from astropy.nddata import Cutout2D, NDData
 from astropy.wcs import WCS
 from numpy.typing import NDArray
-from rascil.apps.imaging_qa.imaging_qa_diagnostics import power_spectrum
+try:
+    from rascil.apps.imaging_qa.imaging_qa_diagnostics import power_spectrum
+
+    _HAS_RASCIL_QA = True
+except ImportError:
+    _HAS_RASCIL_QA = False
 from reproject import reproject_interp
 from reproject.mosaicking import find_optimal_celestial_wcs, reproject_and_coadd
 from scipy.interpolate import RegularGridInterpolator
@@ -37,10 +42,10 @@ from karabo.util.file_handler import FileHandler, assert_valid_ending
 from karabo.util.plotting_util import get_slices
 
 # store and restore the previously set matplotlib backend,
-# because rascil sets it to Agg (non-GUI)
+# because rascil (if installed) sets it to Agg (non-GUI)
 previous_backend = matplotlib.get_backend()
-
-matplotlib.use(previous_backend)
+if _HAS_RASCIL_QA:
+    matplotlib.use(previous_backend)
 
 
 class Image:
@@ -60,7 +65,7 @@ class Image:
         self,
         *,
         path: Literal[None] = None,
-        data: NDArray[np.float_],
+        data: NDArray[np.float64],
         header: Header,
         **kwargs: Any,
     ) -> None:
@@ -70,7 +75,7 @@ class Image:
         self,
         *,
         path: Optional[FilePathType] = None,
-        data: Optional[NDArray[np.float_]] = None,
+        data: Optional[NDArray[np.float64]] = None,
         header: Optional[Header] = None,
         **kwargs: Any,
     ) -> None:
@@ -131,11 +136,11 @@ class Image:
         return Image(path=path)
 
     @property
-    def data(self) -> NDArray[np.float_]:
+    def data(self) -> NDArray[np.float64]:
         return self._data
 
     @data.setter
-    def data(self, new_data: NDArray[np.float_]) -> None:
+    def data(self, new_data: NDArray[np.float64]) -> None:
         self._data = new_data
         if hasattr(self, "header"):
             self._update_header_after_resize()
@@ -257,7 +262,7 @@ class Image:
 
         """
 
-        def circle_pixels(pixels: NDArray[np.float_]) -> NDArray[np.float_]:
+        def circle_pixels(pixels: NDArray[np.float64]) -> NDArray[np.float64]:
             radius = min(pixels.shape) // 2
             y, x = np.ogrid[-radius:radius, -radius:radius]
             mask = x**2 + y**2 > radius**2
@@ -724,6 +729,10 @@ class Image:
                 - theta_axis: Angular scale data in degrees
 
         """
+        if not _HAS_RASCIL_QA:
+            raise ImportError(
+                "RASCIL is required for get_power_spectrum but is not installed."
+            )
         profile, theta = power_spectrum(self.path, resolution, signal_channel)
         return profile, theta
 

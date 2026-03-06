@@ -7,9 +7,15 @@ import numpy as np
 from astropy.modeling import fitting, models
 from astropy.wcs import WCS
 from numpy.typing import NDArray
-from rascil import processing_components as rpc
 from scipy.optimize import minpack
 from ska_sdp_datamodels.image.image_model import Image as SkaSdpImage
+
+try:
+    from rascil import processing_components as rpc
+
+    _HAS_RASCIL = True
+except ImportError:
+    _HAS_RASCIL = False
 
 from karabo.data.external_data import MGCLSContainerDownloadObject
 from karabo.imaging.image import Image
@@ -71,6 +77,10 @@ def get_MGCLS_images(regex_pattern: str, verbose: bool = False) -> List[SkaSdpIm
     if len(local_file_paths) == 0:
         raise FileNotFoundError(
             f"No files in {mgcls_cdo._remote_container_url} for {regex_pattern=}"
+        )
+    if not _HAS_RASCIL:
+        raise ImportError(
+            "RASCIL is required for get_MGCLS_images but is not installed."
         )
     mgcls_images: List[SkaSdpImage] = list()
     for local_file_path in local_file_paths:

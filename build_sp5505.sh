@@ -3,6 +3,9 @@ set -euo pipefail
 
 # Single canonical build script for the Karabo sp5505 image.
 # Uses sp5505.Dockerfile (no "optimized" variants).
+# WARNING: This script already redirects output to build_karabo-pipeline_sp5505.log.
+# DO NOT wrap with additional redirection (e.g. > logfile or 2>&1).
+# Just run: nohup ./build_sp5505.sh &
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -24,6 +27,9 @@ echo "  Image name: $IMAGE_NAME"
 echo "  Dockerfile: $DOCKERFILE"
 echo "  Skip tests: $SKIP_TESTS"
 echo "  CUDA Arch:  $CUDA_ARCH"
+echo "  SPACK Buildcache Local:  $SPACK_BUILDCACHE_LOCAL"
+[ -n "${SPACK_TARGET:-}" ] && echo "SPACK_TARGET=\"${SPACK_TARGET}\""
+[ -n "${SPACK_MIRROR_OCI:-}" ] && echo "SPACK_MIRROR_OCI=\"${SPACK_MIRROR_OCI}\""
 echo ""
 
 echo -e "${GREEN}Starting build...${NC}"
@@ -46,6 +52,15 @@ docker build \
   -t "${IMAGE_NAME}" \
   -f "${DOCKERFILE}" \
   . 2>&1 | tee "${LOG_FILE}"
+
+BUILD_EXIT=${PIPESTATUS[0]}
+if [ "${BUILD_EXIT}" -ne 0 ]; then
+  echo -e "\a${RED}BUILD FAILED (exit ${BUILD_EXIT})${NC}" >&2
+  tmux display-message -d 0 "BUILD FAILED (exit ${BUILD_EXIT}) - check ${LOG_FILE}" 2>/dev/null || true
+  exit "${BUILD_EXIT}"
+fi
+echo -e "\a${GREEN}BUILD SUCCEEDED${NC}"
+tmux display-message -d 5000 "BUILD SUCCEEDED - ${IMAGE_NAME}" 2>/dev/null || true
 
 
 

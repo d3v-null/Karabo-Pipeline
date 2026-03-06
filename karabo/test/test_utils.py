@@ -3,11 +3,17 @@ import logging
 import os
 
 import pytest
-import rascil
 
 import karabo
-import karabo.util.rascil_util
 from karabo.test.conftest import RUN_GPU_TESTS
+
+try:
+    import rascil
+    import karabo.util.rascil_util
+
+    HAS_RASCIL = True
+except ImportError:
+    HAS_RASCIL = False
 from karabo.util.gpu_util import get_gpu_memory, is_cuda_available
 from karabo.util.helpers import Environment
 
@@ -62,6 +68,7 @@ def test_version():
         )
 
 
+@pytest.mark.skipif(not HAS_RASCIL, reason="RASCIL not installed")
 def test_suppress_rascil_warning(caplog: pytest.LogCaptureFixture):
     path_to_rascil_module = karabo.util.rascil_util.DATA_DIR_WARNING_PATH_TO_MODULE
     # Make sure RASCIL module of concern is where we expect it.

@@ -16,6 +16,14 @@ class PyBdsf(PythonPackage):
     pypi = "bdsf/bdsf-1.0.0.tar.gz"
 
     version(
+        "1.13.0.post2",
+        sha256="2a91647fcdb1f6574958312d85decd4529a10e710926f11300a2388f4c9e25cd",
+    )
+    version(
+        "1.13.0.20251010",
+        commit="f528a63ebb3e1b49dccf296dc339e62ef61a0a4e",
+    )
+    version(
         "1.12.0",
         sha256="1ec301d7f98dd9dcc51245a793b63fa6a341f6378fea45907e06c6a453b6940a",
     )
@@ -40,13 +48,16 @@ class PyBdsf(PythonPackage):
     # Python from https://github.com/lofar-astron/PyBDSF/releases
     depends_on('python@3.6:3.10', when='@:1.10', type=('build', 'run'))
     depends_on('python@3.8:3.12', when='@1.11:1.12', type=('build', 'run'))
-    depends_on('python@3.13', when='@1.13:', type=('build', 'run'))
+    depends_on('python@3.9:3.13', when='@1.13:', type=('build', 'run'))
 
     # build deps from for tag in v1.10.2 v1.11.0 v1.12.0; do git show $tag:pyptoject.toml; done
     depends_on("py-setuptools@45:59", when="@:1.10", type="build")
     depends_on("py-setuptools@61:", when="@1.11:", type="build")
     # Avoid too-new setuptools breaking legacy builds; 70+ is fine for 1.12.0
-    depends_on("py-setuptools@:70", when="@1.12.0:", type="build")
+    depends_on("py-setuptools@:70", when="@1.12.0:1.12", type="build")
+    # 1.13+ pyproject.toml: setuptools (no upper cap), setuptools<65 for py<3.12
+    depends_on("py-setuptools", when="@1.13:", type="build")
+    depends_on("meson", when="@1.13:", type="build")
 
     # always
     depends_on("py-wheel", type="build")
@@ -58,13 +69,16 @@ class PyBdsf(PythonPackage):
     depends_on("cmake@3.18:", when="@1.11:", type="build")
     depends_on("ninja", type="build")
     # Match upstream-style constraints: allow 6.2+ (needed for other build tooling, e.g. matplotlib 3.6)
-    depends_on("py-setuptools-scm@6.2:", when="@1.11:", type="build")
+    depends_on("py-setuptools-scm@6.2:", when="@1.11:1.12", type="build")
+    # 1.13+ pyproject.toml uses `version_file` which requires setuptools-scm 8+
+    depends_on("py-setuptools-scm@8:", when="@1.13:", type="build")
     # depends_on("py-packaging", type="build")
     # depends_on("py-cython@0.29:", type="build", when="@:1.10")
 
     # Runtime deps
     # BDSF uses f2py from numpy at build time.
-    depends_on("py-numpy@1.20:1", type=("build", "run"))
+    # numpy 2 support: bdsf builds with boost 1.88 + numpy 2 (developer confirmed)
+    depends_on("py-numpy@1.20:", type=("build", "run"))
     depends_on("py-scipy@1.5:", type="run")
     depends_on("py-astropy@4:", type=("build", "run"))
     depends_on("py-matplotlib@3.3:", type="run")
@@ -80,14 +94,15 @@ class PyBdsf(PythonPackage):
             python("-c", "import bdsf; print('ok') ")
 
     def patch(self):
-        # This fix ensures PyBDSF uses f2py from the $PATH (from numpy)
-        # instead of /usr/bin/f2py3, which may not work.
-        filter_file(
-            "find_package(F2PY REQUIRED)",
-            "set(F2PY_EXECUTABLE f2py)",
-            "CMakeLists.txt",
-            string=True,
-        )
+        # 1.12.0-specific: fix f2py path and setuptools_scm key.
+        # 1.13.0+ has native NumPy 2 support and doesn't need these.
+        if self.spec.satisfies("@:1.12"):
+            filter_file(
+                "find_package(F2PY REQUIRED)",
+                "set(F2PY_EXECUTABLE f2py)",
+                "CMakeLists.txt",
+                string=True,
+            )
 
         # PyBDSF 1.12.0 uses a non-standard setuptools_scm key:
         #
@@ -96,12 +111,14 @@ class PyBdsf(PythonPackage):
         #
         # setuptools_scm 7.x does not accept `version_file` and errors during
         # metadata generation. Translate it to the supported key `write_to`.
-        filter_file(
-            'version_file = "bdsf/_version.py"',
-            'write_to = "bdsf/_version.py"',
-            "pyproject.toml",
-            string=True,
-        )
+        # 1.13.0+ already uses `version_file` correctly with newer setuptools_scm.
+        if self.spec.satisfies("@:1.12"):
+            filter_file(
+                'version_file = "bdsf/_version.py"',
+                'write_to = "bdsf/_version.py"',
+                "pyproject.toml",
+                string=True,
+            )
 
     def setup_build_environment(self, env):
         # Force pip to use Spack-provided setuptools/deps with correct constraints

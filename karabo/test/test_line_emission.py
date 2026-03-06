@@ -21,9 +21,11 @@ from karabo.simulation.observation import Observation
 from karabo.simulation.sky_model import SkyModel
 from karabo.simulation.telescope import Telescope
 from karabo.simulator_backend import SimulatorBackend
+from karabo.test.conftest import requires_rascil
 from karabo.util.file_handler import FileHandler
 
 
+@requires_rascil
 @pytest.mark.parametrize(
     "simulator_backend,telescope_name",
     [(SimulatorBackend.OSKAR, "SKA1MID"), (SimulatorBackend.RASCIL, "MID")],
@@ -121,6 +123,7 @@ def test_line_emission_pipeline(simulator_backend, telescope_name):
     assert len(dirty_images[0]) == len(pointings)
 
 
+@requires_rascil
 def test_compare_oskar_rascil_dirty_images():
     pointing = CircleSkyRegion(
         radius=1 * u.deg,
@@ -225,6 +228,7 @@ def test_compare_oskar_rascil_dirty_images():
     assert fraction_very_different_pixels < 0.01
 
 
+@requires_rascil
 @pytest.mark.parametrize(
     "simulator_backend,telescope_name",
     [

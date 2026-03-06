@@ -14,6 +14,7 @@ from karabo.simulation.interferometer import InterferometerSimulation
 from karabo.simulation.observation import Observation
 from karabo.simulation.sky_model import SkyModel
 from karabo.simulation.telescope import Telescope
+from karabo.test.conftest import requires_rascil
 
 
 def test_mightee_download():
@@ -23,6 +24,7 @@ def test_mightee_download():
     _ = SkyModel.get_fits_catalog(path)
 
 
+@requires_rascil
 def test_mock_mightee():
     sky = SkyModel()
     mightee1 = SkyModel.get_MIGHTEE_Sky()

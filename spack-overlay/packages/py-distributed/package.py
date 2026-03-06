@@ -35,6 +35,7 @@ class PyDistributed(PythonPackage):
 
     license("BSD-3-Clause")
 
+    version("2024.8.0", sha256="b99caf0a7f257f59477a70a334e081c1241f7cd9860211cc669742e6450e1310")
     version("2024.7.1", sha256="7bce7fa745163b55bdd67fd632b3edf57b31827640390b92d0ee3f73436429d3")
     version("2023.4.1", sha256="0140376338efdcf8db1d03f7c1fdbb5eab2a337b03e955d927c116824ee94ac5")
     version("2022.10.2", sha256="53f0a5bf6efab9a5ab3345cd913f6d3f3d4ea444ee2edbea331c7fef96fd67d0")

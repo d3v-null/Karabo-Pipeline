@@ -3,7 +3,7 @@ import tempfile
 from datetime import datetime, timedelta
 
 import numpy as np
-from ARatmospy.ArScreens import ArScreens
+import pytest
 from astropy.io import fits
 from astropy.wcs import WCS
 from numpy.typing import NDArray
@@ -14,6 +14,13 @@ from karabo.simulation.observation import Observation
 from karabo.simulation.sky_model import SkyModel
 from karabo.simulation.telescope import Telescope
 from karabo.test.util import get_compatible_dirty_imager
+
+try:
+    from ARatmospy.ArScreens import ArScreens
+
+    HAS_ARATMOSPY = True
+except (ImportError, AttributeError):
+    HAS_ARATMOSPY = False
 
 
 def sim_ion(
@@ -59,6 +66,10 @@ def sim_ion(
     return my_screens
 
 
+@pytest.mark.skipif(
+    not HAS_ARATMOSPY,
+    reason="ARatmospy not importable (likely NumPy 2 incompatibility with np.float_)",
+)
 def test_ionosphere(sky_data: NDArray[np.float64]):
     # ----------- Ionopsheric Simulations
     screen_width_metres = 200e3

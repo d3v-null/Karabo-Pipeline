@@ -25,7 +25,8 @@ class PyDucc(PythonPackage):
     depends_on("py-setuptools-scm@6.0.1:", type="build") # todo: constraints may be too tight
     depends_on("py-pybind11@2.13.5:2.13", type="build") # todo: constraints may be too tight
     depends_on("py-packaging@24.1:24", type="build") # todo: constraints may be too tight
-    depends_on("py-numpy@1.18:1", type=("build", "run")) # todo: constraints may be too tight
+    # numpy 2 compat: ducc0 0.27+ supports numpy 2
+    depends_on("py-numpy@1.18:", type=("build", "run"))
 
     import_modules = ["ducc0"]
 

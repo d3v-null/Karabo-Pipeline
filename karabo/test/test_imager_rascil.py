@@ -12,9 +12,10 @@ from karabo.simulation.observation import Observation
 from karabo.simulation.sky_model import SkyModel
 from karabo.simulation.telescope import Telescope
 from karabo.simulation.visibility import Visibility
-from karabo.test.conftest import TFiles
+from karabo.test.conftest import TFiles, requires_rascil
 
 
+@requires_rascil
 def test_dirty_image(tobject: TFiles):
     vis = Visibility(tobject.visibilities_gleam_ms)
 
@@ -29,6 +30,7 @@ def test_dirty_image(tobject: TFiles):
     assert dirty_image.data.ndim == 4
 
 
+@requires_rascil
 def test_create_cleaned_image():
     phase_center = [250, -80]
     gleam_sky = SkyModel.get_GLEAM_Sky(min_freq=72e6, max_freq=80e6)

@@ -9,6 +9,7 @@ from karabo.imaging.imager_wsclean import WscleanDirtyImager
 from karabo.simulation.sample_simulation import run_sample_simulation
 from karabo.simulation.visibility import VisibilityFormat
 from karabo.simulator_backend import SimulatorBackend
+from karabo.test.conftest import requires_rascil
 
 IMAGING_NPIXEL = 2048
 IMAGING_CELLSIZE = 3.878509448876288e-05
@@ -39,6 +40,7 @@ def test_oskar_imager(
     assert os.path.isfile(dirty_image.path)
 
 
+@requires_rascil
 @pytest.mark.parametrize(
     "simulator_backend,visibility_format",
     [

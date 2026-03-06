@@ -360,12 +360,17 @@ from karabo.data.external_data import (
     cscs_karabo_public_testing_base_url,
 )
 from karabo.imaging.image import Image
+from karabo.imaging.imager_rascil import HAS_RASCIL
 from karabo.simulation.sample_simulation import run_sample_simulation
 from karabo.simulation.visibility import Visibility
 from karabo.test import data_path
 from karabo.util.file_handler import FileHandler
 
 NNImageDiffCallable = Callable[[str, str], float]
+
+requires_rascil = pytest.mark.skipif(
+    not HAS_RASCIL, reason="RASCIL not installed (abandoned project)"
+)
 
 IS_GITHUB_RUNNER = os.environ.get("IS_GITHUB_RUNNER", "false").lower() == "true"
 RUN_GPU_TESTS = os.environ.get("RUN_GPU_TESTS", "false").lower() == "true"

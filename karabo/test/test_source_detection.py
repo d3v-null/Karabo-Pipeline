@@ -170,10 +170,13 @@ def test_source_detection_plot(
         )
 
 
-def test_bdsf_image_blanked(tobject: TFiles):
+def test_bdsf_image_blanked(tobject: TFiles, tmp_path):
     # Read example blank image (all pixel values equal 0)
     image_blanked = Image.read_from_file(tobject.blank_image_file_for_source_detection)
-    ret = PyBDSFSourceDetectionResult.detect_sources_in_image(image=image_blanked)
+    # outdir must be writable; the test data directory may be read-only
+    ret = PyBDSFSourceDetectionResult.detect_sources_in_image(
+        image=image_blanked, outdir=str(tmp_path)
+    )
     if ret is not None:
         pytest.fail(
             "The return value is not None as expected due to PyBDSF RuntimeError!"

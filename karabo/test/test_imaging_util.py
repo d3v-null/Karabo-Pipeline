@@ -11,6 +11,7 @@ from karabo.simulation.sky_model import SkyModel
 from karabo.simulation.telescope import Telescope
 from karabo.simulation.visibility import VisibilityFormat
 from karabo.simulator_backend import SimulatorBackend
+from karabo.test.conftest import requires_rascil
 from karabo.test.util import get_compatible_dirty_imager
 
 
@@ -19,7 +20,10 @@ from karabo.test.util import get_compatible_dirty_imager
     [
         (SimulatorBackend.OSKAR, "SKA1MID", "OSKAR_VIS", True),
         (SimulatorBackend.OSKAR, "SKA1MID", "MS", True),
-        (SimulatorBackend.RASCIL, "MID", "MS", False),
+        pytest.param(
+            SimulatorBackend.RASCIL, "MID", "MS", False,
+            marks=requires_rascil,
+        ),
     ],
 )
 def test_get_compatible_dirty_imager(

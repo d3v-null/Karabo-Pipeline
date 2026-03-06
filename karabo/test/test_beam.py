@@ -16,6 +16,7 @@ from karabo.data.external_data import (
 )
 from karabo.imaging.imager_rascil import RascilDirtyImager, RascilDirtyImagerConfig
 from karabo.simulation.beam import generate_gaussian_beam_data
+from karabo.test.conftest import requires_rascil
 from karabo.simulation.interferometer import InterferometerSimulation
 from karabo.simulation.observation import Observation
 from karabo.simulation.sky_model import SkyModel
@@ -58,6 +59,7 @@ def beam_gauss_R_fits_downloader(
     )
 
 
+@requires_rascil
 @pytest.mark.parametrize(
     "backend,telescope_name",
     [

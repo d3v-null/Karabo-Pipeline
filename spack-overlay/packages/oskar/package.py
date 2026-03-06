@@ -40,7 +40,7 @@ class Oskar(CMakePackage, CudaPackage):
     # conda uses casacore 3.5.0.*, harp, hdf5 >=1.14.3,<1.14.4.0a0, libgcc, libgcc-ng >=12, libstdcxx, libstdcxx-ng >=12
     # Python bindings compatibility: oskarpy 2.11.x supports OSKAR 2.7-2.11 (0x020700-0x020BFF)
     depends_on("python@3.6:", when="+python", type=("build", "run"))
-    depends_on("py-numpy@1", when="+python", type=("build", "run"))
+    depends_on("py-numpy@1.23:", when="+python", type=("build", "run"))
     depends_on("py-setuptools", when="+python", type="build")
     depends_on("py-cython", when="+python", type="build")
 

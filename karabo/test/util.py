@@ -1,6 +1,10 @@
 from karabo.imaging.imager_base import DirtyImager, DirtyImagerConfig
 from karabo.imaging.imager_oskar import OskarDirtyImager, OskarDirtyImagerConfig
-from karabo.imaging.imager_rascil import RascilDirtyImager, RascilDirtyImagerConfig
+from karabo.imaging.imager_rascil import (
+    HAS_RASCIL,
+    RascilDirtyImager,
+    RascilDirtyImagerConfig,
+)
 from karabo.imaging.imager_wsclean import WscleanDirtyImager
 from karabo.simulation.visibility import Visibility
 
@@ -33,7 +37,7 @@ def get_compatible_dirty_imager(
             )
         )
     else:
-        if config.combine_across_frequencies is False:
+        if config.combine_across_frequencies is False and HAS_RASCIL:
             dirty_imager = RascilDirtyImager(
                 RascilDirtyImagerConfig(
                     imaging_npixel=config.imaging_npixel,

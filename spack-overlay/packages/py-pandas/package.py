@@ -74,6 +74,7 @@ class PyPandas(PythonPackage):
     variant("excel", when="@1.4:", default=False, description="Build with support for Excel")
 
     depends_on("c", type="build")
+    depends_on("cxx", type="build")
 
     with default_args(type="build"):
         depends_on("py-meson-python@0.13.1:", when="@2.1:")
@@ -120,6 +121,8 @@ class PyPandas(PythonPackage):
         # 'NUMPY_IMPORT_ARRAY_RETVAL' was removed in numpy@1.19
         depends_on("py-numpy@1.13.3:1.18", when="@0.25")
         # https://github.com/pandas-dev/pandas/issues/55519
+        # numpy 2 compat: pandas 2.2.2+ officially supports numpy 2
+        depends_on("py-numpy@:2", when="@2.2.2:")
         depends_on("py-numpy@:1", when="@:2.2.1")
         depends_on("py-python-dateutil@2.8.2:", when="@2:")
         depends_on("py-python-dateutil@2.8.1:", when="@1.4:")

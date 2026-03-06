@@ -6,6 +6,7 @@ from dataclasses import fields
 from typing import Any, Dict, TypedDict, Union, get_args
 
 import astropy.units as u
+import dask
 import numpy as np
 import pytest
 import xarray as xr
@@ -97,14 +98,17 @@ def test_not_full_array():
 def test_filter_sky_model_h5():
     sky = SkyModel.get_sample_simulated_catalog()
     phase_center = [21.44213503, -30.70729488]
-    filtered_sky = sky.filter_by_radius_euclidean_flat_approximation(
-        0, 1, phase_center[0], phase_center[1]
-    )
-    filtered_sky.setup_default_wcs(phase_center)
-    assert len(filtered_sky.sources) == 33
-    assert np.all(
-        np.abs(filtered_sky.sources.compute()[:, 0:2] - phase_center) < [2, 2]
-    )
+    # Use synchronous scheduler to avoid interference from any lingering
+    # dask distributed Client started by earlier tests.
+    with dask.config.set(scheduler="synchronous"):
+        filtered_sky = sky.filter_by_radius_euclidean_flat_approximation(
+            0, 1, phase_center[0], phase_center[1]
+        )
+        filtered_sky.setup_default_wcs(phase_center)
+        assert len(filtered_sky.sources) == 33
+        assert np.all(
+            np.abs(filtered_sky.sources.compute()[:, 0:2] - phase_center) < [2, 2]
+        )
 
 
 def test_filter_flux_sky_model(sky_data_with_ids: NDArray[np.object_]):

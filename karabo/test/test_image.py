@@ -16,7 +16,8 @@ from karabo.simulation.observation import Observation
 from karabo.simulation.sky_model import SkyModel
 from karabo.simulation.telescope import Telescope
 from karabo.simulation.visibility import Visibility
-from karabo.test.conftest import TFiles
+from karabo.imaging.imager_rascil import HAS_RASCIL
+from karabo.test.conftest import TFiles, requires_rascil
 from karabo.test.util import get_compatible_dirty_imager
 
 
@@ -97,6 +98,7 @@ def test_dirty_image_resample(tobject: TFiles):
     assert np.sum(np.isnan(dirty.data)) == 0
 
 
+@requires_rascil
 def test_dirty_image_cutout(tobject: TFiles):
     vis = Visibility(tobject.visibilities_gleam_ms)
 
@@ -155,6 +157,7 @@ def test_dirty_image_N_cutout(tobject: TFiles):
         assert np.sum(np.isnan(cutout.data)) == 0
 
 
+@requires_rascil
 def test_cellsize_overwrite(tobject: TFiles):
     vis = Visibility(tobject.visibilities_gleam_ms)
 
@@ -185,6 +188,7 @@ def test_cellsize_overwrite(tobject: TFiles):
     assert cdelt_overwrite_cellsize_false == cdelt_overwrite_cellsize_true
 
 
+@requires_rascil
 def test_cellsize_overwrite_false(tobject: TFiles):
     vis = Visibility(tobject.visibilities_gleam_ms)
     dirty = RascilDirtyImager(
@@ -210,6 +214,7 @@ def test_cellsize_overwrite_false(tobject: TFiles):
     assert cdelt_overwrite_cellsize_false != cdelt_overwrite_cellsize_true
 
 
+@requires_rascil
 def test_imaging():
     phase_center = [250, -80]
     gleam_sky = SkyModel.get_GLEAM_Sky(min_freq=72e6, max_freq=80e6)

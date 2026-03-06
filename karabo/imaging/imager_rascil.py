@@ -7,12 +7,6 @@ from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 import numpy as np
 import xarray as xr
 from distributed import Client
-from rascil.processing_components import create_visibility_from_ms
-from rascil.workflows import (
-    continuum_imaging_skymodel_list_rsexecute_workflow,
-    create_visibility_from_ms_rsexecute,
-)
-from rascil.workflows.rsexecute.execution_support import rsexecute
 from ska_sdp_datamodels.science_data_model import PolarisationFrame
 from ska_sdp_func_python.image import image_gather_channels
 from ska_sdp_func_python.imaging import (
@@ -21,6 +15,18 @@ from ska_sdp_func_python.imaging import (
     remove_sumwt,
 )
 from ska_sdp_func_python.visibility import convert_visibility_to_stokesI
+
+try:
+    from rascil.processing_components import create_visibility_from_ms
+    from rascil.workflows import (
+        continuum_imaging_skymodel_list_rsexecute_workflow,
+        create_visibility_from_ms_rsexecute,
+    )
+    from rascil.workflows.rsexecute.execution_support import rsexecute
+
+    HAS_RASCIL = True
+except ImportError:
+    HAS_RASCIL = False
 from typing_extensions import override
 
 from karabo.imaging.image import Image
@@ -73,6 +79,11 @@ class RascilDirtyImager(DirtyImager):
             config (RascilDirtyImagerConfig): see config attribute
 
         """
+        if not HAS_RASCIL:
+            raise ImportError(
+                "RASCIL is required for RascilDirtyImager but is not installed. "
+                "RASCIL is an abandoned project; consider using an alternative imager."
+            )
         super().__init__()
         self.config: RascilDirtyImagerConfig = config
 
@@ -297,6 +308,11 @@ class RascilImageCleaner(ImageCleaner):
             config (RascilImageCleanerConfig): see config attribute
 
         """
+        if not HAS_RASCIL:
+            raise ImportError(
+                "RASCIL is required for RascilImageCleaner but is not installed. "
+                "RASCIL is an abandoned project; consider using an alternative imager."
+            )
         super().__init__()
         self.config = config
 

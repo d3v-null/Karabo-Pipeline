@@ -54,11 +54,10 @@ class PyPyuvdata(PythonPackage):
     depends_on("py-packaging", type="build")
     depends_on("py-numpy@1.20:", type=("build", "run"))
     depends_on("py-numpy@1.23:", type=("build", "run"), when="@2.4.3:")
-    depends_on("py-numpy@:2", type=("build", "run"), when="@:2.4.5")
 
     # Core runtime requirements from install_requires
     depends_on("py-astropy@5.0.4:", type=("build", "run"))
-    # TODO: depends_on("py-astropy@6.0:", type=("build", "run"), when="@2.4.3:")
+    depends_on("py-astropy@6.0:", type=("build", "run"), when="@2.4.3:")
 
     depends_on("py-docstring-parser@0.15:", type=("build", "run"))
 
@@ -114,6 +113,15 @@ class PyPyuvdata(PythonPackage):
 
     # Basic import test
     import_modules = ["pyuvdata"]
+
+    def patch(self):
+        """Remove numpy.long from Cython fused types (removed in NumPy 2)."""
+        if self.spec.satisfies("@:3.2.1"):
+            filter_file(
+                r"^\s*numpy\.long\s*$",
+                "",
+                join_path("src", "pyuvdata", "uvdata", "corr_fits.pyx"),
+            )
 
     def setup_build_environment(self, env):
         env.set("PIP_NO_BUILD_ISOLATION", "1")

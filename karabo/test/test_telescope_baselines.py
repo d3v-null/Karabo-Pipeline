@@ -14,6 +14,7 @@ from karabo.simulation.observation import Observation
 from karabo.simulation.sky_model import SkyModel
 from karabo.simulation.telescope import Telescope
 from karabo.simulator_backend import SimulatorBackend
+from karabo.test.conftest import requires_rascil
 from karabo.util.data_util import get_module_absolute_path
 from karabo.util.file_handler import DirPathType
 
@@ -49,6 +50,7 @@ def sky_model() -> SkyModel:
 # However, it doesn't test if the result is correct. You would expect a
 # different image quality. This is because a cut baseline reduces the
 # resolution of the instrument.
+@requires_rascil
 def test_baselines_based_cutoff(oskar_telescope: Telescope, sky_data: SkyModel):
     #  Max. baselength of MeerKAT is 7500 m. Thus, we cut somewhere
     # inbetween,
@@ -119,6 +121,7 @@ def test_baselines_based_cutoff(oskar_telescope: Telescope, sky_data: SkyModel):
         )
 
 
+@requires_rascil
 def test_telescope_max_baseline_length(
     oskar_telescope: Telescope, rascil_telescope: Telescope
 ):
@@ -135,6 +138,7 @@ def test_telescope_max_baseline_length(
     assert math.isclose(angular_res, 82.44, rel_tol=1e-2)
 
 
+@requires_rascil
 def test_telescope_stations(oskar_telescope: Telescope, rascil_telescope: Telescope):
     # station has 30 stations according to *.tm file
     baseline_wgs: NDArray[np.float64] = oskar_telescope.get_stations_wgs84()
@@ -144,6 +148,7 @@ def test_telescope_stations(oskar_telescope: Telescope, rascil_telescope: Telesc
     assert len(baseline_wgs) == 134
 
 
+@requires_rascil
 def test_telescope_baseline_length(rascil_telescope):
     stations_wgs: NDArray[np.float64] = rascil_telescope.get_stations_wgs84()
     num_stations = len(stations_wgs)

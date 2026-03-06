@@ -85,15 +85,15 @@ SkySourcesColName = Literal[  # preserve python-var-name compatibility
     "id",
 ]
 
-_NPSkyType = Union[NDArray[np.float_], NDArray[np.object_]]
+_NPSkyType = Union[NDArray[np.float64], NDArray[np.object_]]
 _SkySourcesType = Union[_NPSkyType, xr.DataArray]
 _SourceIdType = Union[
     List[str],
     List[int],
     List[float],
     NDArray[np.object_],
-    NDArray[np.int_],
-    NDArray[np.float_],
+    NDArray[np.intp],
+    NDArray[np.float64],
     DataArrayCoordinates[xr.DataArray],
 ]
 _SkyPrefixMappingValueType = Union[str, List[str]]
@@ -527,7 +527,7 @@ class SkyModel:
             transformation between pixel coordinates and celestial coordinates
             (e.g., right ascension and declination).
         precision: The precision of numerical values used in the SkyModel.
-            Has to be of type np.float_.
+            Has to be of type np.float64.
         h5_file_connection: An open connection to an HDF5 (h5) file
             that can be used to store or retrieve data related to the SkyModel.
     """
@@ -562,7 +562,7 @@ class SkyModel:
         self,
         sources: Optional[_SkySourcesType] = None,
         wcs: Optional[WCS] = None,
-        precision: Type[np.float_] = np.float64,
+        precision: Type[np.float64] = np.float64,
         h5_file_connection: Optional[h5py.File] = None,
     ) -> None:
         """
@@ -918,7 +918,7 @@ class SkyModel:
         ra0_deg: IntFloat,
         dec0_deg: IntFloat,
         indices: Literal[True],
-    ) -> Tuple[SkyModel, NDArray[np.int_]]:
+    ) -> Tuple[SkyModel, NDArray[np.intp]]:
         ...
 
     def filter_by_radius(
@@ -928,7 +928,7 @@ class SkyModel:
         ra0_deg: IntFloat,
         dec0_deg: IntFloat,
         indices: bool = False,
-    ) -> Union[SkyModel, Tuple[SkyModel, NDArray[np.int_]]]:
+    ) -> Union[SkyModel, Tuple[SkyModel, NDArray[np.intp]]]:
         """
         Filters the sky according to an inner and outer circle from the phase center
 
@@ -989,7 +989,7 @@ class SkyModel:
         ra0_deg: IntFloat,
         dec0_deg: IntFloat,
         indices: Literal[True],
-    ) -> Tuple[SkyModel, NDArray[np.int_]]:
+    ) -> Tuple[SkyModel, NDArray[np.intp]]:
         ...
 
     def filter_by_radius_euclidean_flat_approximation(
@@ -999,7 +999,7 @@ class SkyModel:
         ra0_deg: IntFloat,
         dec0_deg: IntFloat,
         indices: bool = False,
-    ) -> Union[SkyModel, Tuple[SkyModel, NDArray[np.int_]]]:
+    ) -> Union[SkyModel, Tuple[SkyModel, NDArray[np.intp]]]:
         """
         Filters sources within an annular region using a flat Euclidean distance
         approximation suitable for large datasets managed by Xarray.
@@ -1028,7 +1028,7 @@ class SkyModel:
                 SkyModel object. Defaults to False.
 
         Returns:
-            SkyModel or tuple of (SkyModel, NDArray[np.int_]):
+            SkyModel or tuple of (SkyModel, NDArray[np.intp]):
                 The filtered SkyModel object, and optionally the indices of the filtered
                 sources if `indices` is set to True.
 
@@ -1222,7 +1222,7 @@ class SkyModel:
         self,
         phase_center: IntFloatList,
         stokes: StokesType = "Stokes I",
-        idx_to_plot: Optional[NDArray[np.int_]] = None,
+        idx_to_plot: Optional[NDArray[np.intp]] = None,
         xlim: Optional[Tuple[IntFloat, IntFloat]] = None,
         ylim: Optional[Tuple[IntFloat, IntFloat]] = None,
         figsize: Optional[Tuple[IntFloat, IntFloat]] = None,
@@ -1311,7 +1311,7 @@ class SkyModel:
                     )
 
                     flux = np.where(flux > 0, flux, np.nan)
-                flux = cast(NDArray[np.float_], cfun(flux))
+                flux = cast(NDArray[np.float64], cfun(flux))
 
         # handle matplotlib kwargs
         # not set as normal args because default assignment depends on args
@@ -1586,27 +1586,26 @@ class SkyModel:
     @staticmethod
     def __convert_ra_dec_to_cartesian(
         ra: IntFloat, dec: IntFloat
-    ) -> NDArray[np.float_]:
+    ) -> NDArray[np.float64]:
         x = math.cos(math.radians(ra)) * math.cos(math.radians(dec))
         y = math.sin(math.radians(ra)) * math.cos(math.radians(dec))
         z = math.sin(math.radians(dec))
         r = np.array([x, y, z])
-        norm = cast(np.float_, np.linalg.norm(r))
+        norm = cast(np.float64, np.linalg.norm(r))
         if norm == 0:
             return r
         return r / norm
 
-    def get_cartesian_sky(self) -> NDArray[np.float_]:
+    def get_cartesian_sky(self) -> NDArray[np.float64]:
         if self.sources is None:
             raise AttributeError("Can't create cartesian-sky when `sources` is None.")
-        cartesian_sky = np.squeeze(
-            np.apply_along_axis(
-                lambda row: [
-                    self.__convert_ra_dec_to_cartesian(float(row[0]), float(row[1]))
-                ],
-                axis=1,
-                arr=self.sources,
-            )
+        sources = np.asarray(self.sources)
+        cartesian_sky = np.apply_along_axis(
+            lambda row: self.__convert_ra_dec_to_cartesian(
+                float(row[0]), float(row[1])
+            ),
+            axis=1,
+            arr=sources,
         )
         return cartesian_sky
 
@@ -2269,7 +2268,7 @@ class SkyModel:
     def convert_to_backend(
         self,
         backend: Literal[SimulatorBackend.RASCIL],
-        desired_frequencies_hz: NDArray[np.float_],
+        desired_frequencies_hz: NDArray[np.float64],
         channel_bandwidth_hz: Optional[float] = None,
         verbose: bool = False,
     ) -> List[SkyComponent]:
@@ -2278,7 +2277,7 @@ class SkyModel:
     def convert_to_backend(
         self,
         backend: SimulatorBackend = SimulatorBackend.OSKAR,
-        desired_frequencies_hz: Optional[NDArray[np.float_]] = None,
+        desired_frequencies_hz: Optional[NDArray[np.float64]] = None,
         channel_bandwidth_hz: Optional[float] = None,
         verbose: bool = False,
     ) -> Union[SkyModel, List[SkyComponent]]:
@@ -2322,7 +2321,7 @@ class SkyModel:
                     RASCIL SkyComponent instances."""
                 )
 
-            desired_frequencies_hz = cast(NDArray[np.float_], desired_frequencies_hz)
+            desired_frequencies_hz = cast(NDArray[np.float64], desired_frequencies_hz)
 
             assert (
                 len(desired_frequencies_hz) > 0

@@ -49,7 +49,8 @@ class PyKarabo(PythonPackage):
     depends_on("py-katbeam@0.1.0", type=("build", "run"))
     depends_on("py-matplotlib", type=("build", "run"))
     depends_on("py-mpi4py", type=("build", "run"))
-    depends_on("py-numpy@1.21:1.999", type=("build", "run"))
+    # numpy 2 compat: karabo works with numpy 2
+    depends_on("py-numpy@1.21:", type=("build", "run"))
     depends_on("py-packaging", type=("build", "run"))
     depends_on("py-pandas", type=("build", "run"))
     depends_on("py-pyuvdata@2.4.2+casa", type=("build", "run"))

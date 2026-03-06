@@ -19,6 +19,7 @@ class PyDask(PythonPackage):
 
     license("BSD-3-Clause")
 
+    version("2024.8.0", sha256="f1fec39373d2f101bc045529ad4e9b30e34e6eb33b7aa0fa7073aec7b1bf9eee")
     version("2024.7.1", sha256="dbaef2d50efee841a9d981a218cfeb50392fc9a95e0403b6d680450e4f50d531")
     version("2023.4.1", sha256="9dc72ebb509f58f3fe518c12dd5a488c67123fdd66ccb0b968b34fd11e512153")
     version("2022.12.1", sha256="ef12c98a6681964494ddfee4ba8071ebc8895d3c4ea27f5c5160a14e29f01d92")

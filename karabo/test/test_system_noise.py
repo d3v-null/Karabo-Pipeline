@@ -10,8 +10,10 @@ from karabo.simulation.interferometer import InterferometerSimulation
 from karabo.simulation.observation import Observation
 from karabo.simulation.sky_model import SkyModel
 from karabo.simulation.telescope import Telescope
+from karabo.test.conftest import requires_rascil
 
 
+@requires_rascil
 def test_basic(sky_data: NDArray[np.float64]):
     sky = SkyModel()
     sky.add_point_sources(sky_data)

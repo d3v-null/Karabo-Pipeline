@@ -42,6 +42,16 @@ class PyHealpy(PythonPackage):
         default=True,
         description="Use bundled HEALPix C++ from healpy source; drop external healpix-cxx",
     )
+    # When True (default) and +internal-healpix, build the internal healpix_cxx
+    # and libsharp as static archives so they are baked into the extension .so
+    # modules.  Without this the shared libs end up in a temp build dir that pip
+    # deletes, leaving a broken RPATH at runtime.
+    variant(
+        "static-internal-libs",
+        default=True,
+        when="+internal-healpix",
+        description="Build internal healpix_cxx/libsharp as static libs",
+    )
     # Allow toggling MPI/OpenMP through to healpix-cxx and libsharp
     # variant("mpi", default=True, description="Enable MPI via healpix-cxx/libsharp")
     # variant("openmp", default=True, description="Enable OpenMP via healpix-cxx/libsharp")
@@ -120,6 +130,24 @@ class PyHealpy(PythonPackage):
                     r"NPY_NO_DEPRECATED_API\s*[,=]\s*NPY_1_19_API_VERSION",
                     "NPY_NO_DEPRECATED_API=0",
                 )
+        # NOTE: --disable-shared --enable-static was attempted here to build
+        # healpix_cxx/libsharp as static archives.  The healpix_cxx autotools
+        # configure ignores these flags, so the shared libs are always created
+        # in a temp build dir that pip deletes.  The rescue_internal_healpix_libs
+        # @run_after("install") hook copies them into prefix/lib instead.
+        # Fix HEALPix C++ configure cfitsio detection:
+        # 1. Replace ffgnrwll (Fortran wrapper) with fits_open_file (C API).
+        # 2. Inject CFITSIO_LIBS into LDFLAGS before the AC_CHECK_LIB test
+        #    so the linker can find cfitsio in spack's non-standard paths.
+        #    PKG_CHECK_MODULES sets CFITSIO_LIBS but AC_CHECK_LIB doesn't
+        #    use it -- it only checks LDFLAGS/LIBS.
+        for conf in [
+            "cextern/healpix/src/cxx/configure",
+            "cextern/healpix/src/cxx/configure.ac",
+        ]:
+            if os.path.exists(conf):
+                filter_file("ffgnrwll", "fits_open_file", conf, string=True)
+
         # Create a forced-include header to override any upstream -DNPY_NO_DEPRECATED_API
         # definitions added by build tooling. The header is ensured to be included first
         # so our override wins regardless of command-line -D ordering.
@@ -148,12 +176,72 @@ class PyHealpy(PythonPackage):
         env.append_flags("CFLAGS", "-DNPY_NO_DEPRECATED_API=0")
         env.append_flags("CXXFLAGS", "-DNPY_NO_DEPRECATED_API=0")
 
+        # Expose cfitsio to the vendored HEALPix C++ configure.
+        # PKG_CHECK_MODULES_STATIC pulls in transitive static deps
+        # (curl, zlib, bz2) from non-standard spack paths the linker
+        # can't resolve.  Setting CFITSIO_CFLAGS/CFITSIO_LIBS as env
+        # vars makes configure skip pkg-config and use these directly,
+        # linking against the shared cfitsio (no transitive deps needed).
+        cfitsio = self.spec["cfitsio"].prefix
+        env.set("CFITSIO_CFLAGS", f"-I{cfitsio.include}")
+        env.set("CFITSIO_LIBS", f"-L{cfitsio.lib} -lcfitsio")
+        env.prepend_path("LD_LIBRARY_PATH", str(cfitsio.lib))
+        # Tell autoconf to skip the AC_CHECK_LIB(cfitsio, fits_open_file)
+        # link test.  pkg-config already confirmed cfitsio is present, but
+        # the link test fails because spack's library paths aren't in the
+        # default linker search path.  Setting the cache variable makes
+        # configure trust the pkg-config result.
+        env.set("ac_cv_lib_cfitsio_fits_open_file", "yes")
+        env.append_flags("LDFLAGS", f"-L{cfitsio.lib}")
+        env.append_flags("CPPFLAGS", f"-I{cfitsio.include}")
+
         # Building with +internal-healpix will build bundled libsharp.
+
+    @run_after("install")
+    def rescue_internal_healpix_libs(self):
+        """Copy bundled healpix_cxx/libsharp shared libs into the install prefix.
+
+        When using +internal-healpix, healpy's setup.py builds these libraries
+        in a temporary build directory.  After pip install the extension .so
+        files have NEEDED entries for libhealpix_cxx.so.4, but the temporary
+        directory is gone.  We rescue the shared libs from the still-existing
+        spack staging directory and copy them into prefix/lib so they survive.
+        """
+        if not self.spec.satisfies("+internal-healpix"):
+            return
+
+        import shutil
+
+        src = self.stage.source_path
+        dest_lib = os.path.join(str(self.prefix), "lib")
+        mkdirp(dest_lib)
+        copied = []
+
+        for dirpath, _dirnames, filenames in os.walk(src):
+            for fn in filenames:
+                if (
+                    fn.startswith("libhealpix_cxx")
+                    or fn.startswith("libsharp")
+                ) and ".so" in fn:
+                    full = os.path.join(dirpath, fn)
+                    target = os.path.join(dest_lib, fn)
+                    if not os.path.exists(target):
+                        shutil.copy2(full, target)
+                        copied.append(fn)
+
+        if copied:
+            tty.msg("py-healpy: rescued internal libs: " + ", ".join(copied))
+        else:
+            tty.warn(
+                "py-healpy: no libhealpix_cxx.so* found in build staging "
+                "directory -- the extension modules may fail to load at "
+                "runtime.  Consider switching to ~internal-healpix and "
+                "depending on the external healpix-cxx spack package."
+            )
 
     def test_import(self):
         python = self.spec["python"].command
         if python:
-            # Validate that the compiled extension is present
             code = (
                 "import importlib, healpy; "
                 "importlib.import_module('healpy._pixelfunc'); "

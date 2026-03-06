@@ -23,6 +23,7 @@ from karabo.simulation.sample_simulation import run_sample_simulation
 from karabo.simulation.sky_model import SkyModel
 from karabo.simulation.telescope import Telescope
 from karabo.simulator_backend import SimulatorBackend
+from karabo.test.conftest import requires_rascil
 from karabo.test.util import get_compatible_dirty_imager
 
 
@@ -122,6 +123,7 @@ def test_backend_simulations(
     assert len(dirty.data.shape) == 4
 
 
+@requires_rascil
 @pytest.mark.parametrize(
     "backend,telescope_name",
     [

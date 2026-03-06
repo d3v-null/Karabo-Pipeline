@@ -67,9 +67,10 @@ class PyAstropy(PythonPackage):
 
     depends_on("py-astropy-iers-data", when="@6:", type=("build", "run"))
     depends_on("py-numpy@2:", when="@6.1:", type=("build", "run"))
-    # https://github.com/astropy/astropy/issues/16200
-    depends_on("py-numpy@:1.23", when="@:6.0")
-    # Astropy 5.1.x supports NumPy up to 1.23.x only
+    # Astropy <=6.0 needs numpy 1.x; constraint removed because with numpy 2
+    # stack we force astropy >=6.1.0, so this upper bound is never active
+    # and was confusing the when_possible concretizer.
+    # depends_on("py-numpy@:1.23", when="@:6.0")
     depends_on("py-numpy@1.18:", when="@5.1:6.0", type=("build", "run"))
     depends_on("py-numpy@1.16:", when="@4.0:", type=("build", "run"))
     depends_on("py-numpy@1.13:", when="@3.1:", type=("build", "run"))

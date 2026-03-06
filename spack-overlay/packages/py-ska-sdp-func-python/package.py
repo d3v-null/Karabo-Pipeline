@@ -10,8 +10,9 @@ class PySkaSdpFuncPython(PythonPackage):
 
     license("BSD-3-Clause")
 
+    version("0.2.0", tag="0.2.0")
     version("0.1.5", tag="0.1.5")
-    version("0.1.4", tag="0.1.4")  # <- conda
+    version("0.1.4", tag="0.1.4")
 
     build_system("python_pip", "python_setuptools")
 
@@ -24,20 +25,19 @@ class PySkaSdpFuncPython(PythonPackage):
     depends_on("py-setuptools-scm", type="build")
     depends_on("py-hatchling", type="build")
     depends_on("py-hatch-vcs", type="build")
-    # Poetry is only needed as a build backend; poetry-core is sufficient and
-    # avoids pulling the full `poetry` dependency stack.
     depends_on("py-poetry-core@1:", type="build")
 
-    # Runtime pins (match rascil.Dockerfile stack)
-    depends_on("py-astropy@5.1:", type=("build", "run"))
+    # Runtime: 0.2.x supports numpy 2 + newer stack
+    depends_on("py-astropy@5.1:", type=("build", "run"), when="@:0.1")
+    depends_on("py-astropy@6:", type=("build", "run"), when="@0.2:")
     depends_on("py-ducc@0.27:", type=("build", "run"))
     depends_on("py-numpy@1.23:", type=("build", "run"))
     depends_on("py-photutils@1.11:", type=("build", "run"))
     depends_on("py-scipy@1.9:", type=("build", "run"))
-    depends_on("py-ska-sdp-datamodels@0.1.3:", type=("build", "run"))
-    depends_on(
-        "py-xarray@2022.12.0:2023.2.0", type=("build", "run")
-    )  # Match py-ska-sdp-datamodels constraint
+    depends_on("py-ska-sdp-datamodels@0.1.3:", type=("build", "run"), when="@:0.1")
+    depends_on("py-ska-sdp-datamodels@0.2:", type=("build", "run"), when="@0.2:")
+    depends_on("py-xarray@2022.12.0:2023.2.0", type=("build", "run"), when="@:0.1")
+    depends_on("py-xarray@2024:", type=("build", "run"), when="@0.2:")
 
     import_modules = ["ska_sdp_func_python"]
 

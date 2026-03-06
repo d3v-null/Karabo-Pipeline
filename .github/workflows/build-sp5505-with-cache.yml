@@ -15,7 +15,7 @@ on:
       repo_test_filter:
         description: "Pytest -k filter for repository tests inside image"
         required: false
-        default: 'not (test_suppress_rascil_warning or test_source_detection_plot or test_simulation_noise_meerkat)'
+        default: "not (test_suppress_rascil_warning or test_source_detection_plot or test_simulation_noise_meerkat)"
       skip_tests:
         description: "Skip tests during build (1=yes, 0=no)"
         required: false
@@ -39,6 +39,7 @@ on:
     branches:
       - main
       - karabo-jupyter-docker
+      - numpy2
     paths:
       - "sp5505.Dockerfile"
       - "spack-overlay/**"

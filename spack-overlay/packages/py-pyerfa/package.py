@@ -30,7 +30,9 @@ class PyPyerfa(PythonPackage):
     version("2.0.1.5", sha256="17d6b24fe4846c65d5e7d8c362dcb08199dc63b30a236aedd73875cc83e1f6c0")
 
     depends_on("python@3.7:", type=("build", "run"))
-    depends_on("py-numpy@1.23.5:1", type=("build", "run"))
+    # numpy 2 compat: pyerfa 2.0.1.5 supports numpy 2
+    depends_on("py-numpy@1.23.5:1", type=("build", "run"), when="@:2.0.0.3")
+    depends_on("py-numpy@:2", type=("build", "run"), when="@2.0.1.5:")
     depends_on("py-setuptools@61.2:69", type="build")
     depends_on("py-setuptools-scm@6:", type="build")  # Compatible with setuptools@45:
     depends_on("py-packaging", type=("build", "run"))
