@@ -137,10 +137,10 @@ ARG SCIPY_VERSION=1.14.1
 ARG MATPLOTLIB_VERSION=3.9.2
 # matplotlib 3.9+ supports numpy 2; previous: 3.6.3
 # 3.9.2 is the latest available in spack
-ARG ASTROPY_VERSION=6.1.0
+# ARG ASTROPY_VERSION=6.1.0
 # astropy 6.1+ requires numpy 2; previous: 5.1.1
 # pyuvdata 3.2.0 requires astropy>=6.0
-ARG CASACORE_VERSION=3.7.1
+# ARG CASACORE_VERSION=3.7.1
 # conda has 3.5.0
 # casacore 3.7.1 needed by DP3@6.4: (unchanged)
 ARG HEALPY_VERSION=1.17.3
@@ -185,9 +185,9 @@ ARG WSCLEAN_VERSION=3.6.20260109
 # karabo uses wsclean 3.4,
 # 3.5 best for everybeam 0.7.4 compatibility
 # 3.6.20260109 needed for compatibility with everybeam 0.8 for MWA support in DP3
-ARG EVERYBEAM_VERSION=0.8.0.20251125
+# ARG EVERYBEAM_VERSION=0.8.0.20251125
 # 0.7.4 works, but 0.8.0.20251125 is needed for MWA support in DP3
-ARG DP3_VERSION=6.5.1.20260109
+# ARG DP3_VERSION=6.5.1.20260109
 # dp3 is outside of karabo, 6.5.1.20260109 is needed for MWA support
 ARG CUDA_VERSION=12.2.2
 ARG CUDA_ARCH="75,80,86,89,90"
@@ -221,25 +221,38 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     spack config add "config:install_tree:root:/opt/software"; \
     # DO NOT MODIFY CONCRETIZATION OR VIEW SETTINGS
     spack config add "concretizer:unify:when_possible"; \
-    spack config add "view:/opt/view"; \
+    # view config set via python3 yaml manipulation below (with py-mistune@:2 exclude) \
     spack config add "config:source_cache:/opt/spack-source-cache"; \
     spack config add "config:misc_cache:/opt/spack-misc-cache"; \
     spack config add "packages:casacore:variants: +data+python"; \
     spack config add "packages:all:target:[${spack_target}]"; \
     # Force numpy-2-compatible versions of transitive deps globally via
-    # packages.yaml require.  Old versions cap numpy@:1: py-tables@:3.9.1,
-    # py-numexpr@:2.9, py-losoto@2.4:2.5, py-lsmtool@:1.6.1.
-    # Must use require (not spack add) so it constrains ALL instances
+    # packages.yaml require. Constrains ALL instances
     # including transitive deps under when_possible concretization.
-    python3 -c "import yaml;p='/opt/spack_env/spack.yaml';f=open(p);c=yaml.safe_load(f);f.close();\
+    if [ -n "${CUDA_ARCH}" ]; then \
+        WSCLEAN_REQUIRE="~mpi+cuda"; \
+    else \
+        WSCLEAN_REQUIRE="~mpi~cuda"; \
+    fi; \
+    python3 -c "import yaml,sys;p='/opt/spack_env/spack.yaml';f=open(p);c=yaml.safe_load(f);f.close();\
     pkgs=c.setdefault('spack',{}).setdefault('packages',{});\
     [pkgs.setdefault(k,{}).update({'require':v}) for k,v in [\
         ('py-numpy','@2:'),\
         ('py-tables','@3.9.2'),\
         ('py-numexpr','@2.10.2:'),\
         ('py-losoto','@2.6:'),\
-        ('py-lsmtool','@1.6.2:')]];\
-    f=open(p,'w');yaml.dump(c,f,default_flow_style=False);f.close()"; \
+        ('py-lsmtool','@1.6.2:'),\
+        ('dp3','+idg'),\
+        ('everybeam','+python'),\
+        ('aoflagger','@3.4.0'),\
+        ('casacore','+python+data+dysco~hdf5~mpi~openmp'),\
+        ('py-casacore','@3.7.1'),\
+        ('py-astropy','@6.1.0'),\
+        ('cfitsio','+bzip2+fortran+utils'),\
+        ('boost','+test'),\
+        ('wsclean',sys.argv[1])]];\
+    c['spack']['view']={'default':{'root':'/opt/view','exclude':['py-mistune@:2','py-requests@:2.31']}};\
+    f=open(p,'w');yaml.dump(c,f,default_flow_style=False);f.close()" "${WSCLEAN_REQUIRE}"; \
     # Local buildcache persisted via BuildKit cache mount (fast retries / iterations).
     # Disable by setting SPACK_BUILDCACHE_LOCAL=0 or empty.
     if [ "${SPACK_BUILDCACHE_LOCAL:-0}" != "0" ] && [ -n "${SPACK_BUILDCACHE_LOCAL:-}" ]; then \
@@ -296,11 +309,11 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     'hdf5@'$HDF5_VERSION'+hl~mpi+threadsafe' \
     'py-maturin@1.6.0' \
     'cfitsio@'$CFITSIO_VERSION \
-    'py-astropy@'$ASTROPY_VERSION \
+    # 'py-astropy@'$ASTROPY_VERSION # transitive, py-rapthor \
     'py-bdsf@'$BDSF_VERSION \
     'py-scipy@'$SCIPY_VERSION \
-    'casacore@'$CASACORE_VERSION'+python+data' \
-    'py-casacore@'$CASACORE_VERSION \
+    # 'casacore@'$CASACORE_VERSION'+python+data' # transitive, py-rapthor\
+    # 'py-casacore@'$CASACORE_VERSION # transitive, py-rapthor \
     'py-joblib' \
     'py-lazy-loader' \
     'py-dask@'$DASK_VERSION \
@@ -343,7 +356,7 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     "${HYPERBEAM_SPEC}" \
     "${HYPERDRIVE_SPEC}" \
     # 'aoflagger@3.4.0' # transitive, DP3 \
-    'dp3@'$DP3_VERSION'+idg' \
+    # 'dp3@'$DP3_VERSION'+idg' # transitive, py-rapthor \
     "${IDG_SPEC}" \
     'py-rapthor@'$RAPTHOR_VERSION \
     && \
