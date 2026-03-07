@@ -251,7 +251,7 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
         ('cfitsio','+bzip2+fortran+utils'),\
         ('boost','+test'),\
         ('wsclean',sys.argv[1])]];\
-    c['spack']['view']={'default':{'root':'/opt/view','exclude':['py-mistune@:2','py-requests@:2.31']}};\
+    c['spack']['view']={'default':{'root':'/opt/view','exclude':['py-requests@:2.31']}};\
     f=open(p,'w');yaml.dump(c,f,default_flow_style=False);f.close()" "${WSCLEAN_REQUIRE}"; \
     # Local buildcache persisted via BuildKit cache mount (fast retries / iterations).
     # Disable by setting SPACK_BUILDCACHE_LOCAL=0 or empty.
