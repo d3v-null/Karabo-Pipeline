@@ -8,6 +8,9 @@ FROM quay.io/jupyter/minimal-notebook:notebook-7.0.6 AS builder
 USER root
 SHELL ["/bin/bash", "-lc"]
 
+# Re-declare ARG to make it available in this stage
+ARG PYTHON_VERSION=3.10
+
 ENV DEBIAN_FRONTEND=noninteractive
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
@@ -262,7 +265,7 @@ ARG NB_GID=100
 USER ${NB_UID}
 
 # Register kernel for jovyan user using the Spack Python
-RUN python -m ipykernel install --user --name=rapthor --display-name="Rapthor (Spack Py${PYTHON_VERSION})"
+RUN python -m ipykernel install --user --name=rapthor --display-name="Rapthor (Spack Py3.10)"
 
 # download latest Leap_Second.dat, IERS finals2000A.all
 RUN python -c "from astropy.time import Time; t=Time.now(); print(t.gps, t.ut1)" || true
