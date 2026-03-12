@@ -55,7 +55,7 @@ class PyAstropy(PythonPackage):
     # Required dependencies
     depends_on("python@3.10:", when="@6.1.0:", type=("build", "run"))
     depends_on("python@3.8:", when="@5.1:", type=("build", "run"))
-    depends_on("py-setuptools@63", type="build")  # Pin to 63.x which works with PIP_NO_BUILD_ISOLATION
+    depends_on("py-setuptools@63:", type="build")
     depends_on("py-cython@0.21:", when="@:2", type="build")
     depends_on("py-cython@0.29.13:", when="@:4", type="build")
     depends_on("py-cython@0.29.30:", when="@:5", type="build")

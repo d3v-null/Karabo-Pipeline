@@ -1,7 +1,7 @@
 # Minimal Jupyter notebook with Rapthor pipeline
 # Based on quay.io/jupyter/minimal-notebook with Spack-installed rapthor dependencies
 
-ARG PYTHON_VERSION=3.10
+ARG PYTHON_VERSION=3.12
 
 FROM quay.io/jupyter/minimal-notebook:notebook-7.0.6 AS builder
 
@@ -9,7 +9,7 @@ USER root
 SHELL ["/bin/bash", "-lc"]
 
 # Re-declare ARG to make it available in this stage
-ARG PYTHON_VERSION=3.10
+ARG PYTHON_VERSION=3.12
 
 ENV DEBIAN_FRONTEND=noninteractive
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
@@ -127,19 +127,27 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     python3 -c "import yaml,sys;p='/opt/spack_env/spack.yaml';f=open(p);c=yaml.safe_load(f);f.close();\
     pkgs=c.setdefault('spack',{}).setdefault('packages',{});\
     [pkgs.setdefault(k,{}).update({'require':v}) for k,v in [\
-        ('py-numpy','@2:'),\
+        ('py-numpy','@${NUMPY_VERSION}'),\
+        ('py-scipy','@${SCIPY_VERSION}'),\
+        ('py-matplotlib','@${MATPLOTLIB_VERSION}'),\
+        ('py-h5py','@${H5PY_VERSION}'),\
+        ('py-pandas','@${PANDAS_VERSION}'),\
+        ('py-xarray','@${XARRAY_VERSION}'),\
+        ('py-bdsf','@${BDSF_VERSION}'),\
+        ('py-reproject','@${REPROJECT_VERSION}'),\
         ('py-tables','@3.9.2'),\
         ('py-numexpr','@2.10.2:'),\
         ('py-losoto','@2.6:'),\
         ('py-lsmtool','@1.6.2:'),\
+        ('py-astropy','@${ASTROPY_VERSION}'),\
         ('dp3','@${DP3_VERSION}+idg'),\
         ('everybeam','@${EVERYBEAM_VERSION}+python'),\
         ('aoflagger','@${AOFLAGGER_VERSION}'),\
         ('casacore','@${CASACORE_VERSION}+python+data+dysco~hdf5~mpi~openmp'),\
         ('py-casacore','@${CASACORE_VERSION}'),\
-        ('py-astropy','@${ASTROPY_VERSION}'),\
-        ('cfitsio','+bzip2+fortran+utils'),\
-        ('boost','+test'),\
+        ('cfitsio','@${CFITSIO_VERSION}+bzip2+fortran+utils'),\
+        ('hdf5','@${HDF5_VERSION}+hl~mpi+threadsafe'),\
+        ('boost','@${BOOST_VERSION}+test+python+numpy'),\
         ('wsclean','~mpi~cuda')]];\
     c['spack']['view']={'default':{'root':'/opt/view','exclude':['py-requests@:2.31']}};\
     f=open(p,'w');yaml.dump(c,f,default_flow_style=False);f.close()"; \
@@ -164,28 +172,23 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     spack add \
     'python@'$PYTHON_VERSION \
     'py-pip' \
-    'py-numpy@'$NUMPY_VERSION \
-    'py-jupyterlab-server@2.27:' \
-    'py-jupyterlab@4' \
-    'py-notebook@7' \
-    'py-matplotlib@'$MATPLOTLIB_VERSION \
-    'boost@'$BOOST_VERSION'+python+numpy' \
-    'hdf5@'$HDF5_VERSION'+hl~mpi+threadsafe' \
-    'cfitsio@'$CFITSIO_VERSION \
-    'py-bdsf@'$BDSF_VERSION \
-    'py-scipy@'$SCIPY_VERSION \
-    'py-h5py@'$H5PY_VERSION \
-    'py-pandas@'$PANDAS_VERSION \
-    'py-reproject@'$REPROJECT_VERSION \
-    'py-xarray@'$XARRAY_VERSION \
     'py-packaging' \
-    'py-requests' \
+    'py-requests@2.32:' \
     'py-rapthor@'$RAPTHOR_VERSION \
     && \
     spack concretize --force && \
+    python3 -c "import json,sys;d=json.load(open('/opt/spack_env/spack.lock'));\
+    t=['py-rapthor','py-numpy','py-scipy','py-matplotlib','py-astropy',\
+       'py-casacore','casacore','py-h5py','py-pandas','py-xarray',\
+       'py-bdsf','py-reproject','py-losoto','py-lsmtool',\
+       'dp3','everybeam','aoflagger','wsclean','py-toil'];\
+    c={};[c.setdefault(s.get('name'),[]).append(0) for s in d.get('concrete_specs',{}).values()];\
+    e=[x for x in t if len(c.get(x,[]))>1];\
+    print(f'Duplicate packages found: {e}') or sys.exit(1) if e else print('No duplicate packages, OK')" && \
     ac_cv_lib_curl_curl_easy_init=no spack install --use-cache --no-check-signature --no-checksum --fail-fast --show-log-on-error && \
     spack gc -y && \
     spack env view regenerate && \
+    /opt/view/bin/pip install --no-deps ipykernel ipython traitlets jupyter_client jupyter_core pyzmq tornado nest_asyncio debugpy matplotlib-inline comm psutil && \
     if [ "${SPACK_BUILDCACHE_LOCAL:-0}" != "0" ] && [ -n "${SPACK_BUILDCACHE_LOCAL:-}" ]; then \
         spack buildcache update-index /opt/buildcache || true; \
     fi && \
@@ -261,11 +264,12 @@ RUN python -c "import numpy; print('numpy', numpy.__version__, 'OK')" && \
 ARG NB_USER=jovyan
 ARG NB_UID=1000
 ARG NB_GID=100
+ARG PYTHON_VERSION=3.12
 
 USER ${NB_UID}
 
 # Register kernel for jovyan user using the Spack Python
-RUN python -m ipykernel install --user --name=rapthor --display-name="Rapthor (Spack Py3.10)"
+RUN python -m ipykernel install --user --name=rapthor --display-name="Rapthor (Spack Py${PYTHON_VERSION})"
 
 # download latest Leap_Second.dat, IERS finals2000A.all
 RUN python -c "from astropy.time import Time; t=Time.now(); print(t.gps, t.ut1)" || true

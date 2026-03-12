@@ -26,7 +26,7 @@ class PyAstropyIersData(PythonPackage):
     )
 
     depends_on("python@3.8:")
-    depends_on("py-setuptools@63", type="build")  # Pin to 63.x which works with PIP_NO_BUILD_ISOLATION
+    depends_on("py-setuptools@63:", type="build")
     depends_on("py-setuptools-scm", type="build")
     depends_on("py-wheel", type="build")
     depends_on("py-tomli", type="build")  # Required by setuptools-scm on Python < 3.11
