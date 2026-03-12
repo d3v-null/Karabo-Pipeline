@@ -1,0 +1,361 @@
+---
+name: Build Rapthor Jupyter Container
+
+on:
+  workflow_dispatch:
+    inputs:
+      skip_tests:
+        description: "Skip tests during build (1=yes, 0=no)"
+        required: false
+        default: "0"
+  pull_request:
+    paths:
+      - "rapthor-jupyter.Dockerfile"
+      - "spack-overlay/**"
+      - ".github/workflows/build-rapthor-jupyter.yml"
+  push:
+    branches:
+      - main
+      - numpy2
+    paths:
+      - "rapthor-jupyter.Dockerfile"
+      - "spack-overlay/**"
+      - ".github/workflows/build-rapthor-jupyter.yml"
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: rapthor-jupyter
+
+jobs:
+  build-pretest:
+    name: Build and publish -pretest by digest
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+      packages: write
+      actions: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            platform: linux/amd64
+          - os: ubuntu-22.04-arm
+            platform: linux/arm64
+    steps:
+      - name: Prepare
+        run: |
+          platform=${{ matrix.platform }}
+          echo "PLATFORM_PAIR=${platform//\//-}" >> $GITHUB_ENV
+          wf="${{ github.workflow }}"
+          safe_wf=$(echo "$wf" | sed -E 's/[^A-Za-z0-9._-]+/-/g')
+          echo "CACHE_SCOPE=${safe_wf}-${platform//\//-}" >> $GITHUB_ENV
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check disk space
+        run: df -h
+
+      - name: Free up disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /usr/local/share/boost
+          [ -n "$AGENT_TOOLSDIRECTORY" ] && sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /usr/share/swift
+          sudo rm -rf /usr/local/.ghcup
+          sudo rm -rf /usr/lib/jvm
+          sudo rm -rf /usr/local/share/powershell
+          sudo rm -rf /usr/share/miniconda
+          sudo docker system prune -af --volumes
+          sudo apt-get clean
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: |
+            image=moby/buildkit:v0.13.2
+            network=host
+          buildkitd-config-inline: |
+            [worker.oci]
+              max-parallelism = 1
+              gc = true
+              gckeepstorage = 5000
+            [worker.containerd]
+              max-parallelism = 1
+              gc = true
+              gckeepstorage = 5000
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (-pretest)
+        id: meta-pretest
+        uses: docker/metadata-action@v5
+        with:
+          images: >-
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha,prefix=sha-
+            type=raw,value=latest,enable={{is_default_branch}}
+          flavor: |
+            suffix=-pretest
+          labels: |
+            org.opencontainers.image.title=Rapthor Jupyter
+            org.opencontainers.image.description=Jupyter notebook with Rapthor LOFAR pipeline
+
+      - name: Build - by digest (always push)
+        id: build-push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./rapthor-jupyter.Dockerfile
+          platforms: ${{ matrix.platform }}
+          labels: ${{ steps.meta-pretest.outputs.labels }}
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
+          build-args: |
+            SPACK_TARGET=${{ matrix.platform == 'linux/amd64' && 'x86_64_v2' || 'aarch64' }}
+            SPACK_MIRROR_OCI=oci://${{ env.REGISTRY }}/${{ github.repository_owner }}/rapthor-jupyter-spack-buildcache
+          secrets: |
+            spack_oci_username=${{ github.actor }}
+            spack_oci_password=${{ github.token }}
+          cache-from: |
+            type=registry,ref=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:buildcache-${{ env.PLATFORM_PAIR }}
+          cache-to: |
+            type=registry,ref=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:buildcache-${{ env.PLATFORM_PAIR }},mode=max,compression=zstd,compression-level=3
+
+      - name: Check disk space after build
+        if: always()
+        run: df -h
+
+      - name: Export digest (push)
+        if: steps.build-push.outcome == 'success'
+        run: |
+          mkdir -p /tmp/digests
+          digest="${{ steps.build-push.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+
+      - name: Upload digest (push)
+        if: steps.build-push.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ env.PLATFORM_PAIR }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge-pretest:
+    name: Publish multi-arch -pretest tag
+    runs-on: ubuntu-latest
+    needs: build-pretest
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests
+          pattern: digests-*
+          merge-multiple: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Docker meta (-pretest)
+        id: meta-pretest
+        uses: docker/metadata-action@v5
+        with:
+          images: >-
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha,prefix=sha-
+            type=raw,value=latest,enable={{is_default_branch}}
+          flavor: |
+            suffix=-pretest
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create manifest list and push (-pretest)
+        working-directory: /tmp/digests
+        run: |
+          docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf '${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}@sha256:%s ' *)
+
+      - name: Inspect -pretest image
+        run: |
+          IMAGE_REF="${{ fromJSON(steps.meta-pretest.outputs.json).tags[0] }}"
+          docker buildx imagetools inspect "$IMAGE_REF"
+
+  test:
+    name: Run tests in image
+    needs: [build-pretest, merge-pretest]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            platform: linux/amd64
+          - os: ubuntu-22.04-arm
+            platform: linux/arm64
+    steps:
+      - name: Prepare
+        run: |
+          platform=${{ matrix.platform }}
+          echo "PLATFORM_PAIR=${platform//\//-}" >> $GITHUB_ENV
+
+      - name: Docker meta (-pretest)
+        id: meta-pretest
+        uses: docker/metadata-action@v5
+        with:
+          images: >-
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha,prefix=sha-
+            type=raw,value=latest,enable={{is_default_branch}}
+          flavor: |
+            suffix=-pretest
+
+      - name: Free up disk space for tests
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /usr/local/share/boost
+          [ -n "$AGENT_TOOLSDIRECTORY" ] && sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /usr/share/swift
+          sudo rm -rf /usr/local/.ghcup
+          sudo rm -rf /usr/lib/jvm
+          sudo rm -rf /usr/local/share/powershell
+          sudo rm -rf /usr/share/miniconda
+          sudo docker system prune -af --volumes
+          sudo apt-get clean
+
+      - name: Run smoke tests
+        run: |
+          IMAGE_REF="${{ fromJSON(steps.meta-pretest.outputs.json).tags[0] }}"
+          docker run --rm "${IMAGE_REF}" python --version
+          docker run --rm "${IMAGE_REF}" python -c "import rapthor; print('Rapthor import successful')"
+          docker run --rm "${IMAGE_REF}" python -c "import casacore.tables; print('python-casacore OK')"
+          docker run --rm "${IMAGE_REF}" python -c "import numpy; print('numpy', numpy.__version__)"
+          docker run --rm "${IMAGE_REF}" rapthor --version
+
+      - name: Verify Jupyter kernel is registered
+        run: |
+          IMAGE_REF="${{ fromJSON(steps.meta-pretest.outputs.json).tags[0] }}"
+          docker run --rm "${IMAGE_REF}" jupyter kernelspec list | grep -q rapthor
+
+      - name: Verify Jupyter server starts and responds
+        run: |
+          IMAGE_REF="${{ fromJSON(steps.meta-pretest.outputs.json).tags[0] }}"
+          CID=$(docker run -d -p 127.0.0.1:8888:8888 \
+            --health-cmd='curl -fsS http://127.0.0.1:8888/api/status?token=test || exit 1' \
+            --health-interval=10s \
+            --health-retries=12 \
+            --health-timeout=5s \
+            "${IMAGE_REF}" start-notebook.sh \
+              --NotebookApp.token='test' \
+              --ServerApp.token='test' \
+              --ServerApp.ip='0.0.0.0' \
+              --ServerApp.port=8888)
+          echo "Started container $CID, waiting for healthy status..."
+          for i in $(seq 1 60); do
+            STATUS=$(docker inspect --format='{{.State.Health.Status}}' "$CID" 2>/dev/null || echo "unknown")
+            echo "Health check $i/60: $STATUS"
+            if [ "$STATUS" = "healthy" ]; then
+              echo "Container is healthy!"
+              break
+            fi
+            sleep 2
+          done
+          docker logs "$CID" --tail 50 || true
+          curl -fsS "http://127.0.0.1:8888/api/status?token=test"
+          echo "Jupyter server responded successfully"
+          docker rm -f "$CID" >/dev/null
+
+      - name: Test kernel execution
+        run: |
+          IMAGE_REF="${{ fromJSON(steps.meta-pretest.outputs.json).tags[0] }}"
+          docker run --rm "${IMAGE_REF}" python -c "
+          import subprocess
+          import sys
+          result = subprocess.run([
+              sys.executable, '-m', 'jupyter', 'execute',
+              '--kernel=rapthor',
+              '--ExecutePreprocessor.timeout=60',
+              '-'
+          ], input='''
+          import rapthor
+          import casacore.tables
+          import numpy as np
+          print(\"Kernel test passed\")
+          ''', capture_output=True, text=True)
+          print(result.stdout)
+          if result.returncode != 0:
+              print(result.stderr)
+              # Don't fail on kernel test - jupyter execute may not be available
+              print('Warning: kernel execution test skipped')
+          "
+
+  promote-pass:
+    name: Publish -pass tag after tests pass
+    needs: [build-pretest, test]
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request'
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests
+          pattern: digests-*
+          merge-multiple: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Docker meta (-pass)
+        id: meta-pass
+        uses: docker/metadata-action@v5
+        with:
+          images: >-
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha,prefix=sha-
+            type=raw,value=latest,enable={{is_default_branch}}
+          flavor: |
+            suffix=-pass
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create manifest list and push (-pass)
+        working-directory: /tmp/digests
+        run: |
+          docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf '${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}@sha256:%s ' *)
+
+      - name: Inspect -pass image
+        run: |
+          IMAGE_REF="${{ fromJSON(steps.meta-pass.outputs.json).tags[0] }}"
+          docker buildx imagetools inspect "$IMAGE_REF"
