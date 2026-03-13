@@ -149,7 +149,7 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
         ('hdf5','@${HDF5_VERSION}+hl~mpi+threadsafe'),\
         ('boost','@${BOOST_VERSION}+test+python+numpy'),\
         ('wsclean','~mpi~cuda')]];\
-    c['spack']['view']={'default':{'root':'/opt/view','exclude':['py-requests@:2.31']}};\
+    c['spack']['view']={'default':{'root':'/opt/view'}};\
     f=open(p,'w');yaml.dump(c,f,default_flow_style=False);f.close()"; \
     if [ "${SPACK_BUILDCACHE_LOCAL:-0}" != "0" ] && [ -n "${SPACK_BUILDCACHE_LOCAL:-}" ]; then \
         spack mirror add --autopush --unsigned mycache file:///opt/buildcache; \
@@ -172,8 +172,6 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     spack add \
     'python@'$PYTHON_VERSION \
     'py-pip' \
-    'py-packaging' \
-    'py-requests@2.32:' \
     'py-rapthor@'$RAPTHOR_VERSION \
     && \
     spack concretize --force && \
@@ -189,6 +187,8 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     spack gc -y && \
     spack env view regenerate && \
     /opt/view/bin/pip install --no-deps ipykernel ipython traitlets jupyter_client jupyter_core pyzmq tornado nest_asyncio debugpy matplotlib-inline comm psutil && \
+    /opt/view/bin/pip install --no-deps stack_data executing asttokens pure_eval pygments wcwidth prompt_toolkit decorator parso jedi && \
+    /opt/view/bin/pip install 'requests>=2.32' 'packaging' && \
     if [ "${SPACK_BUILDCACHE_LOCAL:-0}" != "0" ] && [ -n "${SPACK_BUILDCACHE_LOCAL:-}" ]; then \
         spack buildcache update-index /opt/buildcache || true; \
     fi && \
