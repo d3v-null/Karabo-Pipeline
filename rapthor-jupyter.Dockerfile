@@ -141,6 +141,7 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
         ('py-lsmtool','@1.6.2:'),\
         ('py-astropy','@${ASTROPY_VERSION}'),\
         ('dp3','@${DP3_VERSION}+idg'),\
+        ('idg','~cuda'),\
         ('everybeam','@${EVERYBEAM_VERSION}+python'),\
         ('aoflagger','@${AOFLAGGER_VERSION}'),\
         ('casacore','@${CASACORE_VERSION}+python+data+dysco~hdf5~mpi~openmp'),\
@@ -186,9 +187,7 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     ac_cv_lib_curl_curl_easy_init=no spack install --use-cache --no-check-signature --no-checksum --fail-fast --show-log-on-error && \
     spack gc -y && \
     spack env view regenerate && \
-    /opt/view/bin/pip install --no-deps ipykernel ipython traitlets jupyter_client jupyter_core pyzmq tornado nest_asyncio debugpy matplotlib-inline comm psutil && \
-    /opt/view/bin/pip install --no-deps stack_data executing asttokens pure_eval pygments wcwidth prompt_toolkit decorator parso jedi && \
-    /opt/view/bin/pip install 'requests>=2.32' 'packaging' && \
+    /opt/view/bin/pip install jupyterlab notebook ipykernel 'requests>=2.32' packaging && \
     if [ "${SPACK_BUILDCACHE_LOCAL:-0}" != "0" ] && [ -n "${SPACK_BUILDCACHE_LOCAL:-}" ]; then \
         spack buildcache update-index /opt/buildcache || true; \
     fi && \
@@ -275,3 +274,14 @@ RUN python -m ipykernel install --user --name=rapthor --display-name="Rapthor (S
 RUN python -c "from astropy.time import Time; t=Time.now(); print(t.gps, t.ut1)" || true
 
 WORKDIR "/home/${NB_USER}"
+
+# Ensure spack python's jupyter is used instead of conda's
+# The before-notebook hook activates spack env which prepends /opt/view/bin to PATH
+# but start-notebook.sh runs /opt/conda/bin/jupyter-lab directly.
+# Fix by shadowing conda's jupyter commands with symlinks to spack's
+USER root
+RUN rm -f /opt/conda/bin/jupyter* && \
+    ln -s /opt/view/bin/jupyter /opt/conda/bin/jupyter && \
+    ln -s /opt/view/bin/jupyter-lab /opt/conda/bin/jupyter-lab && \
+    ln -s /opt/view/bin/jupyter-notebook /opt/conda/bin/jupyter-notebook
+USER ${NB_UID}
