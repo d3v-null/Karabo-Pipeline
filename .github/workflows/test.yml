@@ -1,8 +1,6 @@
 name: Tests
 
 on:
-  schedule: # Every night at 5am
-    - cron: '0 5 * * *'
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
