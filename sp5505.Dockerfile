@@ -89,7 +89,7 @@ RUN spack compiler find && \
     rust
 
 # Add SKA SDP Spack repo and overlay
-RUN git clone --depth=1 --single-branch --branch=2026.02.3 https://gitlab.com/ska-telescope/sdp/ska-sdp-spack.git /opt/ska-sdp-spack && \
+RUN git clone --depth=1 --single-branch --branch=2026.02.5 https://gitlab.com/ska-telescope/sdp/ska-sdp-spack.git /opt/ska-sdp-spack && \
     rm -rf /opt/ska-sdp-spack/.git && \
     spack repo add /opt/ska-sdp-spack
 COPY spack-overlay /opt/karabo-spack
@@ -137,10 +137,10 @@ ARG SCIPY_VERSION=1.14.1
 ARG MATPLOTLIB_VERSION=3.9.2
 # matplotlib 3.9+ supports numpy 2; previous: 3.6.3
 # 3.9.2 is the latest available in spack
-# ARG ASTROPY_VERSION=6.1.0
+ARG ASTROPY_VERSION=6.1.0
 # astropy 6.1+ requires numpy 2; previous: 5.1.1
 # pyuvdata 3.2.0 requires astropy>=6.0
-# ARG CASACORE_VERSION=3.7.1
+ARG CASACORE_VERSION=3.7.1
 # conda has 3.5.0
 # casacore 3.7.1 needed by DP3@6.4: (unchanged)
 ARG HEALPY_VERSION=1.17.3
@@ -181,18 +181,20 @@ ARG SDP_FUNC_PYTHON_VERSION=0.2.0
 ARG ARATMOSPY_VERSION=1.0.0
 ARG EIDOS_VERSION=1.1.0
 ARG KATBEAM_VERSION=0.1.0
+
+ARG AOFLAGGER_VERSION=3.4.0
 ARG WSCLEAN_VERSION=3.6.20260109
 # karabo uses wsclean 3.4,
 # 3.5 best for everybeam 0.7.4 compatibility
 # 3.6.20260109 needed for compatibility with everybeam 0.8 for MWA support in DP3
-# ARG EVERYBEAM_VERSION=0.8.0.20251125
+ARG EVERYBEAM_VERSION=0.8.0.20251125
 # 0.7.4 works, but 0.8.0.20251125 is needed for MWA support in DP3
-# ARG DP3_VERSION=6.5.1.20260109
+ARG DP3_VERSION=6.5.1.20260109
 # dp3 is outside of karabo, 6.5.1.20260109 is needed for MWA support
 ARG CUDA_VERSION=12.2.2
 ARG CUDA_ARCH="75,80,86,89,90"
 # covers T4/RTX2000, A100, RTX3000, L40, GH200
-ARG RAPTHOR_VERSION=2.0.20250915
+ARG RAPTHOR_VERSION=2.1.20260216
 
 # Create Spack environment and install deps
 ARG SPACK_TARGET=""
@@ -238,16 +240,17 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     pkgs=c.setdefault('spack',{}).setdefault('packages',{});\
     [pkgs.setdefault(k,{}).update({'require':v}) for k,v in [\
         ('py-numpy','@2:'),\
+        ('py-zipp','@:3.17'),\
         ('py-tables','@3.9.2'),\
         ('py-numexpr','@2.10.2:'),\
         ('py-losoto','@2.6:'),\
         ('py-lsmtool','@1.6.2:'),\
-        ('dp3','+idg'),\
-        ('everybeam','+python'),\
-        ('aoflagger','@3.4.0'),\
-        ('casacore','+python+data+dysco~hdf5~mpi~openmp'),\
-        ('py-casacore','@3.7.1'),\
-        ('py-astropy','@6.1.0'),\
+        ('dp3','@${DP3_VERSION}+idg'),\
+        ('everybeam','@${EVERYBEAM_VERSION}+python'),\
+        ('aoflagger','@${AOFLAGGER_VERSION}'),\
+        ('casacore','@${CASACORE_VERSION}+python+data+dysco~hdf5~mpi~openmp'),\
+        ('py-casacore','@${CASACORE_VERSION}'),\
+        ('py-astropy','@${ASTROPY_VERSION}'),\
         ('cfitsio','+bzip2+fortran+utils'),\
         ('boost','+test'),\
         ('wsclean',sys.argv[1])]];\
