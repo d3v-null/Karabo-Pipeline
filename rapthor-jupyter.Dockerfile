@@ -1,8 +1,6 @@
 # Minimal Jupyter notebook with Rapthor pipeline
 # Based on quay.io/jupyter/minimal-notebook with Spack-installed rapthor dependencies
 
-ARG PYTHON_VERSION=3.12
-
 FROM quay.io/jupyter/minimal-notebook:notebook-7.0.6 AS builder
 
 USER root
@@ -174,6 +172,7 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     'python@'$PYTHON_VERSION \
     'py-pip' \
     'py-rapthor@'$RAPTHOR_VERSION \
+    'py-ska-sdp-ical@main' \
     && \
     spack concretize --force && \
     python3 -c "import json,sys;d=json.load(open('/opt/spack_env/spack.lock'));\
