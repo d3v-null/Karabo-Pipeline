@@ -1,5 +1,7 @@
 # Minimal Jupyter notebook with Rapthor pipeline
 # Based on quay.io/jupyter/minimal-notebook with Spack-installed rapthor dependencies
+# build: docker build . -f rapthor-jupyter.Dockerfile --tag rapthor-jupyter:latest
+# run: docker run --rm -it -v $PWD:$PWD -w $PWD -e OPENBLAS_NUM_THREADS=1 -p 8888:8888 rapthor-jupyter:latest
 
 FROM quay.io/jupyter/minimal-notebook:notebook-7.0.6 AS builder
 
@@ -263,6 +265,8 @@ ARG NB_USER=jovyan
 ARG NB_UID=1000
 ARG NB_GID=100
 ARG PYTHON_VERSION=3.12
+
+RUN python -m pip install git+https://github.com/NERSC/slurm-magic.git
 
 USER ${NB_UID}
 

@@ -706,6 +706,8 @@ COPY --chown=${NB_UID}:${NB_GID} setup.cfg pyproject.toml /opt/Karabo-Pipeline/
 RUN python -m pip install --no-deps -e /opt/Karabo-Pipeline && \
     fix-permissions /opt/Karabo-Pipeline /home/${NB_USER}
 
+RUN python -m pip install git+https://github.com/NERSC/slurm-magic.git
+
 USER ${NB_UID}
 # Register kernel for jovyan user using the Spack Python
 RUN python -m ipykernel install --user --name=karabo --display-name="Karabo (Spack Py3.10)"
@@ -764,4 +766,3 @@ for lib in libs:
 PY
 
 WORKDIR "/home/${NB_USER}"
-
