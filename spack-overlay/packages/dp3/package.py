@@ -20,6 +20,13 @@ class Dp3(CMakePackage):
         no_cache=True,
     )
 
+    version(
+        "6.6",
+        commit="4a8f165a0f5683771cc3c84d041ffe98c14d5ceb",
+        submodules=True,
+        no_cache=True,
+    )
+
     variant("python", default=True, description="Enable Python support")
     variant("idg", default=False, description="Enable IDG support")
 
