@@ -187,10 +187,10 @@ ARG WSCLEAN_VERSION=3.6.20260109
 # karabo uses wsclean 3.4,
 # 3.5 best for everybeam 0.7.4 compatibility
 # 3.6.20260109 needed for compatibility with everybeam 0.8 for MWA support in DP3
-ARG EVERYBEAM_VERSION=0.8.0.20251125
-# 0.7.4 works, but 0.8.0.20251125 is needed for MWA support in DP3
-ARG DP3_VERSION=6.5.1.20260109
-# dp3 is outside of karabo, 6.5.1.20260109 is needed for MWA support
+ARG EVERYBEAM_VERSION=0.8.2
+# 0.8.2 is the EveryBeam release required for DP3 6.6's MWA support.
+ARG DP3_VERSION=6.6
+# DP3 6.6 is compatible with EveryBeam 0.7.4 through 0.9.
 ARG CUDA_VERSION=12.2.2
 ARG CUDA_ARCH="75,80,86,89,90"
 # covers T4/RTX2000, A100, RTX3000, L40, GH200
@@ -344,7 +344,7 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     'py-aratmospy@'$ARATMOSPY_VERSION \
     'py-eidos@'$EIDOS_VERSION \
     'py-katbeam@'$KATBEAM_VERSION \
-    # 'everybeam@'$EVERYBEAM_VERSION \
+    'everybeam@'$EVERYBEAM_VERSION'+python' \
     "${WSCLEAN_SPEC}" \
     'py-tools21cm@'$TOOLS21CM_VERSION \
     'py-dask-mpi' \
@@ -358,8 +358,8 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     # not karabo-related
     "${HYPERBEAM_SPEC}" \
     "${HYPERDRIVE_SPEC}" \
-    # 'aoflagger@3.4.0' # transitive, DP3 \
-    # 'dp3@'$DP3_VERSION'+idg' # transitive, py-rapthor \
+    # aoflagger is transitive from DP3 \
+    'dp3@'$DP3_VERSION'+idg' \
     "${IDG_SPEC}" \
     'py-rapthor@'$RAPTHOR_VERSION \
     && \
@@ -618,6 +618,20 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 
 ENV MWA_BEAM_FILE=/opt/mwa_full_embedded_element_pattern.h5
 RUN wget -O$MWA_BEAM_FILE http://ws.mwatelescope.org/static/mwa_full_embedded_element_pattern.h5 --progress=dot:mega
+
+# This fixture is EveryBeam's upstream MWA regression MS.  The probe uses the
+# same PointResponse::Response(kFull, station, frequency, ITRF direction)
+# primitive as DP3 Predict, then removes the MS so it is not shipped in the image.
+COPY everybeam_mwa_predict_test.py /opt/everybeam_mwa_predict_test.py
+RUN --mount=type=cache,target=/opt/everybeam-test-cache,id=everybeam-mwa-test-data,sharing=locked \
+    cp /opt/everybeam-test-cache/MWA-single-timeslot.tar.bz2 /tmp/ 2>/dev/null || \
+    wget -q -P /tmp https://support.astron.nl/software/ci_data/EveryBeam/MWA-single-timeslot.tar.bz2; \
+    tar -xf /tmp/MWA-single-timeslot.tar.bz2 -C /tmp --one-top-level=MWA_MOCK.ms --strip-components=1 && \
+    cp /tmp/MWA-single-timeslot.tar.bz2 /opt/everybeam-test-cache/ && \
+    python /opt/everybeam_mwa_predict_test.py && \
+    DP3 --version && \
+    python -c "import dp3; print('dp3 Python import OK')" && \
+    rm -rf /tmp/MWA_MOCK.ms /tmp/MWA-single-timeslot.tar.bz2
 
 # tests
 RUN python -c "import ska_sdp_func_python" || exit 1 && \

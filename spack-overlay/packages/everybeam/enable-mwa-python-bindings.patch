@@ -1,0 +1,77 @@
+diff --git a/python/wrappers/pyload.cc b/python/wrappers/pyload.cc
+index 82a2985..d57fb77 100644
+--- a/python/wrappers/pyload.cc
++++ b/python/wrappers/pyload.cc
+@@ -64,6 +64,7 @@ std::unique_ptr<Telescope> pyload_telescope(
+     case everybeam::TelescopeType::kLofarTelescope:
+     case everybeam::TelescopeType::kOSKARTelescope:
+     case everybeam::TelescopeType::kSkaMidTelescope:
++    case everybeam::TelescopeType::kMWATelescope:
+       break;
+     default:
+       throw std::runtime_error(
+diff --git a/python/wrappers/pytelescope.cc b/python/wrappers/pytelescope.cc
+index 9d023a8..4e8a895 100644
+--- a/python/wrappers/pytelescope.cc
++++ b/python/wrappers/pytelescope.cc
+@@ -19,6 +19,7 @@
+ #include "telescope/phasedarray.h"
+ #include "telescope/lofar.h"
+ #include "telescope/oskar.h"
++#include "telescope/mwa.h"
+ #include "telescope/skamid.h"
+ 
+ namespace py = pybind11;
+@@ -35,6 +36,7 @@ using everybeam::pointresponse::PointResponse;
+ using everybeam::telescope::LOFAR;
+ using everybeam::telescope::OSKAR;
+ using everybeam::telescope::PhasedArray;
++using everybeam::telescope::MWA;
+ using everybeam::telescope::SkaMid;
+ using everybeam::telescope::Telescope;
+ 
+@@ -953,6 +955,41 @@ void init_telescope(py::module& m) {
+         Inherits from :func:`~everybeam.PhasedArray`.
+         )pbdoc");
+ 
+-  // TODO: other telescopes:
+-  // py::class_<MWA, Telescope>(m, "MWA");
++  py::class_<MWA, Telescope>(m, "MWA", R"pbdoc(
++        Class to get beam responses for MWA observations.
++        Inherits from :func:`~everybeam.Telescope`.
++        )pbdoc")
++      .def_property_readonly("is_homogeneous", &MWA::IsHomogeneous)
++      .def(
++          "station_response",
++          [](MWA& self, double time, size_t station_idx, double frequency,
++             const py::array_t<double>& direction)
++              -> py::array_t<std::complex<double>> {
++            check_station_index(station_idx, self.GetNrStations(),
++                                "station_response");
++            const vector3r_t direction_itrf = np2vector3r_t(direction);
++            std::unique_ptr<PointResponse> point_response =
++                self.GetPointResponse(time);
++            return cast_matrix(point_response->Response(
++                BeamMode::kFull, station_idx, frequency, direction_itrf));
++          },
++          R"pbdoc(
++        Get the full Jones response in an ITRF source direction.
++
++        This is the same PointResponse::Response access pattern used by DP3
++        Predict for MWA data.
++
++        Parameters
++        ----------
++        time: float
++            Evaluation time in MJD(UTC) seconds.
++        station_idx: int
++            Zero-based station index.
++        frequency: float
++            Frequency in Hz.
++        direction: np.ndarray
++            Three-element ITRF unit vector for the source direction.
++       )pbdoc",
++          py::arg("time"), py::arg("station_idx"), py::arg("frequency"),
++          py::arg("direction"));
+ 
+   // py::class_<Dish, Telescope>(m, "Dish");

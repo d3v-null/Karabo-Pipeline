@@ -8,6 +8,11 @@ from matplotlib.colors import LogNorm
 from scipy.interpolate import RegularGridInterpolator
 from typing import Tuple
 
+import everybeam
+from astropy.coordinates import AltAz, EarthLocation, ITRS
+from astropy.time import Time
+import astropy.units as u
+from casacore.tables import table
 from mwa_hyperbeam import FEEBeam
 from pyuvdata import UVBeam
 
@@ -60,6 +65,70 @@ def compute_hb_jones_grid(beam_path: str, freq_mhz: float, za_vals: np.ndarray, 
     return Jxx, Jxy, Jyx, Jyy
 
 
+def pyuvbeam_efield(
+    beam: UVBeam, vector_index: int, feed_index: int, frequency_index: int,
+    za_index, az_index,
+) -> np.ndarray:
+    """Read PyUVData's e-field array across its pre- and post-3.x layouts."""
+    if beam.data_array.ndim == 6:
+        return beam.data_array[
+            vector_index, 0, feed_index, frequency_index, za_index, az_index
+        ]
+    if beam.data_array.ndim == 5:
+        return beam.data_array[
+            vector_index, feed_index, frequency_index, za_index, az_index
+        ]
+    raise ValueError(f"Unsupported PyUVBeam data shape: {beam.data_array.shape}")
+
+
+def compute_everybeam_jones_grid(
+    ms_path: str,
+    beam_path: str,
+    freq_mhz: float,
+    za_vals: np.ndarray,
+    az_vals: np.ndarray,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Evaluate EveryBeam's DP3-Predict MWA primitive over an AltAz grid."""
+    with table(ms_path, ack=False) as ms:
+        time_mjd_seconds = float(ms.getcell("TIME", 0))
+    with table(os.path.join(ms_path, "ANTENNA"), ack=False) as antennas:
+        array_position_m = antennas.getcell("POSITION", 0)
+
+    telescope = everybeam.load_telescope(ms_path, coeff_path=beam_path)
+    if not isinstance(telescope, everybeam.MWA):
+        raise TypeError(f"Expected an MWA telescope, got {type(telescope).__name__}")
+
+    AZ, ZA = np.meshgrid(np.radians(az_vals), np.radians(za_vals), indexing="xy")
+    observation_time = Time(time_mjd_seconds / 86400.0, format="mjd", scale="utc")
+    location = EarthLocation.from_geocentric(*array_position_m, unit="m")
+    altaz = AltAz(
+        az=AZ.ravel() * u.rad,
+        alt=(np.pi / 2.0 - ZA.ravel()) * u.rad,
+        obstime=observation_time,
+        location=location,
+    )
+    itrf = altaz.transform_to(ITRS(obstime=observation_time)).cartesian
+    directions_itrf = np.column_stack(
+        [itrf.x.value, itrf.y.value, itrf.z.value]
+    )
+    directions_itrf /= np.linalg.norm(directions_itrf, axis=1)[:, None]
+
+    frequency_hz = freq_mhz * 1e6
+    jones = np.empty((directions_itrf.shape[0], 2, 2), dtype=complex)
+    for index, direction_itrf in enumerate(directions_itrf):
+        jones[index] = telescope.station_response(
+            time_mjd_seconds, 0, frequency_hz, direction_itrf
+        )
+
+    shape = (len(za_vals), len(az_vals))
+    return (
+        jones[:, 0, 0].reshape(shape),
+        jones[:, 0, 1].reshape(shape),
+        jones[:, 1, 0].reshape(shape),
+        jones[:, 1, 1].reshape(shape),
+    )
+
+
 def compute_py_jones_grid(beam_path: str, freq_mhz: float, za_vals: np.ndarray, az_vals: np.ndarray, delays: np.ndarray, *, az_shift_mode: int = 1, basis_mode: int = 0, rot_mode: int = 0) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
 	delays_2 = np.array([delays, delays])
 	beam = UVBeam()
@@ -90,11 +159,11 @@ def compute_py_jones_grid(beam_path: str, freq_mhz: float, za_vals: np.ndarray, 
 	# basis 0 ~ theta, 1 ~ phi; data indices end with (za, az)
 	for i, zi in enumerate(za_idx):
 		# slice at this za over all az
-		Ex_theta_row = beam.data_array[0, 0, 0, fi, zi, :]
-		Ex_phi_row   = beam.data_array[1, 0, 0, fi, zi, :]
-		if beam.data_array.shape[2] > 1:
-			Ey_theta_row = beam.data_array[0, 0, 1, fi, zi, :]
-			Ey_phi_row   = beam.data_array[1, 0, 1, fi, zi, :]
+		Ex_theta_row = pyuvbeam_efield(beam, 0, 0, fi, zi, slice(None))
+		Ex_phi_row = pyuvbeam_efield(beam, 1, 0, fi, zi, slice(None))
+		if beam.Nfeeds > 1:
+			Ey_theta_row = pyuvbeam_efield(beam, 0, 1, fi, zi, slice(None))
+			Ey_phi_row = pyuvbeam_efield(beam, 1, 1, fi, zi, slice(None))
 		else:
 			Ey_theta_row = np.zeros_like(Ex_theta_row)
 			Ey_phi_row   = np.zeros_like(Ex_phi_row)
@@ -201,10 +270,13 @@ def sample_pyuvbeam_jones(beam: UVBeam, freq_mhz: float, za_deg: float, az_deg: 
     za_idx = int(np.clip(np.argmin(np.abs(za_vals - za_deg)), 0, len(za_vals) - 1))
     # basis 0 ~ theta (za), basis 1 ~ phi (az)
     # Map to sky XY: X ~ +phi, Y ~ -theta
-    Ex_theta = beam.data_array[0, 0, 0, fi, za_idx, az_idx]
-    Ex_phi   = beam.data_array[1, 0, 0, fi, za_idx, az_idx]
-    Ey_theta = beam.data_array[0, 0, 1, fi, za_idx, az_idx] if beam.data_array.shape[2] > 1 else Ex_theta*0
-    Ey_phi   = beam.data_array[1, 0, 1, fi, za_idx, az_idx] if beam.data_array.shape[2] > 1 else Ex_phi*0
+    Ex_theta = pyuvbeam_efield(beam, 0, 0, fi, za_idx, az_idx)
+    Ex_phi = pyuvbeam_efield(beam, 1, 0, fi, za_idx, az_idx)
+    if beam.Nfeeds > 1:
+        Ey_theta = pyuvbeam_efield(beam, 0, 1, fi, za_idx, az_idx)
+        Ey_phi = pyuvbeam_efield(beam, 1, 1, fi, za_idx, az_idx)
+    else:
+        Ey_theta, Ey_phi = Ex_theta * 0, Ex_phi * 0
     J = _map_theta_phi_to_xy(Ex_theta, Ex_phi, Ey_theta, Ey_phi, basis_mode)
     J = _apply_feed_rotation(J, rot_mode)
     return J
@@ -240,6 +312,11 @@ def main() -> None:
     p.add_argument("--projection", type=str, default=None, help="Projection code: SIN, TAN, ARC, ZEA, STG")
     p.add_argument("--proj-size", type=float, default=90.0, help="Half-size of projected plane in deg (extent is ±proj-size)")
     p.add_argument("--pix", type=float, default=0.5, help="Pixel scale in deg for projection")
+    p.add_argument(
+        "--everybeam-ms",
+        default=os.environ.get("EVERYBEAM_MWA_MS"),
+        help="MWA Measurement Set for EveryBeam (or set EVERYBEAM_MWA_MS)",
+    )
     p.add_argument("--no-plot", action="store_true", help="Skip plotting and only print summary/table")
     p.add_argument("--quiet", action="store_true", help="Suppress non-table prints for minimal output")
     p.add_argument("--delay-ewp", type=int, default=0, help="Delay E-W plane in beamformer units")
@@ -416,11 +493,24 @@ def main() -> None:
             print("| "+" | ".join(str(x) for x in r)+" |")
 
     if not args.no_plot:
+        if not args.everybeam_ms:
+            p.error("--everybeam-ms or EVERYBEAM_MWA_MS is required for plotting")
         plt.style.use("dark_background")
-        # Build Jones grids for 6 panels: HB/PY side-by-side per component
+        # Build Jones grids for 6 panels: Hyperbeam / PyUVBeam / EveryBeam.
         Jxx_hb, Jxy_hb, Jyx_hb, Jyy_hb = compute_hb_jones_grid(args.beam_path, args.freq_mhz, za_vals, az_vals, delays)
         # Use diagnosed mapping for the grid too
         Jxx_py, Jxy_py, Jyx_py, Jyy_py = compute_py_jones_grid(args.beam_path, args.freq_mhz, za_vals, az_vals, delays, az_shift_mode=best_az_mode, basis_mode=best_basis_mode, rot_mode=best_rot_mode)
+        start = time.perf_counter()
+        Jxx_eb, Jxy_eb, Jyx_eb, Jyy_eb = compute_everybeam_jones_grid(
+            args.everybeam_ms,
+            args.beam_path,
+            args.freq_mhz,
+            za_vals,
+            az_vals,
+        )
+        eb_time = time.perf_counter() - start
+        if not args.quiet:
+            print(f"EveryBeam time: {eb_time:.3f} s")
 
         def mag(z):
             return np.abs(z)
@@ -429,57 +519,73 @@ def main() -> None:
             return np.degrees(np.angle(z))
 
         rows = [
-            (mag(Jxx_hb), mag(Jxx_py), "|Jxx|"),
-            (phase(Jxx_hb), phase(Jxx_py), "∠Jxx"),
-            (mag(Jyy_hb), mag(Jyy_py), "|Jyy|"),
-            (phase(Jyy_hb), phase(Jyy_py), "∠Jyy"),
-            (mag(Jxy_hb), mag(Jxy_py), "|Jxy|"),
-            (phase(Jxy_hb), phase(Jxy_py), "∠Jxy"),
+            (mag(Jxx_hb), mag(Jxx_py), mag(Jxx_eb), "|Jxx|"),
+            (phase(Jxx_hb), phase(Jxx_py), phase(Jxx_eb), "∠Jxx"),
+            (mag(Jyy_hb), mag(Jyy_py), mag(Jyy_eb), "|Jyy|"),
+            (phase(Jyy_hb), phase(Jyy_py), phase(Jyy_eb), "∠Jyy"),
+            (mag(Jxy_hb), mag(Jxy_py), mag(Jxy_eb), "|Jxy|"),
+            (phase(Jxy_hb), phase(Jxy_py), phase(Jxy_eb), "∠Jxy"),
         ]
         # Keep a pristine copy for projection; handle seam only for native plotting below
         rows_orig = rows
         extent_native = [az_vals.min(), az_vals.max(), za_vals.min(), za_vals.max()]
-        fig, axs = plt.subplots(6, 2, figsize=(12, 20), constrained_layout=True)
+        fig, axs = plt.subplots(6, 3, figsize=(18, 20), constrained_layout=True)
         # Row-wise normalization (shared vmin/vmax per row)
-        def row_norm(arr_hb: np.ndarray, arr_py: np.ndarray, is_mag: bool):
-            Z1, Z2 = np.copy(arr_hb), np.copy(arr_py)
+        def row_norm(
+            arr_hb: np.ndarray,
+            arr_py: np.ndarray,
+            arr_eb: np.ndarray,
+            is_mag: bool,
+        ):
+            Z1, Z2, Z3 = np.copy(arr_hb), np.copy(arr_py), np.copy(arr_eb)
             if is_mag:
                 # linear mags, log norm; set tiny floor for zeros
                 tiny = 1e-12
                 Z1 = np.where(np.isfinite(Z1), Z1, np.nan)
                 Z2 = np.where(np.isfinite(Z2), Z2, np.nan)
-                vmin = max(tiny, np.nanmin([np.nanmin(Z1[Z1>0]) if np.any(Z1>0) else np.nan, np.nanmin(Z2[Z2>0]) if np.any(Z2>0) else np.nan]))
-                vmax = np.nanmax([np.nanmax(Z1), np.nanmax(Z2)])
-                # diff uses symmetric linear scale
-                vdiff_max = max(np.nanmax(np.abs(Zdiff)), 1e-12)
-                return Z1, Z2, Zdiff, vmin, vmax, -vdiff_max, vdiff_max
-            else:
-                # phases in degrees, center to [-180,180]
-                Z1 = (Z1 + 180.0) % 360.0 - 180.0
-                Z2 = (Z2 + 180.0) % 360.0 - 180.0
-                Zdiff = (Zdiff + 180.0) % 360.0 - 180.0
-                vmin, vmax = -180.0, 180.0
-                return Z1, Z2, vmin, vmax
+                Z3 = np.where(np.isfinite(Z3), Z3, np.nan)
+                positive_mins = [
+                    np.nanmin(Z[Z > 0]) if np.any(Z > 0) else np.nan
+                    for Z in (Z1, Z2, Z3)
+                ]
+                vmin = max(tiny, np.nanmin(positive_mins))
+                vmax = np.nanmax([np.nanmax(Z1), np.nanmax(Z2), np.nanmax(Z3)])
+                return Z1, Z2, Z3, vmin, vmax
+            # Phases in degrees, centered to [-180, 180].
+            return (
+                (Z1 + 180.0) % 360.0 - 180.0,
+                (Z2 + 180.0) % 360.0 - 180.0,
+                (Z3 + 180.0) % 360.0 - 180.0,
+                -180.0,
+                180.0,
+            )
         if args.projection is None:
             # Native plotting
             add_seam = az_vals[-1] < 360.0
             if add_seam:
                 az_plot = np.append(az_vals, 360.0)
                 rows_native = [
-                    (np.concatenate([hb, hb[:, :1]], axis=1), np.concatenate([py, py[:, :1]], axis=1), np.concatenate([diff, diff[:, :1]], axis=1), title)
-                    for hb, py, diff, title in rows_orig
+                    (
+                        np.concatenate([hb, hb[:, :1]], axis=1),
+                        np.concatenate([py, py[:, :1]], axis=1),
+                        np.concatenate([eb, eb[:, :1]], axis=1),
+                        title,
+                    )
+                    for hb, py, eb, title in rows_orig
                 ]
             else:
                 az_plot = az_vals
                 rows_native = rows_orig
             extent_native = [az_plot.min(), az_plot.max(), za_vals.min(), za_vals.max()]
-            for i, (hbZ_raw, pyZ_raw, diffZ_raw, title) in enumerate(rows_native):
+            for i, (hbZ_raw, pyZ_raw, ebZ_raw, title) in enumerate(rows_native):
                 is_mag = ("|" in title)
-                hbZ, pyZ, diffZ, vmin, vmax, vdiff_min, vdiff_max = row_norm(hbZ_raw, pyZ_raw, diffZ_raw, is_mag)
-                for j, (Z, lbl, vm_lo, vm_hi, use_log) in enumerate([
-                    (hbZ, "HB", vmin, vmax, is_mag),
-                    (pyZ, "PY", vmin, vmax, is_mag),
-                    (diffZ, "HB−PY", vdiff_min, vdiff_max, False)
+                hbZ, pyZ, ebZ, vmin, vmax = row_norm(
+                    hbZ_raw, pyZ_raw, ebZ_raw, is_mag
+                )
+                for j, (Z, lbl) in enumerate([
+                    (hbZ, "Hyperbeam"),
+                    (pyZ, "PyUVBeam"),
+                    (ebZ, "EveryBeam"),
                 ]):
                     ax = axs[i, j]
                     im = ax.imshow(
@@ -487,10 +593,10 @@ def main() -> None:
                         origin="upper",
                         extent=extent_native,
                         aspect="auto",
-                        cmap="rainbow" if j < 2 else "RdBu_r",
-                        norm=LogNorm(vmin=vm_lo, vmax=vm_hi) if use_log else None,
-                        vmin=None if use_log else vm_lo,
-                        vmax=None if use_log else vm_hi,
+                        cmap="rainbow",
+                        norm=LogNorm(vmin=vmin, vmax=vmax) if is_mag else None,
+                        vmin=None if is_mag else vmin,
+                        vmax=None if is_mag else vmax,
                     )
                     ax.set_xlabel("Azimuth [deg]")
                     ax.set_ylabel("Zenith Angle [deg]")
@@ -545,16 +651,16 @@ def main() -> None:
                 Zp[za_cart > 90.0] = np.nan
                 return Zp
 
-            for i, (hbZ_raw, pyZ_raw, diffZ_raw, title) in enumerate(rows_orig):
+            for i, (hbZ_raw, pyZ_raw, ebZ_raw, title) in enumerate(rows_orig):
                 is_mag = ("|" in title)
                 hbZp = project_field(hbZ_raw)
                 pyZp = project_field(pyZ_raw)
-                diffZp = project_field(diffZ_raw)
-                hbZ, pyZ, diffZ, vmin, vmax, vdiff_min, vdiff_max = row_norm(hbZp, pyZp, diffZp, is_mag)
-                for j, (Z, lbl, vm_lo, vm_hi, use_log) in enumerate([
-                    (hbZ, "HB", vmin, vmax, is_mag),
-                    (pyZ, "PY", vmin, vmax, is_mag),
-                    (diffZ, "HB−PY", vdiff_min, vdiff_max, False)
+                ebZp = project_field(ebZ_raw)
+                hbZ, pyZ, ebZ, vmin, vmax = row_norm(hbZp, pyZp, ebZp, is_mag)
+                for j, (Z, lbl) in enumerate([
+                    (hbZ, "Hyperbeam"),
+                    (pyZ, "PyUVBeam"),
+                    (ebZ, "EveryBeam"),
                 ]):
                     ax = axs[i, j]
                     im = ax.imshow(
@@ -562,10 +668,10 @@ def main() -> None:
                         origin="upper",
                         extent=extent_proj,
                         aspect="equal",
-                        cmap="rainbow" if j < 2 else "RdBu_r",
-                        norm=LogNorm(vmin=vm_lo, vmax=vm_hi) if use_log else None,
-                        vmin=None if use_log else vm_lo,
-                        vmax=None if use_log else vm_hi,
+                        cmap="rainbow",
+                        norm=LogNorm(vmin=vmin, vmax=vmax) if is_mag else None,
+                        vmin=None if is_mag else vmin,
+                        vmax=None if is_mag else vmax,
                     )
                     ax.set_xlabel("E-W offset [deg]")
                     ax.set_ylabel("N-S offset [deg]")

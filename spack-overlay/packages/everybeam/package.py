@@ -1,9 +1,9 @@
 # https://gitlab.com/ska-telescope/sdp/ska-sdp-spack/-/raw/5c515ba11992398717151feed33fb74ddf314f2d/packages/everybeam/package.py
-# removed all available versions except 0.8.0.20251125 for MWA support
+# Removed all available versions except 0.8.2 for MWA support.
 
 from spack_repo.builtin.build_systems.cmake import CMakePackage
 
-from spack.package import depends_on, join_path, variant, version, which
+from spack.package import depends_on, join_path, patch, variant, version, which
 
 
 class Everybeam(CMakePackage):
@@ -13,7 +13,12 @@ class Everybeam(CMakePackage):
 
     homepage = "https://git.astron.nl/RD/EveryBeam"
     git = "https://git.astron.nl/RD/EveryBeam.git"
-    version("0.8.0.20251125", commit="2614beafba64f5f5d326b783c486c765a3729889", submodules=True)
+    version("0.8.2", commit="09e43d7f44e44e5b9a16822fa4387fc790e477d9", submodules=True)
+
+    # Upstream 0.8.2 builds the MWA implementation but deliberately omits it
+    # from the Python bindings. DP3 Predict uses MWA's PointResponse directly,
+    # so expose the equivalent ITRF-direction API for the integration probe.
+    patch("enable-mwa-python-bindings.patch", when="@0.8.2")
 
     variant("python", default=True, description="Enable Python support")
 
@@ -23,7 +28,7 @@ class Everybeam(CMakePackage):
 
     depends_on("hdf5+cxx")
     depends_on("casacore@3.7.1: +data")
-    depends_on("boost+filesystem+system")
+    depends_on("boost@1.73:+filesystem+system")
     depends_on("fftw")
     depends_on("gsl", when="@0.4.0:")
     depends_on("python", when="+python")
