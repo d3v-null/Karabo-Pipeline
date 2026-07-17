@@ -174,6 +174,7 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache-2026.07.2,sh
     'python@'$PYTHON_VERSION \
     'py-pip' \
     'py-rapthor@'$RAPTHOR_VERSION \
+    'py-ska-sdp-benchmark-monitor@0.1.0' \
     'py-ska-sdp-ical@main' \
     && \
     spack concretize --force && \
@@ -209,11 +210,21 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     curl \
     gfortran \
     git \
+    libcap2-bin \
     libcurl4-openssl-dev \
     libgomp1 \
+    linux-tools-generic \
     time \
     wget \
     zstd
+
+RUN perf_bin="" && \
+    for candidate in /usr/lib/linux-tools/*/perf; do perf_bin="${candidate}"; done && \
+    test -x "${perf_bin}" && \
+    perf_bin="$(readlink -f "${perf_bin}")" && \
+    setcap cap_perfmon,cap_ipc_lock=ep "${perf_bin}" && \
+    ln -sf "${perf_bin}" /usr/local/bin/perf && \
+    getcap "${perf_bin}"
 
 COPY --from=builder /opt/software /opt/software
 COPY --from=builder /opt/view /opt/view
@@ -258,6 +269,10 @@ ENV PATH="/opt/view/bin:${PATH}"
 RUN python -c "import numpy; print('numpy', numpy.__version__, 'OK')" && \
     python -c "import scipy; print('scipy', scipy.__version__, 'OK')" && \
     python -c "import casacore, casacore.tables; print('python-casacore OK')" && \
+    python -c "import benchmon; print('benchmon OK')" && \
+    command -v benchmon-start && \
+    command -v benchmon-stop && \
+    command -v benchmon-visu && \
     python -c "import rapthor; print('rapthor OK')" && \
     rapthor --version
 
