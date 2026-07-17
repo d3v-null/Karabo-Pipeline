@@ -44,7 +44,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 # Install Spack and detect compilers
 ENV SPACK_ROOT=/opt/spack \
     SPACK_DISABLE_LOCAL_CONFIG=1
-RUN git clone --depth=1 --single-branch --branch=v1.1.0 https://github.com/spack/spack.git ${SPACK_ROOT} && \
+RUN git clone --depth=1 --single-branch --branch=v1.1.1 https://github.com/spack/spack.git ${SPACK_ROOT} && \
     cd ${SPACK_ROOT} && \
     rm -rf .git && \
     find ${SPACK_ROOT}/lib/spack/docs -xtype l -delete || true && \
@@ -72,7 +72,7 @@ RUN spack compiler find && \
     pkgconf
 
 # Add SKA SDP Spack repo and Karabo overlay for rapthor
-RUN git clone --depth=1 --single-branch --branch=2026.02.5 https://gitlab.com/ska-telescope/sdp/ska-sdp-spack.git /opt/ska-sdp-spack && \
+RUN git clone --depth=1 --single-branch --branch=2026.07.2 https://gitlab.com/ska-telescope/sdp/ska-sdp-spack.git /opt/ska-sdp-spack && \
     rm -rf /opt/ska-sdp-spack/.git && \
     spack repo add /opt/ska-sdp-spack
 COPY spack-overlay /opt/karabo-spack
@@ -91,18 +91,18 @@ ARG ASTROPY_VERSION=6.1.0
 ARG CASACORE_VERSION=3.7.1
 ARG BOOST_VERSION=1.88.0
 ARG REPROJECT_VERSION=0.14.1
-ARG BDSF_VERSION=1.13.0.20251010
+ARG BDSF_VERSION=1.13.0.20260409
 ARG AOFLAGGER_VERSION=3.4.0
 ARG WSCLEAN_VERSION=3.6.20260109
 ARG EVERYBEAM_VERSION=0.8.3
 ARG DP3_VERSION=6.6
-ARG RAPTHOR_VERSION=2.1.20260216
+ARG RAPTHOR_VERSION=2.1.20260630
 
 ARG SPACK_TARGET=""
 ARG SPACK_BUILDCACHE_LOCAL=""
 ARG SPACK_MIRROR_OCI=""
 
-RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=locked \
+RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache-2026.07.2,sharing=locked \
     --mount=type=cache,target=/opt/spack-source-cache,id=spack-source-cache,sharing=locked \
     --mount=type=cache,target=/opt/spack-misc-cache,id=spack-misc-cache,sharing=locked \
     --mount=type=secret,id=spack_oci_username,required=false \
@@ -168,7 +168,7 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
             spack mirror add --unsigned oci-cache "${SPACK_MIRROR_OCI}"; \
         fi; \
     fi; \
-    spack mirror add v1.1.0 https://binaries.spack.io/v1.1.0; \
+    spack mirror add v1.1.1 https://binaries.spack.io/v1.1.1; \
     spack buildcache keys --install --trust || true; \
     spack add \
     'python@'$PYTHON_VERSION \
