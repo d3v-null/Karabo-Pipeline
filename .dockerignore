@@ -70,4 +70,7 @@ sp5505.txt
 sp5505_history.txt
 rascil_conc.txt
 temp_ska_spack*/
+
+# Spack package recipes reference patch files at concretization time.
+!spack-overlay/packages/**/*.patch
 karabo/calibration/

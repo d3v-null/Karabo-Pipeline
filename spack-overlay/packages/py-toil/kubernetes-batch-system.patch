@@ -1,0 +1,35 @@
+--- a/src/toil/batchSystems/kubernetes.py
++++ b/src/toil/batchSystems/kubernetes.py
+@@ -820,7 +820,7 @@
+         :return: Deserialized object
+         """
+         YAML = yaml.YAML(typ="safe")
+-        object_def = YAML.load(open("container.yaml").read())
++        object_def = YAML.load(open(file).read())
+         # The kubernetes API does not have an actual deserializer, so this is a workaround
+         # See: https://github.com/kubernetes-client/python/issues/977
+         faked_response = self.FakeResponse()
+@@ -961,6 +961,12 @@
+             )
+             mounts.append(secret_volume_mount)
+ 
++        # Mount shared hostPath when requested by the deployment.
++        import os as _os
++        _extra_hp = _os.environ.get("TOIL_KUBERNETES_EXTRA_HOSTPATH")
++        if _extra_hp:
++            mount_host_path("shared-storage", _extra_hp, _extra_hp, create=True)
++
+         # Make a container definition
+         container = V1Container(
+             command=command_list,
+--- a/src/toil/__init__.py
++++ b/src/toil/__init__.py
+@@ -288,6 +288,9 @@
+ 
+ 
+ def checkDockerImageExists(appliance: str) -> str:
++    import os as _os
++    if _os.environ.get("TOIL_SKIP_IMAGE_CHECK"):
++        return appliance
+     """
+     Attempt to check a url registryName for the existence of a docker image with a given tag.

@@ -1,6 +1,13 @@
 # Minimal Jupyter notebook with Rapthor pipeline
 # Based on quay.io/jupyter/minimal-notebook with Spack-installed rapthor dependencies
 # build: docker build . -f rapthor-jupyter.Dockerfile --tag rapthor-jupyter:latest
+# with local buildcache:
+# DOCKER_BUILDKIT=1 docker build --build-arg SPACK_BUILDCACHE_LOCAL=1 \
+#   . -f rapthor-jupyter.Dockerfile --tag rapthor-jupyter:latest \
+#   --progress=plain
+# The first build compiles and publishes packages to the named BuildKit cache;
+# later builds consume that local mirror. The cache is BuildKit-managed, not a
+# host directory.
 # run: docker run --rm -it -v $PWD:$PWD -w $PWD -e OPENBLAS_NUM_THREADS=1 -p 8888:8888 rapthor-jupyter:latest
 
 FROM quay.io/jupyter/minimal-notebook:notebook-7.0.6 AS builder
@@ -34,16 +41,23 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     libltdl-dev \
     libtool \
     m4 \
+    nodejs \
+    npm \
     patchelf \
     perl \
     pkg-config \
+    rustc \
+    cargo \
     time \
     wget \
     zstd
 
 # Install Spack and detect compilers
 ENV SPACK_ROOT=/opt/spack \
-    SPACK_DISABLE_LOCAL_CONFIG=1
+    SPACK_DISABLE_LOCAL_CONFIG=1 \
+    CARGO_HOME=/opt/rust/cargo \
+    RUSTUP_HOME=/opt/rust/rustup \
+    PATH=/opt/rust/cargo/bin:${PATH}
 RUN git clone --depth=1 --single-branch --branch=v1.1.1 https://github.com/spack/spack.git ${SPACK_ROOT} && \
     cd ${SPACK_ROOT} && \
     rm -rf .git && \
@@ -51,6 +65,13 @@ RUN git clone --depth=1 --single-branch --branch=v1.1.1 https://github.com/spack
     . share/spack/setup-env.sh && \
     spack env create --dir /opt/spack_env && \
     fix-permissions ${SPACK_ROOT} /opt/spack_env
+
+# py-cdshealpix's locked Cargo dependencies require Rust >=1.81.  Install the
+# prebuilt toolchain once in this cacheable layer; Spack discovers it as an
+# external package, so it is never rebuilt from source.
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
+    sh -s -- -y --profile minimal --default-toolchain 1.81.0 --no-modify-path && \
+    rustc --version && cargo --version
 
 RUN echo ". ${SPACK_ROOT}/share/spack/setup-env.sh 2>/dev/null || true" > /etc/profile.d/spack.sh && \
     echo "spack env activate -p /opt/spack_env 2>/dev/null || true" >> /etc/profile.d/spack.sh
@@ -68,15 +89,21 @@ RUN spack compiler find && \
     git \
     libtool \
     m4 \
+    node-js \
     perl \
-    pkgconf
+    pkgconf \
+    rust
 
 # Add SKA SDP Spack repo and Karabo overlay for rapthor
 RUN git clone --depth=1 --single-branch --branch=2026.07.2 https://gitlab.com/ska-telescope/sdp/ska-sdp-spack.git /opt/ska-sdp-spack && \
+    python3 -c "p='/opt/ska-sdp-spack/packages/py-cwltool/package.py';s=open(p).read();s=s.replace('pypi = \"cwltool/cwltool-3.1.20221201130942.tar.gz\"','pypi = \"cwltool/cwltool-3.1.20260108082145.tar.gz\"');anchor='    depends_on(\"python@3.9:3\", type=(\"build\", \"run\"))';assert anchor in s;s=s.replace(anchor,'    version(\"3.1.20260108082145\", sha256=\"a12124fa8c1337539b8f291690a01e92f7ab12e4259cc062d40e50f60908bec3\")\\n\\n'+anchor);open(p,'w').write(s);p='/opt/ska-sdp-spack/packages/py-ska-sdp-ical/package.py';s=open(p).read();s=s.replace('depends_on(\"py-rapthor@','depends_on(\"karabo.py-rapthor@');open(p,'w').write(s)" && \
     rm -rf /opt/ska-sdp-spack/.git && \
     spack repo add /opt/ska-sdp-spack
-COPY spack-overlay /opt/karabo-spack
-RUN spack repo add /opt/karabo-spack
+COPY --link spack-overlay /opt/karabo-spack
+RUN test -f /opt/karabo-spack/packages/py-toil/kubernetes-batch-system.patch && \
+    test -f /opt/karabo-spack/packages/py-rapthor/kubernetes-batch-system.patch && \
+    test -f /opt/karabo-spack/packages/py-rapthor/toil-runtime-options.patch && \
+    spack repo add /opt/karabo-spack
 
 # Version pins for numpy 2 compatibility
 ARG NUMPY_VERSION=2.2.0
@@ -140,6 +167,7 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache-2026.07.2,sh
         ('py-losoto','@2.6:'),\
         ('py-lsmtool','@1.6.2:'),\
         ('py-astropy','@${ASTROPY_VERSION}'),\
+        ('rust','@1.81.0:'),\
         ('dp3','@${DP3_VERSION}+idg'),\
         ('idg','~cuda'),\
         ('everybeam','@${EVERYBEAM_VERSION}+python'),\
@@ -154,7 +182,6 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache-2026.07.2,sh
     f=open(p,'w');yaml.dump(c,f,default_flow_style=False);f.close()"; \
     if [ "${SPACK_BUILDCACHE_LOCAL:-0}" != "0" ] && [ -n "${SPACK_BUILDCACHE_LOCAL:-}" ]; then \
         spack mirror add --autopush --unsigned mycache file:///opt/buildcache; \
-        spack buildcache update-index /opt/buildcache || true; \
     fi; \
     if [ -n "${SPACK_MIRROR_OCI}" ]; then \
         if [ -f /run/secrets/spack_oci_username ] && [ -f /run/secrets/spack_oci_password ]; then \
@@ -173,7 +200,7 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache-2026.07.2,sh
     spack add \
     'python@'$PYTHON_VERSION \
     'py-pip' \
-    'py-rapthor@'$RAPTHOR_VERSION \
+    'karabo.py-rapthor@'$RAPTHOR_VERSION \
     'py-ska-sdp-benchmark-monitor@0.1.0' \
     'py-ska-sdp-ical@main' \
     && \
@@ -190,9 +217,6 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache-2026.07.2,sh
     spack gc -y && \
     spack env view regenerate && \
     /opt/view/bin/pip install jupyterlab notebook ipykernel 'requests>=2.32' packaging && \
-    if [ "${SPACK_BUILDCACHE_LOCAL:-0}" != "0" ] && [ -n "${SPACK_BUILDCACHE_LOCAL:-}" ]; then \
-        spack buildcache update-index /opt/buildcache || true; \
-    fi && \
     fix-permissions /opt/view /opt/spack_env /opt/software
 
 # ----------- Runtime image -----------
@@ -214,6 +238,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     libcurl4-openssl-dev \
     libgomp1 \
     linux-tools-generic \
+    pciutils \
     time \
     wget \
     zstd
@@ -233,6 +258,9 @@ COPY --from=builder /opt/spack_env /opt/spack_env
 COPY --from=builder /opt/spack /opt/spack
 COPY --from=builder /opt/ska-sdp-spack /opt/ska-sdp-spack
 COPY --from=builder /opt/karabo-spack /opt/karabo-spack
+
+COPY scripts/benchmon-report.py /usr/local/bin/benchmon-report
+RUN chmod 0755 /usr/local/bin/benchmon-report
 
 ENV SPACK_ROOT=/opt/spack \
     SPACK_DISABLE_LOCAL_CONFIG=1
@@ -265,14 +293,26 @@ RUN arch=$(uname -m) && \
 # Set PATH for non-login shells
 ENV PATH="/opt/view/bin:${PATH}"
 
+# Kubernetes execution support is installed and patched by the py-toil and
+# py-rapthor Spack overlay packages, so every Rapthor workload gets the same
+# behavior without mutating installed site-packages at image build time.
+
 # Basic tests
 RUN python -c "import numpy; print('numpy', numpy.__version__, 'OK')" && \
     python -c "import scipy; print('scipy', scipy.__version__, 'OK')" && \
     python -c "import casacore, casacore.tables; print('python-casacore OK')" && \
+    python -c "import kubernetes; print('kubernetes', kubernetes.__version__, 'OK')" && \
+    python -c "import inspect, toil; from toil.batchSystems import kubernetes as k8s; from rapthor.lib import cwlrunner, operation, parset; checks={'extra-hostpath': 'TOIL_KUBERNETES_EXTRA_HOSTPATH' in inspect.getsource(k8s), 'security-context-loader': 'open(file).read()' in inspect.getsource(k8s), 'skip-image-check': 'TOIL_SKIP_IMAGE_CHECK' in inspect.getsource(toil), 'batch-system-validator': 'kubernetes' in inspect.getsource(parset), 'kubernetes-options': '_add_kubernetes_options' in inspect.getsource(cwlrunner), 'max-cores': 'TOIL_MAX_CORES' in inspect.getsource(cwlrunner), 'workdir': 'TOIL_WORKDIR' in inspect.getsource(cwlrunner), 'single-machine-parallelism': '\"single_machine\", \"kubernetes\"' in inspect.getsource(operation)}; print('Patch checks:', checks); assert all(checks.values()), [name for name, applied in checks.items() if not applied]" && \
     python -c "import benchmon; print('benchmon OK')" && \
     command -v benchmon-start && \
     command -v benchmon-stop && \
     command -v benchmon-visu && \
+    command -v benchmon-report && \
+    command -v perf && \
+    command -v lspci && \
+    benchmon-run --help >/dev/null && \
+    benchmon-visu --help >/dev/null && \
+    (perf --version || test $? -eq 126) && \
     python -c "import rapthor; print('rapthor OK')" && \
     rapthor --version
 

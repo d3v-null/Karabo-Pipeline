@@ -1,0 +1,22 @@
+--- a/rapthor/lib/cwlrunner.py
++++ b/rapthor/lib/cwlrunner.py
+@@ -295,6 +295,9 @@
+         `[cluster]` of the parset file, else use a temporary directory inside
+         the pipeline working directory.
+         """
++        workdir = os.environ.get("TOIL_WORKDIR")
++        if workdir:
++            return workdir
+         if self.operation.batch_system.startswith("slurm") or self.operation.batch_system == "kubernetes":
+             return os.path.join(
+                 self.operation.global_scratch_dir
+@@ -360,6 +363,9 @@
+         self.args.extend(["--batchSystem", self.operation.batch_system])
+         self.args.extend(["--maxLocalJobs", str(self.operation.max_nodes)])
+         self.args.extend(["--maxJobs", str(self.operation.max_nodes)])
++        max_cores = os.environ.get("TOIL_MAX_CORES")
++        if max_cores:
++            self.args.extend(["--maxCores", max_cores])
+         self.args.extend(["--jobStore", self.operation.jobstore])
+         self.args.extend(["--stats"])  # implicitly preserves the job store for future runs
+         self.args.extend(["--servicePollingInterval", "10"])
