@@ -90,6 +90,7 @@ RUN spack compiler find && \
 
 # Add SKA SDP Spack repo and overlay
 RUN git clone --depth=1 --single-branch --branch=2026.02.5 https://gitlab.com/ska-telescope/sdp/ska-sdp-spack.git /opt/ska-sdp-spack && \
+    python3 -c "p='/opt/ska-sdp-spack/packages/py-cwltool/package.py';s=open(p).read();s=s.replace('pypi = \"cwltool/cwltool-3.1.20221201130942.tar.gz\"','pypi = \"cwltool/cwltool-3.1.20260108082145.tar.gz\"');anchor='    depends_on(\"python@3.9:3\", type=(\"build\", \"run\"))';assert anchor in s;s=s.replace(anchor,'    version(\"3.1.20260108082145\", sha256=\"a12124fa8c1337539b8f291690a01e92f7ab12e4259cc062d40e50f60908bec3\")\n\n'+anchor);open(p,'w').write(s)" && \
     rm -rf /opt/ska-sdp-spack/.git && \
     spack repo add /opt/ska-sdp-spack
 COPY spack-overlay /opt/karabo-spack
@@ -187,8 +188,8 @@ ARG WSCLEAN_VERSION=3.6.20260109
 # karabo uses wsclean 3.4,
 # 3.5 best for everybeam 0.7.4 compatibility
 # 3.6.20260109 needed for compatibility with everybeam 0.8 for MWA support in DP3
-ARG EVERYBEAM_VERSION=0.8.2
-# 0.8.2 is the EveryBeam release required for DP3 6.6's MWA support.
+ARG EVERYBEAM_VERSION=0.8.3
+# The local Spack overlay provides EveryBeam 0.8.3 for DP3 6.6 MWA support.
 ARG DP3_VERSION=6.6
 # DP3 6.6 is compatible with EveryBeam 0.7.4 through 0.9.
 ARG CUDA_VERSION=12.2.2
