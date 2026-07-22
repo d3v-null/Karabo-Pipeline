@@ -103,6 +103,7 @@ COPY --link spack-overlay /opt/karabo-spack
 RUN test -f /opt/karabo-spack/packages/py-toil/kubernetes-batch-system.patch && \
     test -f /opt/karabo-spack/packages/py-rapthor/kubernetes-batch-system.patch && \
     test -f /opt/karabo-spack/packages/py-rapthor/toil-runtime-options.patch && \
+    test -f /opt/karabo-spack/packages/py-lsmtool/rapthor-facet-robustness.patch && \
     spack repo add /opt/karabo-spack
 
 # Version pins for numpy 2 compatibility
@@ -299,7 +300,7 @@ RUN python -c "import numpy; print('numpy', numpy.__version__, 'OK')" && \
     python -c "import scipy; print('scipy', scipy.__version__, 'OK')" && \
     python -c "import casacore, casacore.tables; print('python-casacore OK')" && \
     python -c "import kubernetes; print('kubernetes', kubernetes.__version__, 'OK')" && \
-    python -c "import inspect, toil; from toil.batchSystems import kubernetes as k8s; from rapthor.lib import cwlrunner, operation, parset; checks={'extra-hostpath': 'TOIL_KUBERNETES_EXTRA_HOSTPATH' in inspect.getsource(k8s), 'security-context-loader': 'open(file).read()' in inspect.getsource(k8s), 'skip-image-check': 'TOIL_SKIP_IMAGE_CHECK' in inspect.getsource(toil), 'batch-system-validator': 'kubernetes' in inspect.getsource(parset), 'kubernetes-options': '_add_kubernetes_options' in inspect.getsource(cwlrunner), 'max-cores': 'TOIL_MAX_CORES' in inspect.getsource(cwlrunner), 'workdir': 'TOIL_WORKDIR' in inspect.getsource(cwlrunner), 'single-machine-parallelism': '\"single_machine\", \"kubernetes\"' in inspect.getsource(operation)}; print('Patch checks:', checks); assert all(checks.values()), [name for name, applied in checks.items() if not applied]" && \
+    python -c "import inspect, lsmtool.facet, toil; from toil.batchSystems import kubernetes as k8s; from rapthor.lib import cwlrunner, operation, parset; checks={'extra-hostpath': 'TOIL_KUBERNETES_EXTRA_HOSTPATH' in inspect.getsource(k8s), 'security-context-loader': 'open(file).read()' in inspect.getsource(k8s), 'skip-image-check': 'TOIL_SKIP_IMAGE_CHECK' in inspect.getsource(toil), 'batch-system-validator': 'kubernetes' in inspect.getsource(parset), 'kubernetes-options': '_add_kubernetes_options' in inspect.getsource(cwlrunner), 'max-cores': 'TOIL_MAX_CORES' in inspect.getsource(cwlrunner), 'workdir': 'TOIL_WORKDIR' in inspect.getsource(cwlrunner), 'single-machine-parallelism': '\"single_machine\", \"kubernetes\"' in inspect.getsource(operation), 'voronoi-fallback': 'voronoi fallback facet centers at bbox middle' in inspect.getsource(lsmtool.facet.voronoi), 'facet-reference-point': 'representative_point' in inspect.getsource(lsmtool.facet.Facet)}; print('Patch checks:', checks); assert all(checks.values()), [name for name, applied in checks.items() if not applied]" && \
     python -c "import benchmon; print('benchmon OK')" && \
     command -v benchmon-start && \
     command -v benchmon-stop && \
