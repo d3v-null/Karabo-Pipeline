@@ -40,3 +40,11 @@ class PyLosoto(PythonPackage):
     depends_on("py-matplotlib", type="run")
     depends_on("py-casacore@3.0:", type="run")
     depends_on("py-h5py@3.8.5:", when="@2.5:", type="run")
+    # Declared in pyproject but missing from the upstream Spack recipe; without
+    # it `pip check` fails and the installed dist reports version 0.0.0 when
+    # setuptools-scm cannot see a git tree.
+    depends_on("py-progressbar2", type="run")
+
+    def setup_build_environment(self, env):
+        env.set("SETUPTOOLS_SCM_PRETEND_VERSION_FOR_LOSOTO", self.spec.version.string)
+        env.set("SETUPTOOLS_SCM_PRETEND_VERSION", self.spec.version.string)

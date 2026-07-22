@@ -1,0 +1,16 @@
+--- a/pyproject.toml	2026-07-22 11:10:13.712849271 +0000
++++ b/pyproject.toml	2026-07-22 11:10:13.735718037 +0000
+@@ -50,12 +50,12 @@
+     "shapely",
+     "cwltool==3.1.20260108082145", # Latest version breaks CWL validation checks in tests.
+     "toil[cwl]>=9.0",
+-    "streamflow>=0.2.0.dev13"
+ ]
+ dynamic = ["version"]
+ 
+ [project.optional-dependencies]
+ test = ["tox"]
++streamflow = ["streamflow>=0.2.0.dev13"]
+ dev =  ["ruff", "rapthor[test]" ]
+ 
+ [dependency-groups]

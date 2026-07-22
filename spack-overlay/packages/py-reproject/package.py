@@ -26,6 +26,11 @@ class PyReproject(PythonPackage):
     depends_on("py-matplotlib@3.3:", type=("build", "run"))
     depends_on("py-pillow@8:", type=("build", "run"))
     depends_on("py-astropy-healpix@1:", type=("build", "run"))
+    # reproject 0.14+ declares these as hard install_requires (not extras).
+    depends_on("py-cloudpickle", type=("build", "run"), when="@0.14:")
+    depends_on("py-dask", type=("build", "run"), when="@0.14:")
+    depends_on("py-fsspec", type=("build", "run"), when="@0.14:")
+    depends_on("py-zarr", type=("build", "run"), when="@0.14:")
 
     def setup_build_environment(self, env):
         # Let pip's build isolation pick the ideal setuptools version

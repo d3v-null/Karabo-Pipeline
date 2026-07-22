@@ -173,6 +173,9 @@ class PyRapthor(PythonPackage):
 
     patch("kubernetes-batch-system.patch", when="@2.1.20260630")
     patch("toil-runtime-options.patch", when="@2.1.20260630")
+    # StreamFlow is an alternate CWL runner; SKA images use Toil/WES. Keep it
+    # optional so `pip check` does not require an unused heavy dependency.
+    patch("streamflow-optional.patch", when="@2.1.20260630")
 
     import_modules = [
         "rapthor",
