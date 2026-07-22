@@ -259,9 +259,6 @@ COPY --from=builder /opt/spack /opt/spack
 COPY --from=builder /opt/ska-sdp-spack /opt/ska-sdp-spack
 COPY --from=builder /opt/karabo-spack /opt/karabo-spack
 
-COPY scripts/benchmon-report.py /usr/local/bin/benchmon-report
-RUN chmod 0755 /usr/local/bin/benchmon-report
-
 ENV SPACK_ROOT=/opt/spack \
     SPACK_DISABLE_LOCAL_CONFIG=1
 
@@ -307,7 +304,6 @@ RUN python -c "import numpy; print('numpy', numpy.__version__, 'OK')" && \
     command -v benchmon-start && \
     command -v benchmon-stop && \
     command -v benchmon-visu && \
-    command -v benchmon-report && \
     command -v perf && \
     command -v lspci && \
     benchmon-run --help >/dev/null && \
