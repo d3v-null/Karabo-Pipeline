@@ -96,11 +96,12 @@ RUN spack compiler find && \
 
 # Add SKA SDP Spack repo and Karabo overlay for rapthor
 RUN git clone --depth=1 --single-branch --branch=2026.07.2 https://gitlab.com/ska-telescope/sdp/ska-sdp-spack.git /opt/ska-sdp-spack && \
-    python3 -c "p='/opt/ska-sdp-spack/packages/py-cwltool/package.py';s=open(p).read();s=s.replace('pypi = \"cwltool/cwltool-3.1.20221201130942.tar.gz\"','pypi = \"cwltool/cwltool-3.1.20260108082145.tar.gz\"');anchor='    depends_on(\"python@3.9:3\", type=(\"build\", \"run\"))';assert anchor in s;s=s.replace(anchor,'    version(\"3.1.20260108082145\", sha256=\"a12124fa8c1337539b8f291690a01e92f7ab12e4259cc062d40e50f60908bec3\")\\n\\n'+anchor);open(p,'w').write(s);p='/opt/ska-sdp-spack/packages/py-ska-sdp-ical/package.py';s=open(p).read();s=s.replace('depends_on(\"py-rapthor@','depends_on(\"karabo.py-rapthor@');open(p,'w').write(s)" && \
     rm -rf /opt/ska-sdp-spack/.git && \
     spack repo add /opt/ska-sdp-spack
 COPY --link spack-overlay /opt/karabo-spack
 RUN test -f /opt/karabo-spack/packages/py-toil/kubernetes-batch-system.patch && \
+    test -f /opt/karabo-spack/packages/py-cwltool/package.py && \
+    test -f /opt/karabo-spack/packages/py-ska-sdp-ical/package.py && \
     test -f /opt/karabo-spack/packages/py-rapthor/kubernetes-batch-system.patch && \
     test -f /opt/karabo-spack/packages/py-rapthor/toil-runtime-options.patch && \
     test -f /opt/karabo-spack/packages/py-lsmtool/rapthor-facet-robustness.patch && \
