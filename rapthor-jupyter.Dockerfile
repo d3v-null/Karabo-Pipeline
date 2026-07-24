@@ -336,6 +336,8 @@ RUN python -m pip install --no-cache-dir \
     marimo --version && \
     python -m pip check
 
+RUN install -d -o ${NB_UID} -g ${NB_GID} /home/${NB_USER}/.astropy/cache
+
 USER ${NB_UID}
 
 # Register kernel for jovyan user using the Spack Python
