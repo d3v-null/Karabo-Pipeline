@@ -320,6 +320,21 @@ ARG PYTHON_VERSION=3.12
 
 RUN python -m pip install git+https://github.com/NERSC/slurm-magic.git
 
+# KubeSpawner runs `jupyterhub-singleuser`; install Marimo and its JupyterLab
+# extension into the Spack Python environment that provides JupyterLab.
+RUN python -m pip install --no-cache-dir \
+    "jupyterhub==4.1.6" \
+    "marimo[sandbox]>=0.19.11" \
+    "marimo-jupyter-extension>=0.1.4" \
+    "progressbar" \
+    "backports.shutil_get_terminal_size" && \
+    ln -sf "$(command -v marimo)" /usr/local/bin/marimo && \
+    ln -sf "$(command -v jupyterhub-singleuser)" /usr/local/bin/jupyterhub-singleuser && \
+    python -c 'import jupyterhub; assert jupyterhub.__version__ == "4.1.6", jupyterhub.__version__' && \
+    jupyterhub-singleuser --help >/dev/null && \
+    marimo --version && \
+    python -m pip check
+
 USER ${NB_UID}
 
 # Register kernel for jovyan user using the Spack Python
