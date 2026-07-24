@@ -1,0 +1,46 @@
+diff --git a/pyproject.toml b/pyproject.toml
+index 3cde00d..3959e72 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -1,5 +1,6 @@
+ [project]
+ name = "losoto"
++version = "2.6.0"
+ description = "LOFAR Solution Tool"
+ readme = "README.md"
+ license = "GPL-3.0-or-later"
+@@ -15,7 +16,7 @@ dependencies = [
+     "lofar-parameterset>=1.1",
+     "matplotlib",
+     "numpy",
+-    "progressbar",
++    "progressbar2",
+     "python-casacore>=3.0",
+     "scipy",
+     "tables>=3.4"
+@@ -30,7 +31,6 @@ classifiers = [
+     "Topic :: Scientific/Engineering :: Astronomy",
+     "Topic :: Software Development :: Libraries :: Python Modules",
+ ]
+-dynamic = ["version"]
+ 
+ [project.optional-dependencies]
+ test = ["tox"]
+@@ -38,7 +38,6 @@ test = ["tox"]
+ [build-system]
+ requires = [
+     "setuptools",
+-    "setuptools_scm",
+     "wheel"
+ ]
+ build-backend = "setuptools.build_meta"
+@@ -59,9 +58,6 @@ script-files = [
+     "bin/H5parm_interpolator.py",
+ ]
+ 
+-[tool.setuptools_scm]
+-write_to = "losoto/_version.py"
+-
+ [tool.tox]
+ requires = ["tox>4"]
+ envlist = ["py3{10,11,12,13}"]

@@ -1,6 +1,3 @@
-import os
-import re
-
 from spack.package import *
 
 
@@ -46,31 +43,4 @@ class PyLosoto(PythonPackage):
     # Declared in pyproject but missing from the upstream Spack recipe.
     depends_on("py-progressbar2", type="run")
 
-    def setup_build_environment(self, env):
-        # Without a git tree setuptools-scm emits 0.0.0; pin the Spack version.
-        env.set("SETUPTOOLS_SCM_PRETEND_VERSION_FOR_LOSOTO", self.spec.version.string)
-        env.set("SETUPTOOLS_SCM_PRETEND_VERSION", self.spec.version.string)
-
-    @run_after("install")
-    def rewrite_dist_info_version(self):
-        """Ensure the installed dist reports the Spack version for pip check."""
-        version = self.spec.version.string
-        python_version = self.spec["python"].version.up_to(2)
-        site = join_path(self.prefix.lib, f"python{python_version}", "site-packages")
-        if not os.path.isdir(site):
-            return
-        for entry in os.listdir(site):
-            if not entry.startswith("losoto-") or not entry.endswith(".dist-info"):
-                continue
-            dist_info = join_path(site, entry)
-            metadata = join_path(dist_info, "METADATA")
-            if os.path.isfile(metadata):
-                text = open(metadata, encoding="utf-8").read()
-                text = re.sub(
-                    r"(?m)^Version:.*$", f"Version: {version}", text, count=1
-                )
-                open(metadata, "w", encoding="utf-8").write(text)
-            target = join_path(site, f"losoto-{version}.dist-info")
-            if dist_info != target and not os.path.exists(target):
-                os.rename(dist_info, target)
-            break
+    patch("static-version-and-progressbar2.patch", when="@2.6.0")

@@ -27,6 +27,11 @@ class PyBdsf(PythonPackage):
         "1.13.0.20260409",
         commit="5b0bc9cd7e0c76190c0bbe8b88665c63f741b6a0",
     )
+
+    patch(
+        "drop-python2-terminal-size-backport.patch",
+        when="@1.13.0.20260409",
+    )
     version(
         "1.12.0",
         sha256="1ec301d7f98dd9dcc51245a793b63fa6a341f6378fea45907e06c6a453b6940a",
