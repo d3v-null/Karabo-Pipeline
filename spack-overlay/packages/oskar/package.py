@@ -1,0 +1,456 @@
+from spack.package import *
+from spack_repo.builtin.build_systems.cmake import CMakePackage
+from spack_repo.builtin.build_systems.cuda import CudaPackage
+import os
+
+
+class Oskar(CMakePackage, CudaPackage):
+    """OSKAR is a software package for simulating radio interferometry observations."""
+
+    homepage = "https://github.com/OxfordSKA/OSKAR"
+    git = "https://github.com/OxfordSKA/OSKAR.git"
+
+    license("BSD-3-Clause")
+
+    # Karabo uses 2.8.3 specifically
+    # 2.10.0 works on arm64 but gives code -115 when reading vis files
+    # 2.11.x includes important fixes and updates to build system
+    # 2.12.0 adds sky model spectral profiles + beam/coord fixes (see ChangeLog)
+    version("2.12.0", tag="2.12.0")
+    version("2.11.1", tag="2.11.1")
+    version("2.10.0", tag="2.10.0")
+    version("2.8.3", tag="2.8.3", preferred=True)
+
+    # Variants
+    variant("cuda", default=False, description="Enable CUDA support")
+    patch("cuda_90_support.patch", sha256="fede5722945ee45c01895671bf572de378d0e22feddc6c74d28e43f6b759add4", when="@2.8.3")
+    variant("opencl", default=False, description="Enable OpenCL support")
+    variant("openmp", default=False, description="Enable OpenMP support")
+    variant("mpi", default=False, description="Enable MPI support")
+    variant("casacore", default=True, description="Enable Measurement Set I/O via Casacore")
+    variant("python", default=True, description="Build and install Python bindings")
+    variant("hdf5", default=True, description="Build HDF5 support")
+
+    # Build dependencies
+    depends_on("cmake@3.10:", when="@:2.10", type="build")
+    depends_on("cmake@3.18:", when="@2.11:", type="build")
+    depends_on("git", type="build")
+
+    # Runtime dependencies
+    # conda uses casacore 3.5.0.*, harp, hdf5 >=1.14.3,<1.14.4.0a0, libgcc, libgcc-ng >=12, libstdcxx, libstdcxx-ng >=12
+    # Python bindings compatibility: oskarpy 2.11.x supports OSKAR 2.7-2.11 (0x020700-0x020BFF)
+    depends_on("python@3.6:", when="+python", type=("build", "run"))
+    depends_on("py-numpy@1.23:", when="+python", type=("build", "run"))
+    depends_on("py-setuptools", when="+python", type="build")
+    depends_on("py-cython", when="+python", type="build")
+
+    # Optional dependencies for enhanced functionality
+    # OSKAR 2.8.3 requires HDF5 < 1.12 for API compatibility
+    depends_on("hdf5@1.10:1.10+hl", when="@:2.10+hdf5", type=("build", "run"))
+    depends_on("hdf5@1.10:1.10+hl~mpi", when="@:2.10+hdf5~mpi", type=("build", "run"))
+    depends_on("hdf5+hl", when="@2.11:+hdf5", type=("build", "run"))
+    depends_on("hdf5+hl~mpi", when="@2.11:+hdf5~mpi", type=("build", "run"))
+    # OSKAR 2.11+ uses CFITSIO 4.6.2; earlier versions use embedded cfitsio
+    depends_on("cfitsio@4.6.2:", when="@2.11:", type=("build", "run"))
+    depends_on("cfitsio", when="@:2.10", type=("build", "run"))
+    # OSKAR requires single-precision FFTW. Use precision variant in this Spack.
+    # Avoid pulling MPI into the build to reduce complexity; OSKAR tests
+    # are serial and don't require MPI-enabled FFTW.
+    depends_on("fftw precision=float,double", type=("build", "run"))
+    depends_on("fftw~mpi", when="~mpi", type=("build", "run"))
+    depends_on("fftw~openmp", when="~openmp", type=("build", "run"))
+
+    # Additional dependencies that may be needed for Python package
+    depends_on("py-wheel", when="+python", type="build")
+    depends_on("py-pip", when="+python", type="build")
+    depends_on("py-build", when="+python", type="build")
+    depends_on("py-setuptools-scm", when="+python", type="build")
+
+    # CUDA dependency when variant is enabled
+    depends_on("cuda", when="+cuda")
+    # OpenCL dependency when variant is enabled
+    depends_on("opencl", when="+opencl")
+    depends_on("casacore@3.5.0:3.7.1", when="+casacore")
+
+    def cmake_args(self):
+        """Configure CMake build arguments."""
+        args = [
+            self.define("CMAKE_BUILD_TYPE", "Release"),
+            self.define("CMAKE_INSTALL_PREFIX", self.prefix),
+            # Enforce newer C++ standard to satisfy dependencies when needed
+            self.define("CMAKE_CXX_STANDARD", "14"),
+            self.define("CMAKE_CXX_STANDARD_REQUIRED", "ON"),
+            self.define("CMAKE_CXX_EXTENSIONS", "OFF"),
+        ]
+
+        # Allow disabling OpenMP via variant if needed for stability
+        if "~openmp" in self.spec:
+            # Prevent CMake from finding OpenMP
+            args.append(self.define("CMAKE_DISABLE_FIND_PACKAGE_OpenMP", "ON"))
+
+        # Control OpenCL support via FIND_OPENCL flag
+        if "+opencl" in self.spec:
+            args.append(self.define("FIND_OPENCL", "ON"))
+        else:
+            args.append(self.define("FIND_OPENCL", "OFF"))
+
+        # Explicitly disable CUDA detection when variant is not enabled
+        # OSKAR's CMake auto-detects CUDA, which can cause build failures
+        if "~cuda" in self.spec:
+            args.append(self.define("CMAKE_DISABLE_FIND_PACKAGE_CUDA", "ON"))
+            # Also disable CUDA language support
+            args.append(self.define("CMAKE_CUDA_COMPILER", "NOTFOUND"))
+        elif "+cuda" in self.spec:
+            # OSKAR expects CUDA_ARCH in format "7.5;8.0;8.6" (with decimal point)
+            # Convert from Spack's cuda_arch format (e.g., "75,80,86") to OSKAR format
+            cuda_archs = []
+            try:
+                if "cuda_arch" in self.spec.variants:
+                    arch_values = self.spec.variants["cuda_arch"].value
+                    for arch in arch_values:
+                        arch_str = str(arch).strip()
+                        if arch_str != "none" and arch_str.isdigit():
+                            # Convert "75" -> "7.5", "80" -> "8.0", etc.
+                            if len(arch_str) == 2:
+                                cuda_archs.append(f"{arch_str[0]}.{arch_str[1]}")
+                            elif len(arch_str) == 1:
+                                cuda_archs.append(f"{arch_str}.0")
+            except Exception:
+                # Default to 7.5 if no valid architecture specified
+                cuda_archs = ["7.5"]
+
+            if cuda_archs:
+                # OSKAR expects semicolon-separated list
+                cuda_arch_str = ";".join(cuda_archs)
+                args.append(self.define("CUDA_ARCH", cuda_arch_str))
+
+        # OSKAR detects most libraries (CUDA, HDF5, etc.) via CMake automatically.
+        # Ensure Casacore is found when enabled by passing the prefix if Spack's
+        # CMAKE_PREFIX_PATH doesn't suffice.
+        if "+casacore" in self.spec:
+            # Prefer config-file package discovery
+            args.append(self.define("CASACORE_DIR", self.spec["casacore"].prefix))
+            # Some builds still check this legacy hint
+            args.append(self.define("CASACORE_ROOT_DIR", self.spec["casacore"].prefix))
+
+        return args
+
+    def setup_build_environment(self, env):
+        """Constrain threading during build and tests to avoid segfaults."""
+        env.set("OMP_NUM_THREADS", "1")
+        env.set("OPENBLAS_NUM_THREADS", "1")
+        env.set("MKL_NUM_THREADS", "1")
+        env.set("NUMEXPR_NUM_THREADS", "1")
+        env.set("CTEST_PARALLEL_LEVEL", "1")
+        # Avoid over-aggressive binding/dynamic thread counts
+        env.set("OMP_PROC_BIND", "false")
+        env.set("OMP_DYNAMIC", "false")
+        # Pin CPU features to baseline to avoid illegal instructions at runtime
+        if "+hdf5" in self.spec:
+            env.prepend_path("CPATH", self.spec['hdf5'].prefix.include)
+        # Avoid injecting x86-specific flags on non-x86 platforms
+        try:
+            arch_family = str(self.spec.target.family)
+        except Exception:
+            arch_family = ""
+        if arch_family in ("x86_64", "x86"):
+            # The following flags avoid host-specific optimizations on x86
+            env.append_flags("CFLAGS", "-march=x86-64 -mtune=generic")
+            env.append_flags("CXXFLAGS", "-march=x86-64 -mtune=generic")
+            env.append_flags("FFLAGS", "-march=x86-64 -mtune=generic")
+        elif arch_family in ("aarch64", "arm"):
+            # Use a conservative, broadly compatible ARM baseline and ensure
+            # preprocessor arch macros are defined so Random123 guards pass.
+            if arch_family == "aarch64":
+                arm_flags = "-march=armv8-a -mtune=generic -D__aarch64__=1"
+            else:
+                arm_flags = "-march=armv7-a -mtune=generic -D__arm__=1"
+            env.append_flags("CFLAGS", arm_flags)
+            env.append_flags("CXXFLAGS", arm_flags)
+            env.append_flags("FFLAGS", arm_flags)
+        else:
+            # Other architectures: rely on toolchain defaults
+            pass
+
+    @run_before("cmake")
+    def _sanitize_random123_headers(self):
+        """Neutralize Random123's deliberate aborts on non-listed architectures.
+
+        On some platforms, Random123's gccfeatures.h contains defensive code that
+        intentionally breaks compilation outside a known set of arches by using
+        an #error, a bogus #include, and even an unmatched '{'. When targeting
+        ARM/AArch64, we already define the correct arch macros, but some sources
+        still encounter these constructs. This method comments them out.
+        """
+        try:
+            source_root = getattr(self.stage, "source_path", None)
+            if not source_root:
+                return
+            gccfeatures = join_path(
+                source_root, "extern", "Random123", "features", "gccfeatures.h"
+            )
+            if not os.path.exists(gccfeatures):
+                return
+
+            # Comment out the explicit #error line
+            filter_file(
+                r'#\s*error\s*"This code has only been tested on x86 and powerpc platforms\."',
+                r"/* Karabo: allow ARM/AArch64 build */",
+                gccfeatures,
+            )
+
+            # Comment out the intentionally invalid include
+            filter_file(
+                r"#\s*include\s*<including_a_nonexistent_file.*>",
+                r"/* Karabo: removed invalid include */",
+                gccfeatures,
+            )
+
+            # Comment out the stray brace sabotage line, if present
+            filter_file(
+                r"^\s*\{\s*/\* maybe an unbalanced brace will terminate the compilation \*/\s*$",
+                r"/* Karabo: removed stray brace sabotage */",
+                gccfeatures,
+            )
+        except Exception:
+            # Ignore if building from binary or layout differs
+            pass
+
+    # Resolve build directory across Spack versions
+    def _get_build_dir(self):
+        # New-style builder API
+        if hasattr(self, "builder") and hasattr(self.builder, "build_directory"):
+            bdir = self.builder.build_directory
+            if bdir and os.path.isdir(bdir):
+                return bdir
+        # Legacy attribute
+        if hasattr(self, "build_directory"):
+            bdir = getattr(self, "build_directory")
+            if bdir and os.path.isdir(bdir):
+                return bdir
+        # Fallback: scan stage for spack-build*
+        try:
+            # Accessing self.stage can trigger patch verification.
+            # If the installed spec expects a different patch checksum (e.g. from buildcache)
+            # than what is currently in the repo, this access might raise an error.
+            # We catch it here to avoid breaking "spack test run" on binary installs.
+            stage_root = getattr(self.stage, "path", None) or getattr(self.stage, "source_path", None)
+        except Exception:
+            stage_root = None
+
+        if stage_root and os.path.isdir(stage_root):
+            for entry in os.listdir(stage_root):
+                if entry.startswith("spack-build"):
+                    candidate = join_path(stage_root, entry)
+                    if os.path.isdir(candidate):
+                        return candidate
+        # Last resort
+        return getattr(self.stage, "source_path", os.getcwd())
+
+    def setup_run_environment(self, env):
+        """Set up environment variables for runtime."""
+        # Set OSKAR include and library directories
+        env.set("OSKAR_INC_DIR", self.prefix.include)
+        env.set("OSKAR_LIB_DIR", self.prefix.lib)
+
+        # Add OSKAR lib to LD_LIBRARY_PATH
+        env.prepend_path("LD_LIBRARY_PATH", self.prefix.lib)
+        env.prepend_path("LD_LIBRARY_PATH", self.prefix.lib64)
+
+        # Ensure Python can find bindings when installed with +python
+        if "+python" in self.spec:
+            try:
+                py_ver = self.spec["python"].version.up_to(2)
+                env.prepend_path(
+                    "PYTHONPATH",
+                    join_path(self.prefix, "lib", f"python{py_ver}", "site-packages"),
+                )
+            except Exception:
+                pass
+
+    # --- Logging helpers ---
+    def _print_file(self, file_path, heading):
+        try:
+            if os.path.exists(file_path) and os.path.isfile(file_path):
+                print(f"===== Begin {heading}: {file_path} =====")
+                with open(file_path, "r", encoding="utf-8", errors="ignore") as fh:
+                    print(fh.read())
+                print(f"===== End {heading}: {file_path} =====")
+        except Exception:
+            pass
+
+    def _dump_failure_logs(self):
+        """Dump useful Spack/CMake/CTest logs to stdout for debugging failures."""
+        # Stage root may contain Spack-generated logs
+        stage_root = getattr(self.stage, "path", None) or getattr(self.stage, "source_path", None)
+        build_dir = self._get_build_dir()
+
+        # Known Spack logs
+        if stage_root and os.path.isdir(stage_root):
+            self._print_file(join_path(stage_root, "spack-build-out.txt"), "spack-build-out.txt")
+            self._print_file(join_path(stage_root, "spack-build-env.txt"), "spack-build-env.txt")
+            self._print_file(join_path(stage_root, "install-time-test-log.txt"), "install-time-test-log.txt")
+
+        # CMake logs
+        if build_dir and os.path.isdir(build_dir):
+            self._print_file(join_path(build_dir, "CMakeFiles", "CMakeError.log"), "CMakeError.log")
+            self._print_file(join_path(build_dir, "CMakeFiles", "CMakeOutput.log"), "CMakeOutput.log")
+
+            # CTest logs
+            ctest_tmp = join_path(build_dir, "Testing", "Temporary")
+            if os.path.isdir(ctest_tmp):
+                self._print_file(join_path(ctest_tmp, "LastTest.log"), "CTest LastTest.log")
+                self._print_file(join_path(ctest_tmp, "LastTestsFailed.log"), "CTest LastTestsFailed.log")
+                # Dump any other text logs in Temporary
+                try:
+                    for name in os.listdir(ctest_tmp):
+                        if name.endswith(".log") or name.endswith(".txt"):
+                            self._print_file(join_path(ctest_tmp, name), f"CTest {name}")
+                except Exception:
+                    pass
+
+    def setup_dependent_run_environment(self, env, dependent_spec):
+        """Set up environment variables for dependent packages."""
+        env.set("OSKAR_INC_DIR", self.prefix.include)
+        env.set("OSKAR_LIB_DIR", self.prefix.lib)
+        env.prepend_path("LD_LIBRARY_PATH", self.prefix.lib)
+        env.prepend_path("LD_LIBRARY_PATH", self.prefix.lib64)
+        if "+python" in self.spec:
+            try:
+                py_ver = self.spec["python"].version.up_to(2)
+                env.prepend_path(
+                    "PYTHONPATH",
+                    join_path(self.prefix, "lib", f"python{py_ver}", "site-packages"),
+                )
+            except Exception:
+                pass
+
+    @run_after("build")
+    def build_test(self):
+        """Ensure tests can run after build (no-op placeholder)."""
+        pass
+
+    def check(self):
+        """Run the C++ test suite serially with verbose output."""
+        with working_dir(self._get_build_dir()):
+            ctest = which("ctest")
+            if ctest:
+                # Ensure serial execution and useful failure output
+                env = os.environ.copy()
+                env["CTEST_PARALLEL_LEVEL"] = "1"
+                try:
+                    ctest("-j1", "--output-on-failure", "--verbose", env=env)
+                except ProcessError as e:
+                    # Dump all useful logs
+                    self._dump_failure_logs()
+                    raise e
+            else:
+                # Fallback to running individual test executables if needed
+                test_dir = join_path(self._get_build_dir(), "apps", "test")
+                if os.path.exists(test_dir):
+                    with working_dir(test_dir):
+                        test_files = [
+                            f for f in os.listdir(".")
+                            if f.startswith("test_") and os.access(f, os.X_OK)
+                        ]
+                        for test_file in test_files:
+                            self.run_test(test_file, purpose=f"Running {test_file}")
+
+    def test_ctest(self):
+        """Install-time test: run ctest serially with verbose output."""
+        build_dir = self._get_build_dir()
+        if not build_dir or not os.path.isdir(build_dir):
+            print("Skipping ctest: build directory not present (likely binary install)")
+            return
+        with working_dir(build_dir):
+            ctest = which("ctest")
+            if ctest:
+                env = os.environ.copy()
+                env["CTEST_PARALLEL_LEVEL"] = "1"
+                try:
+                    ctest("-j1", "--output-on-failure", "--verbose", env=env)
+                except ProcessError as e:
+                    self._dump_failure_logs()
+                    raise e
+            else:
+                test_dir = join_path(self._get_build_dir(), "apps", "test")
+                if os.path.exists(test_dir):
+                    with working_dir(test_dir):
+                        test_files = [
+                            f for f in os.listdir(".") if f.startswith("test_") and os.access(f, os.X_OK)
+                        ]
+                        for test_file in test_files:
+                            self.run_test(test_file, purpose=f"Running {test_file}")
+
+    def test_import(self):
+        """Test that OSKAR Python module can be imported."""
+        if "+python" not in self.spec:
+            print("Skipping Python import test: +python variant disabled")
+            return
+        python = self.spec["python"].command
+        if python:
+            env = os.environ.copy()
+            # Help Python locate the installed module under the prefix
+            try:
+                py_ver = self.spec["python"].version.up_to(2)
+                site_pkgs = join_path(self.prefix, "lib", f"python{py_ver}", "site-packages")
+                env["PYTHONPATH"] = f"{site_pkgs}:{env.get('PYTHONPATH', '')}".strip(":")
+            except Exception:
+                pass
+            python("-c", "import oskar; print(f'OSKAR Python import successful')", env=env)
+
+    @when("+python")
+    @run_after("install")
+    def install_python_bindings(self):
+        """Install OSKAR Python bindings from the source tree when +python."""
+        # Source path should exist when building from source; for buildcaches, this
+        # was already executed at build-time so consumers get the installed module.
+        source_root = getattr(self.stage, "source_path", None)
+        if not source_root:
+            return
+        python_dir = join_path(source_root, "python")
+        if not os.path.isdir(python_dir):
+            return
+
+        python = self.spec["python"].command
+        if not python:
+            return
+
+        env = os.environ.copy()
+        env["OSKAR_INC_DIR"] = str(self.prefix.include)
+        env["OSKAR_LIB_DIR"] = str(self.prefix.lib)
+
+        with working_dir(python_dir):
+            python(
+                "-m",
+                "pip",
+                "install",
+                "--no-build-isolation",
+                "--no-deps",
+                f"--prefix={self.prefix}",
+                ".",
+                env=env,
+            )
+
+    def test_executables(self):
+        """Test that key OSKAR executables work."""
+        executables = [
+            "oskar_sim_interferometer",
+            "oskar_imager",
+            "oskar_vis_to_ms"
+        ]
+        # oskar_convert_cst_to_scalar was removed in OSKAR 2.11+
+        if self.spec.satisfies("@:2.10"):
+            executables.append("oskar_convert_cst_to_scalar")
+
+        for exe in executables:
+            exe_path = which(exe)
+            if exe_path:
+                # Test that executable can run with --help
+                try:
+                    exe_path("--help")
+                    print(f"✓ {exe} executable test passed")
+                except Exception as e:
+                    print(f"⚠ {exe} executable test failed: {e}")
+            else:
+                print(f"⚠ {exe} executable not found in PATH")

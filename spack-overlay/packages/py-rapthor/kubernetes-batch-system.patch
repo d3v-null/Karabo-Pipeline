@@ -1,0 +1,65 @@
+--- a/rapthor/lib/cwlrunner.py
++++ b/rapthor/lib/cwlrunner.py
+@@ -281,7 +281,7 @@
+         working directory as fall-back.
+         """
+         prefix = super()._get_tmp_outdir_prefix()
+-        if not prefix and self.operation.batch_system.startswith("slurm"):
++        if not prefix and (self.operation.batch_system.startswith("slurm") or self.operation.batch_system == "kubernetes"):
+             prefix = os.path.join(
+                 self.operation.pipeline_working_dir, "tmp-out", self.command + "."
+             )
+@@ -295,7 +295,7 @@
+         `[cluster]` of the parset file, else use a temporary directory inside
+         the pipeline working directory.
+         """
+-        if self.operation.batch_system.startswith("slurm"):
++        if self.operation.batch_system.startswith("slurm") or self.operation.batch_system == "kubernetes":
+             return os.path.join(
+                 self.operation.global_scratch_dir
+                 if self.operation.global_scratch_dir
+@@ -323,6 +323,13 @@
+             toil_env_variables["TOIL_SLURM_ARGS"] += " " + self._environment["TOIL_SLURM_ARGS"]
+         os.environ.update(toil_env_variables)
+ 
++    def _add_kubernetes_options(self) -> None:
++        """Add options for a Toil Kubernetes worker pool."""
++        self.args.extend(["--disableCaching"])
++        self.args.extend(["--defaultCores", str(self.operation.cpus_per_task)])
++        if self.operation.mem_per_node_gb > 0:
++            self.args.extend(["--defaultMemory", f"{self.operation.mem_per_node_gb}G"])
++
+     def _add_debug_options(self) -> None:
+         """
+         Add options specific for debugging a workflow. Debugging of workflows
+@@ -361,6 +368,8 @@
+             self.args.extend(["--restart"])
+         if self.operation.batch_system.startswith("slurm"):
+             self._add_slurm_options()
++        elif self.operation.batch_system == "kubernetes":
++            self._add_kubernetes_options()
+         elif self.operation.batch_system == "single_machine":
+             if tmpdir_prefix := self._get_tmpdir_prefix():
+                 # Toil requires that temporary directory exists
+--- a/rapthor/lib/parset.py
++++ b/rapthor/lib/parset.py
+@@ -410,7 +410,7 @@
+         options = settings["cluster"]
+ 
+         for opt, valid_values in {
+-            "batch_system": ("single_machine", "slurm", "slurm_static"),
++            "batch_system": ("single_machine", "slurm", "slurm_static", "kubernetes"),
+             "cwl_runner": ("cwltool", "streamflow", "toil"),
+         }.items():
+             if options[opt] not in valid_values:
+--- a/rapthor/lib/operation.py
++++ b/rapthor/lib/operation.py
+@@ -109,7 +109,7 @@
+         self.batch_system = self.parset["cluster_specific"]["batch_system"]
+ 
+         # Get the maximum number of nodes to use
+-        if self.force_serial_jobs or self.batch_system == "single_machine":
++        if self.force_serial_jobs or self.batch_system in ("single_machine", "kubernetes"):
+             self.max_nodes = 1
+         else:
+             self.max_nodes = self.parset["cluster_specific"]["max_nodes"]

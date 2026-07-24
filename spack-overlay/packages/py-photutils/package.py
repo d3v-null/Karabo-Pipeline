@@ -1,0 +1,56 @@
+from spack.package import *
+from spack_repo.builtin.build_systems.python import PythonPackage
+
+
+class PyPhotutils(PythonPackage):
+    """Photometry tools for Python.
+
+    Astropy-affiliated package for image photometry.
+    """
+
+    homepage = "https://github.com/astropy/photutils"
+    git = "https://github.com/astropy/photutils.git"
+
+    license("BSD-3-Clause")
+
+    version("2.0.2", tag="2.0.2")
+    version("1.11.0", tag="1.11.0")
+    version("1.10.0", tag="1.10.0")
+    version("1.8.0", tag="1.8.0")
+
+    # Build deps
+    depends_on("python@3.8:", type=("build", "run"))
+    depends_on("py-setuptools@61:", type="build")
+    depends_on("py-setuptools-scm@6:", type="build")
+    depends_on("py-cython@0.29:", type="build")
+    depends_on("py-extension-helpers@1.0:", type="build")
+
+    # Run deps
+    depends_on("py-astropy@5.1:", type=("build", "run"), when="@:1")
+    depends_on("py-astropy@6.0:", type=("build", "run"), when="@2:")
+    depends_on("py-numpy@1.22:", type=("build", "run"), when="@:1")
+    depends_on("py-numpy@2:", type=("build", "run"), when="@2:")
+    depends_on("py-pyyaml", type=("build", "run", "test"))
+
+    def setup_build_environment(self, env):
+        env.set("SETUPTOOLS_SCM_PRETEND_VERSION_FOR_PHOTUTILS", self.spec.version.string)
+
+    def test_import(self):
+        python = self.spec["python"].command
+        if python:
+            python("-c", "import photutils; print(photutils.__version__)")
+
+    def test_segmentation_api(self):
+        python = self.spec["python"].command
+        if not python:
+            return
+        # photutils >= 1.11 stops re-exporting segmentation at the package top-level.
+        # Ensure the canonical module path remains importable for downstream users.
+        python(
+            "-c",
+            (
+                "import photutils; "
+                "import photutils.segmentation as segmentation; "
+                "print('segmentation', segmentation.__name__)"
+            ),
+        )

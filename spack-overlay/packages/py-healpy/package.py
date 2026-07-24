@@ -1,0 +1,250 @@
+# Copyright Spack Project Developers. See COPYRIGHT file for details.
+#
+# SPDX-License-Identifier: (Apache-2.0 OR MIT)
+
+from spack.package import *
+from spack_repo.builtin.build_systems.python import PythonPackage
+import os
+
+
+class PyHealpy(PythonPackage):
+    """healpy is a Python package to handle pixelated data on the sphere."""
+
+    homepage = "https://healpy.readthedocs.io/"
+    pypi = "healpy/healpy-1.13.0.tar.gz"
+
+    license("GPL-2.0-only")
+
+    version("1.17.3", sha256="4b9f6ae44c6a5a2922b6542b2086d53cc3a6b51543d856d18406fb984edbec5f")
+    version("1.16.6", sha256="0ab26e828fcd251a141095af6d9bf3dba43cec6f0f5cd48b65bf0af8f56329f1")
+    version("1.16.2", sha256="b7b9433152ff297f88fc5cc1277402a3346ff833e0fb7e026330dfac454de480")
+    version("1.14.0", sha256="2720b5f96c314bdfdd20b6ffc0643ac8091faefcf8fd20a4083cedff85a66c5e")
+    version("1.13.0", sha256="d0ae02791c2404002a09c643e9e50bc58e3d258f702c736dc1f39ce1e6526f73")
+    version("1.7.4", sha256="3cca7ed7786ffcca70e2f39f58844667ffb8521180ac890d4da651b459f51442")
+
+    # Build backend and helpers
+    build_system("python_pip")
+    depends_on("py-setuptools@61:", type="build")
+    depends_on("py-build", type="build")
+    depends_on("py-pyproject-hooks", type="build")
+    depends_on("py-wheel", type="build")
+    depends_on("py-cython@0.29:0.29", type="build")
+    depends_on("py-setuptools-scm@6:", type="build")
+    depends_on("py-pkgconfig", type="build")
+    depends_on("pkgconfig", type="build")
+    depends_on("py-extension-helpers@1:", type="build")
+    depends_on("py-numpy@1.13:", type=("build", "run"))
+    # Make SciPy optional to allow minimal builds for import verification
+    variant("scipy", default=True, description="Enable SciPy runtime dependency")
+    # Build against vendored HEALPix C++ in healpy source instead of external healpix-cxx
+    variant(
+        "internal-healpix",
+        default=True,
+        description="Use bundled HEALPix C++ from healpy source; drop external healpix-cxx",
+    )
+    # When True (default) and +internal-healpix, build the internal healpix_cxx
+    # and libsharp as static archives so they are baked into the extension .so
+    # modules.  Without this the shared libs end up in a temp build dir that pip
+    # deletes, leaving a broken RPATH at runtime.
+    variant(
+        "static-internal-libs",
+        default=True,
+        when="+internal-healpix",
+        description="Build internal healpix_cxx/libsharp as static libs",
+    )
+    # Allow toggling MPI/OpenMP through to healpix-cxx and libsharp
+    # variant("mpi", default=True, description="Enable MPI via healpix-cxx/libsharp")
+    # variant("openmp", default=True, description="Enable OpenMP via healpix-cxx/libsharp")
+    depends_on("py-scipy@1.10.1:1.10", type=("build", "run"), when="+scipy")
+    depends_on("py-astropy", type=("build", "run"))
+    # Optional plotting support; avoid heavy GUI stack for headless verify builds
+    variant("plot", default=True, description="Enable plotting support via matplotlib")
+    depends_on("py-matplotlib", type=("build", "run"), when="+plot")
+    depends_on("py-six", type=("build", "run"))
+
+    # CFITSIO version constraints based on healpy version
+    # healpy 1.18.x requires CFITSIO 4.5+ (4.6.2 for 1.18.1, 4.5.0 for 1.18.0)
+    depends_on("cfitsio@4.5:", type=("build", "run"), when="@1.18:")
+    # healpy 1.17.x requires CFITSIO 4.3+
+    depends_on("cfitsio@4.3:", type=("build", "run"), when="@1.17:")
+    # healpy 1.16.x requires CFITSIO 4.1+
+    depends_on("cfitsio@4.1:", type=("build", "run"), when="@1.16:")
+    depends_on("cfitsio@:3.47", type=("build", "run"), when="@:1.15")
+    # healpy 1.15.x requires CFITSIO 4.0+ (for HEALPix 3.81 compatibility)
+    # depends_on("cfitsio@4.0:", type=("build", "run"), when="@1.15:")
+    # healpy 1.14.x requires CFITSIO 3.48+
+    depends_on("cfitsio@3.48:", type=("build", "run"), when="@1.14:")
+    # healpy 1.13.x and earlier can use CFITSIO 3.x
+    depends_on("cfitsio@3.0:", type=("build", "run"), when="@:1.13")
+
+    with when("~internal-healpix"):
+        # HEALPix C++ version constraints based on healpy version
+        # See HEALPY_HEALPIX_VERSION_MAPPING.md for detailed version mapping
+        # healpy 1.18.x series requires HEALPix C++ 3.83
+        depends_on("healpix-cxx@3.83:", type=("build", "run", "test"), when="@1.18:")
+        # healpy 1.17.x series maps to HEALPix C++ 3.82
+        depends_on("healpix-cxx@3.82:3.82", type=("build", "run", "test"), when="@1.17:")
+        # healpy 1.16.x series requires HEALPix C++ ~3.82 (SVN r1206-1228)
+        depends_on("healpix-cxx@3.80:3.82", type=("build", "run", "test"), when="@1.16:")
+        # healpy 1.15.x series requires HEALPix C++ 3.81
+        depends_on("healpix-cxx@3.81:3.81", type=("build", "run", "test"), when="@1.15:")
+        # healpy 1.14.x series requires HEALPix C++ 3.70
+        depends_on("healpix-cxx@3.70:3.79", type=("build", "run", "test"), when="@1.14:1.15")
+        # healpy 1.13.x series requires HEALPix C++ 3.60
+        depends_on("healpix-cxx@3.60:3.69", type=("build", "run", "test"), when="@1.13")
+        # healpy 1.12.x series requires HEALPix C++ 3.50
+        depends_on("healpix-cxx@3.50:3.59", type=("build", "run", "test"), when="@1.12")
+        # healpy 1.8.x-1.11.x series requires HEALPix C++ 3.30
+        depends_on("healpix-cxx@3.30:3.49", type=("build", "run", "test"), when="@1.8:1.11")
+        # healpy 1.5.x-1.7.x series requires HEALPix C++ 3.11
+        depends_on("healpix-cxx@3.11:3.29", type=("build", "run", "test"), when="@1.5:1.7")
+        # healpy 1.3.x-1.4.x series requires HEALPix C++ ~3.0
+        depends_on("healpix-cxx@3.0:3.10", type=("build", "run", "test"), when="@1.3:1.4")
+
+        # Propagate variants to healpix-cxx when external is used
+        # depends_on("healpix-cxx+mpi", when="+mpi")
+        # depends_on("healpix-cxx~mpi", when="~mpi")
+        # depends_on("healpix-cxx+openmp", when="+openmp")
+        # depends_on("healpix-cxx~openmp", when="~openmp")
+
+    depends_on("zlib", type=("build", "link"))
+    depends_on("bzip2", type=("build", "link"))
+
+    # When using vendored HEALPix C++, build the bundled libsharp copy.
+
+    import_modules = ["healpy", "healpy._pixelfunc"]
+
+    def patch(self):
+        # Relax NumPy C-API deprecation guard in the build scripts so older
+        # Cython-generated code can access legacy fields (e.g. dimensions).
+        candidates = [
+            "setup.py",
+            "setup.cfg",
+            "pyproject.toml",
+            "healpy/_setup_helpers.py",
+        ]
+        for rel in candidates:
+            if os.path.exists(rel):
+                ff = FileFilter(rel)
+                ff.filter(
+                    r"NPY_NO_DEPRECATED_API\s*[,=]\s*NPY_1_19_API_VERSION",
+                    "NPY_NO_DEPRECATED_API=0",
+                )
+        # NOTE: --disable-shared --enable-static was attempted here to build
+        # healpix_cxx/libsharp as static archives.  The healpix_cxx autotools
+        # configure ignores these flags, so the shared libs are always created
+        # in a temp build dir that pip deletes.  The rescue_internal_healpix_libs
+        # @run_after("install") hook copies them into prefix/lib instead.
+        # Fix HEALPix C++ configure cfitsio detection:
+        # 1. Replace ffgnrwll (Fortran wrapper) with fits_open_file (C API).
+        # 2. Inject CFITSIO_LIBS into LDFLAGS before the AC_CHECK_LIB test
+        #    so the linker can find cfitsio in spack's non-standard paths.
+        #    PKG_CHECK_MODULES sets CFITSIO_LIBS but AC_CHECK_LIB doesn't
+        #    use it -- it only checks LDFLAGS/LIBS.
+        for conf in [
+            "cextern/healpix/src/cxx/configure",
+            "cextern/healpix/src/cxx/configure.ac",
+        ]:
+            if os.path.exists(conf):
+                filter_file("ffgnrwll", "fits_open_file", conf, string=True)
+
+        # Create a forced-include header to override any upstream -DNPY_NO_DEPRECATED_API
+        # definitions added by build tooling. The header is ensured to be included first
+        # so our override wins regardless of command-line -D ordering.
+        with open("spack_numpy_compat.h", "w", encoding="utf-8") as f:
+            f.write(
+                "#ifndef SPACK_NUMPY_COMPAT_HEADER\n"
+                "#define SPACK_NUMPY_COMPAT_HEADER\n"
+                "#undef NPY_NO_DEPRECATED_API\n"
+                "#define NPY_NO_DEPRECATED_API 0\n"
+                "#endif\n"
+            )
+
+    def setup_build_environment(self, env):
+        # Let pip's build isolation pick the ideal setuptools version
+        env.set("SETUPTOOLS_SCM_PRETEND_VERSION_FOR_HEALPY", self.spec.version.string)
+        # Healpy 1.16.x Cython output may access deprecated NumPy C-API fields
+        # like PyArrayObject->dimensions; allow deprecated API to avoid build
+        # failures with newer NumPy headers.
+        # Force-include our compatibility header so it overrides any upstream
+        # macro definitions.
+        # Use absolute path to the header in the staged source directory.
+        compat_hdr = os.path.join(self.stage.source_path, "spack_numpy_compat.h")
+        env.append_flags("CFLAGS", f"-include {compat_hdr}")
+        env.append_flags("CXXFLAGS", f"-include {compat_hdr}")
+        # Also define explicitly as a fallback for sources compiled without the header
+        env.append_flags("CFLAGS", "-DNPY_NO_DEPRECATED_API=0")
+        env.append_flags("CXXFLAGS", "-DNPY_NO_DEPRECATED_API=0")
+
+        # Expose cfitsio to the vendored HEALPix C++ configure.
+        # PKG_CHECK_MODULES_STATIC pulls in transitive static deps
+        # (curl, zlib, bz2) from non-standard spack paths the linker
+        # can't resolve.  Setting CFITSIO_CFLAGS/CFITSIO_LIBS as env
+        # vars makes configure skip pkg-config and use these directly,
+        # linking against the shared cfitsio (no transitive deps needed).
+        cfitsio = self.spec["cfitsio"].prefix
+        env.set("CFITSIO_CFLAGS", f"-I{cfitsio.include}")
+        env.set("CFITSIO_LIBS", f"-L{cfitsio.lib} -lcfitsio")
+        env.prepend_path("LD_LIBRARY_PATH", str(cfitsio.lib))
+        # Tell autoconf to skip the AC_CHECK_LIB(cfitsio, fits_open_file)
+        # link test.  pkg-config already confirmed cfitsio is present, but
+        # the link test fails because spack's library paths aren't in the
+        # default linker search path.  Setting the cache variable makes
+        # configure trust the pkg-config result.
+        env.set("ac_cv_lib_cfitsio_fits_open_file", "yes")
+        env.append_flags("LDFLAGS", f"-L{cfitsio.lib}")
+        env.append_flags("CPPFLAGS", f"-I{cfitsio.include}")
+
+        # Building with +internal-healpix will build bundled libsharp.
+
+    @run_after("install")
+    def rescue_internal_healpix_libs(self):
+        """Copy bundled healpix_cxx/libsharp shared libs into the install prefix.
+
+        When using +internal-healpix, healpy's setup.py builds these libraries
+        in a temporary build directory.  After pip install the extension .so
+        files have NEEDED entries for libhealpix_cxx.so.4, but the temporary
+        directory is gone.  We rescue the shared libs from the still-existing
+        spack staging directory and copy them into prefix/lib so they survive.
+        """
+        if not self.spec.satisfies("+internal-healpix"):
+            return
+
+        import shutil
+
+        src = self.stage.source_path
+        dest_lib = os.path.join(str(self.prefix), "lib")
+        mkdirp(dest_lib)
+        copied = []
+
+        for dirpath, _dirnames, filenames in os.walk(src):
+            for fn in filenames:
+                if (
+                    fn.startswith("libhealpix_cxx")
+                    or fn.startswith("libsharp")
+                ) and ".so" in fn:
+                    full = os.path.join(dirpath, fn)
+                    target = os.path.join(dest_lib, fn)
+                    if not os.path.exists(target):
+                        shutil.copy2(full, target)
+                        copied.append(fn)
+
+        if copied:
+            tty.msg("py-healpy: rescued internal libs: " + ", ".join(copied))
+        else:
+            tty.warn(
+                "py-healpy: no libhealpix_cxx.so* found in build staging "
+                "directory -- the extension modules may fail to load at "
+                "runtime.  Consider switching to ~internal-healpix and "
+                "depending on the external healpix-cxx spack package."
+            )
+
+    def test_import(self):
+        python = self.spec["python"].command
+        if python:
+            code = (
+                "import importlib, healpy; "
+                "importlib.import_module('healpy._pixelfunc'); "
+                "print(healpy.__version__)"
+            )
+            python("-c", code)

@@ -1,0 +1,11 @@
+--- a/src/toil/worker.py
++++ b/src/toil/worker.py
+@@ -356,7 +356,7 @@
+         if i == "PATH":
+             # Handle path specially. Sometimes e.g. leader may not include
+             # /bin, but the Toil appliance needs it.
+-            if i in os.environ and os.environ[i] != "":
++            if i in os.environ and os.environ[i] not in environment[i]:
+                 # Use the provided PATH and then the local system's PATH
+                 os.environ[i] = environment[i] + ":" + os.environ[i]
+             else:
