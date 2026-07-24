@@ -5,7 +5,7 @@
 #     -f marimo-sdp-spack.Dockerfile .
 # Subsequent builds reuse those caches and the generated file mirror; they do
 # not depend on a mutable, locally built base image.
-FROM registry.gitlab.com/ska-telescope/sdp/ska-sdp-spack/ubuntu:file-d6b50a56-spack-v1.1.1@sha256:a0bd83a4714a9b12f0a07d759e018308d4ee388fc936c690649b948d1e0a4016 AS builder
+FROM registry.gitlab.com/ska-telescope/sdp/ska-sdp-spack/ubuntu:file-d6b50a56-spack-v1.1.1 AS builder
 
 USER root
 SHELL ["/bin/bash", "-lc"]
