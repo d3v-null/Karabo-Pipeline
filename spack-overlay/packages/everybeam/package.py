@@ -6,12 +6,9 @@ from spack_repo.builtin.build_systems.cmake import CMakePackage
 from spack.package import (
     depends_on,
     join_path,
-    mkdirp,
     patch,
-    run_after,
     variant,
     version,
-    which,
 )
 
 
@@ -28,6 +25,7 @@ class Everybeam(CMakePackage):
     # from the Python bindings. DP3 Predict uses MWA's PointResponse directly,
     # so expose the equivalent ITRF-direction API for the integration probe.
     patch("enable-mwa-python-bindings.patch", when="@0.8.3")
+    patch("install-python-metadata.patch", when="@0.8.3 +python")
 
     variant("python", default=True, description="Enable Python support")
 
@@ -72,26 +70,3 @@ class Everybeam(CMakePackage):
         if "+python" in self.spec:
             python = self.module.python
             python("-c", "import everybeam; print(everybeam.Options())")
-
-    @run_after("install")
-    def install_python_dist_info(self):
-        """EveryBeam installs a bare .so without PEP 566 metadata.  LSMTool
-        declares `everybeam>=0.6.1`, so write a minimal dist-info for pip check.
-        """
-        if "+python" not in self.spec:
-            return
-        python_version = self.spec.dependencies("python")[0].version.up_to(2)
-        site = join_path(
-            self.prefix.lib, f"python{python_version}", "site-packages"
-        )
-        dist_info = join_path(site, f"everybeam-{self.version}.dist-info")
-        mkdirp(dist_info)
-        with open(join_path(dist_info, "METADATA"), "w", encoding="utf-8") as handle:
-            handle.write(
-                "Metadata-Version: 2.1\n"
-                "Name: everybeam\n"
-                f"Version: {self.version}\n"
-                "Summary: EveryBeam antenna response library (Spack install)\n"
-            )
-        with open(join_path(dist_info, "INSTALLER"), "w", encoding="utf-8") as handle:
-            handle.write("spack\n")
