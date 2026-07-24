@@ -89,7 +89,13 @@ spack:
   # Overlay roots must be freshly concretized when their recipes or patches
   # change; compatible dependencies remain reusable from SDP/buildcache specs.
   - karabo.everybeam@${EVERYBEAM_VERSION}+python
+  - karabo.dp3
+  - karabo.wsclean
+  - karabo.py-bdsf@${BDSF_VERSION}
+  - karabo.py-cwltool
   - karabo.py-losoto@2.6.0
+  - karabo.py-lsmtool
+  - karabo.py-python-dateutil@2.8.2
   - karabo.py-reproject@${REPROJECT_VERSION}
   concretizer:
     unify: when_possible
@@ -197,10 +203,10 @@ e=[x for x in t if len(c.get(x,[]))>1];\
 r=['py-cloudpickle','py-dask','py-fsspec','py-zarr'];\
 m=[x for x in r if not c.get(x)];\
 roots={s.get('spec','').split('@')[0].split('.')[-1] for s in d.get('roots',[])};\
-x=[x for x in ['everybeam','py-losoto','py-reproject'] if x not in roots];\
+x=[x for x in ['dp3','everybeam','py-bdsf','py-cwltool','py-losoto','py-lsmtool','py-python-dateutil','py-reproject','wsclean'] if x not in roots];\
 print(f'Duplicate packages: {e}; missing runtime dependencies: {m}; missing overlay roots: {x}');\
 sys.exit(1) if e or m or x else print('Concretized package graph OK')" && \
-    ac_cv_lib_curl_curl_easy_init=no spack install --reuse --use-cache --no-check-signature --no-checksum --fail-fast --show-log-on-error && \
+    ac_cv_lib_curl_curl_easy_init=no spack install --use-cache --no-check-signature --no-checksum --fail-fast --show-log-on-error && \
     if spack mirror list | awk '{print $1}' | grep -qx oci-push; then \
         spack buildcache update-index -k oci-push || spack buildcache update-index oci-push; \
     fi && \
