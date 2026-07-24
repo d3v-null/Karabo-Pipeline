@@ -216,7 +216,9 @@ sys.exit(1) if e or m or x else print('Concretized package graph OK')" && \
     /opt/view/bin/pip install --upgrade-strategy only-if-needed \
         jupyterlab notebook ipykernel packaging \
         'requests>=2.32' 'mistune<3.1' && \
-    chmod -R a+rX /opt/view /opt/._view /opt/spack_env /opt/software
+    chmod -R a+rX \
+        /opt/view /opt/._view /opt/spack_env /opt/software \
+        /opt/spack /opt/ska-sdp-spack /opt/karabo-spack
 
 RUN /opt/view/bin/pip check
 
