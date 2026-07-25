@@ -94,7 +94,8 @@ RUN git clone --depth=1 --single-branch --branch=2026.02.5 https://gitlab.com/sk
     rm -rf /opt/ska-sdp-spack/.git && \
     spack repo add /opt/ska-sdp-spack
 COPY spack-overlay /opt/karabo-spack
-RUN spack repo add /opt/karabo-spack
+RUN rm -rf /opt/karabo-spack/packages/py-python-dateutil && \
+    spack repo add /opt/karabo-spack
 
 ARG NUMPY_VERSION=2.2.0
 # numpy needed by pyuvdata montagepy numexpr scipy rascil scikit-image pywavelets astroml ducc0 imageio ska-sdp-func-python contourpy aratmospy bokeh astroplan coda harp astropy-healpix katbeam tensorboard h5py dask ml_dtypes ska-gridder-nifty-cuda libboost-python-devel python-casacore tifffile pytest-arraydiff shapely bdsf casacore finufft reproject numcodecs matplotlib-base tools21cm libboost-python numba gwcs tensorflow-base pyfftw boost xarray asdf pyside6 photutils astropy bottleneck pandas oskarpy ska-sdp-datamodels ska-sdp-func healpy keras scikit-learn pyerfa eidos asdf-astropy zarr bluebild
@@ -304,9 +305,6 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     'python@'$PYTHON_VERSION \
     'py-pip' \
     'py-numpy@'$NUMPY_VERSION \
-    'py-jupyterlab-server@2.27:' \
-    'py-jupyterlab@4' \
-    'py-notebook@7' \
     'py-matplotlib@'$MATPLOTLIB_VERSION \
     ${CUDA_PKG:+"$CUDA_PKG"} \
     'boost@'$BOOST_VERSION'+python+numpy' \
@@ -333,7 +331,6 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     'py-scikit-image@'$SKIMAGE_VERSION \
     'py-scikit-learn@'$SKLEARN_VERSION \
     'py-tqdm@'$TQDM_VERSION \
-    'py-reproject@'$REPROJECT_VERSION \
     'py-ska-sdp-datamodels@'$SDP_DATAMODELS_VERSION \
     'py-ska-sdp-func-python@'$SDP_FUNC_PYTHON_VERSION \
     'py-ska-sdp-func' \
@@ -413,6 +410,12 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
         spack buildcache update-index /opt/buildcache || true; \
     fi && \
     fix-permissions /opt/view /opt/spack_env /opt/software
+
+RUN /opt/view/bin/python -m pip install --no-cache-dir \
+        "python-dateutil==2.8.2" "jupyterlab>=4,<5" "notebook>=7,<8" && \
+    /opt/view/bin/python -m pip install --no-cache-dir \
+        "reproject==${REPROJECT_VERSION}" && \
+    /opt/view/bin/python -m pip check
 
 FROM quay.io/jupyter/minimal-notebook:notebook-7.0.6
 
@@ -582,9 +585,6 @@ RUN spack test run 'py-astropy-healpix' && \
     spack test run 'py-eidos' && \
     spack test run 'py-katbeam' && \
     spack test run 'py-tools21cm' && \
-    spack test run 'py-jupyterlab-server' && \
-    spack test run 'py-jupyterlab' && \
-    spack test run 'py-notebook' && \
     spack test run 'hyperbeam' && \
     spack test run 'wsclean'
     # spack test run 'aoflagger'
