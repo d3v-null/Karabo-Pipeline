@@ -34,7 +34,7 @@ class Dp3(CMakePackage):
     depends_on("cxx", type="build")
 
     depends_on("aoflagger@3.4.0:", when="@latest,master")
-    depends_on("aoflagger@3.4.0", when="@6")
+    depends_on("aoflagger@3.4.0:", when="@6")
     depends_on("aoflagger@3.2.0", when="@5.3:5.4")
     depends_on("aoflagger@3.1.0", when="@5.0:5.2")
     depends_on("casacore@3.7.1:", when="@6.4:,latest")
@@ -48,7 +48,7 @@ class Dp3(CMakePackage):
     depends_on("everybeam@0.3.0", when="@5.2")
     depends_on("everybeam@0.1.3", when="@5.1")
     depends_on("everybeam@0.1.1", when="@5.0")
-    depends_on("idg@1.2.0:1.2", when="+idg")
+    depends_on("idg@1.2.0:", when="+idg")
     depends_on("lofarstman", type="run")
     depends_on("openblas threads=pthreads")
     depends_on("boost+date_time+test+program_options")

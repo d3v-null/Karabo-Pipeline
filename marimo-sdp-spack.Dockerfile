@@ -5,7 +5,7 @@
 #     -f marimo-sdp-spack.Dockerfile .
 # Subsequent builds reuse those caches and the generated file mirror; they do
 # not depend on a mutable, locally built base image.
-FROM registry.gitlab.com/ska-telescope/sdp/ska-sdp-spack/ubuntu:file-d6b50a56-spack-v1.1.1 AS builder
+FROM registry.gitlab.com/ska-telescope/sdp/ska-sdp-spack/ska-sdp-spack-ubuntu:2026.07.2 AS builder
 
 USER root
 SHELL ["/bin/bash", "-lc"]
@@ -32,15 +32,23 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
     sh -s -- -y --profile minimal --default-toolchain 1.81.0 --no-modify-path && \
     rustc --version && cargo --version
-
-RUN . ${SPACK_ROOT}/share/spack/setup-env.sh && \
-    git clone --depth=1 --single-branch --branch=2026.07.2 \
-        https://gitlab.com/ska-telescope/sdp/ska-sdp-spack.git /opt/ska-sdp-spack && \
-    rm -rf /opt/ska-sdp-spack/.git && \
-    spack repo add /opt/ska-sdp-spack
+# git clone --depth=1 --single-branch --branch=2026.07.2 \
+#   https://gitlab.com/ska-telescope/sdp/ska-sdp-spack.git /opt/ska-sdp-spack && \
+#   rm -rf /opt/ska-sdp-spack/.git && \
+RUN test -d /opt/ska-sdp-spack/packages && \
+    . ${SPACK_ROOT}/share/spack/setup-env.sh && \
+    if ! spack config get repos | grep -Fq /opt/ska-sdp-spack; then \
+        spack repo add /opt/ska-sdp-spack; \
+    fi
 
 COPY --link spack-overlay /opt/karabo-spack
-RUN test -f /opt/karabo-spack/packages/py-toil/kubernetes-batch-system.patch && \
+RUN for package in /opt/karabo-spack/packages/*; do \
+        case "$(basename "${package}")" in \
+            dp3|everybeam|py-astropy-healpix|py-bdsf|py-cwltool|py-lsmtool|py-python-dateutil|py-rapthor|py-schema-salad|py-ska-sdp-ical|py-toil|wsclean) ;; \
+            *) rm -rf "${package}" ;; \
+        esac; \
+    done && \
+    test -f /opt/karabo-spack/packages/py-toil/kubernetes-batch-system.patch && \
     test -f /opt/karabo-spack/packages/py-cwltool/package.py && \
     test -f /opt/karabo-spack/packages/py-ska-sdp-ical/package.py && \
     test -f /opt/karabo-spack/packages/py-rapthor/kubernetes-batch-system.patch && \
@@ -50,25 +58,27 @@ RUN test -f /opt/karabo-spack/packages/py-toil/kubernetes-batch-system.patch && 
     . ${SPACK_ROOT}/share/spack/setup-env.sh && \
     spack repo add /opt/karabo-spack
 
-ARG NUMPY_VERSION=2.2.0
-ARG CFITSIO_VERSION=4.6.3
-ARG PANDAS_VERSION=2.2.3
-ARG XARRAY_VERSION=2024.10.0
-ARG H5PY_VERSION=3.12.1
-ARG HDF5_VERSION=1.14.3
-ARG SCIPY_VERSION=1.14.1
-ARG MATPLOTLIB_VERSION=3.9.2
-ARG ASTROPY_VERSION=6.1.0
-ARG CASACORE_VERSION=3.7.1
+ARG PYTHON_VERSION=3.11.11
+ARG NUMPY_VERSION=2.3.5
+ARG CFITSIO_VERSION=4.5.0
+ARG PANDAS_VERSION=2.3.3
+ARG XARRAY_VERSION=2025.7.1
+ARG H5PY_VERSION=3.14.0
+ARG HDF5_VERSION=1.14.6
+ARG SCIPY_VERSION=1.17.1
+ARG MATPLOTLIB_VERSION=3.9.4
+ARG ASTROPY_VERSION=7.1.1
+ARG CASACORE_VERSION=3.8.0
+ARG PY_CASACORE_VERSION=3.7.1
 ARG BOOST_VERSION=1.88.0
 ARG REPROJECT_VERSION=0.14.1
 ARG BDSF_VERSION=1.13.0.20260409
-ARG AOFLAGGER_VERSION=3.4.0
+ARG AOFLAGGER_VERSION=3.6.0.dev1
 ARG WSCLEAN_VERSION=3.6.20260109
 ARG EVERYBEAM_VERSION=0.8.3
 ARG DP3_VERSION=6.6
 ARG RAPTHOR_VERSION=2.1.20260630
-ARG SPACK_TARGET=""
+ARG SPACK_TARGET="x86_64_v3"
 ARG SPACK_BUILDCACHE_LOCAL=""
 ARG SPACK_MIRROR_OCI=""
 
@@ -80,7 +90,7 @@ mkdir -p /opt/spack_env /opt/{software,view,._view,buildcache,spack-source-cache
 cat > /opt/spack_env/spack.yaml <<YAML
 spack:
   specs:
-  - python@3.12
+  - python@${PYTHON_VERSION}
   - py-pip
   - karabo.py-toil@9.3.0+cwl
   - karabo.py-rapthor@${RAPTHOR_VERSION}
@@ -93,12 +103,19 @@ spack:
   - karabo.wsclean
   - karabo.py-bdsf@${BDSF_VERSION}
   - karabo.py-cwltool
-  - karabo.py-losoto@2.6.0
+  - ska-sdp-spack.py-losoto@2.6.0
   - karabo.py-lsmtool
   - karabo.py-python-dateutil@2.8.2
-  - karabo.py-reproject@${REPROJECT_VERSION}
+  - ska-sdp-spack.py-reproject@${REPROJECT_VERSION}
+  - builtin.py-zarr
   concretizer:
     unify: when_possible
+    reuse:
+      roots: true
+      exclude: [rust]
+      from:
+      - type: environment
+        path: /opt/spack-environment
   config:
     install_tree:
       root: /opt/software
@@ -129,7 +146,7 @@ spack:
     py-reproject:
       require: "@${REPROJECT_VERSION}"
     py-tables:
-      require: "@3.9.2"
+      require: "@3.10.2"
     py-numexpr:
       require: "@2.10.2:"
     py-losoto:
@@ -147,7 +164,7 @@ spack:
     aoflagger:
       require: "@${AOFLAGGER_VERSION}"
     py-casacore:
-      require: "@${CASACORE_VERSION}"
+      require: "@${PY_CASACORE_VERSION}"
     cfitsio:
       require: "@${CFITSIO_VERSION}+bzip2+fortran+utils"
     hdf5:
@@ -174,6 +191,7 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache-2026.07.2,sh
     echo "SPACK_TARGET=${spack_target} <- (uname -m)=${arch}" && \
     spack compiler find && \
     spack external find autoconf automake bison bzip2 curl diffutils findutils git libtool m4 node-js perl pkgconf rust && \
+    spack config add "packages:rust:buildable:false" && \
     spack config add "packages:all:target:[${spack_target}]" && \
     spack mirror add v1.1.1 https://binaries.spack.io/v1.1.1 && \
     if [ -n "${SPACK_BUILDCACHE_LOCAL}" ] && [ "${SPACK_BUILDCACHE_LOCAL}" != "0" ]; then \
@@ -216,9 +234,7 @@ sys.exit(1) if e or m or x else print('Concretized package graph OK')" && \
     /opt/view/bin/pip install --upgrade-strategy only-if-needed \
         jupyterlab notebook ipykernel packaging \
         'requests>=2.32' 'mistune<3.1' && \
-    chmod -R a+rX \
-        /opt/view /opt/._view /opt/spack_env /opt/software \
-        /opt/spack /opt/ska-sdp-spack /opt/karabo-spack
+    chmod -R a+rX /opt/view /opt/._view /opt/spack_env /opt/karabo-spack
 
 RUN /opt/view/bin/pip check
 
@@ -324,7 +340,7 @@ RUN python -c "import numpy; print('numpy', numpy.__version__, 'OK')" && \
 ARG NB_USER=jovyan
 ARG NB_UID=1000
 ARG NB_GID=100
-ARG PYTHON_VERSION=3.12
+ARG PYTHON_VERSION=3.11
 
 RUN python -m pip install git+https://github.com/NERSC/slurm-magic.git
 
