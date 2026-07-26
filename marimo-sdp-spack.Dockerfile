@@ -281,6 +281,10 @@ COPY --from=builder /opt/spack /opt/spack
 COPY --from=builder /opt/ska-sdp-spack /opt/ska-sdp-spack
 COPY --from=builder /opt/karabo-spack /opt/karabo-spack
 
+RUN chmod a+r \
+    /opt/spack/etc/spack/repos.yaml \
+    /opt/software/.spack-db/index.json
+
 ENV SPACK_ROOT=/opt/spack \
     SPACK_DISABLE_LOCAL_CONFIG=1
 
@@ -360,6 +364,9 @@ RUN python3 -m pip install --no-cache-dir \
 RUN install -d -o ${NB_UID} -g ${NB_GID} /home/${NB_USER}/.astropy/cache
 
 USER ${NB_UID}
+
+RUN test -r /opt/spack/etc/spack/repos.yaml && \
+    spack env activate -p /opt/spack_env
 
 # Register kernel for jovyan user using the Spack Python
 RUN python -m ipykernel install --user --name=rapthor --display-name="Rapthor (Spack Py${PYTHON_VERSION})"
