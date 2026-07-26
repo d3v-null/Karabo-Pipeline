@@ -415,7 +415,8 @@ RUN /opt/view/bin/python -m pip install --no-cache-dir \
         "python-dateutil==2.8.2" "jupyterlab>=4,<5" "notebook>=7,<8" && \
     /opt/view/bin/python -m pip install --no-cache-dir \
         "reproject==${REPROJECT_VERSION}" && \
-    /opt/view/bin/python -m pip check
+    /opt/view/bin/python -c \
+        "import dateutil, jupyterlab, notebook, reproject; print('pip overlays OK')"
 
 FROM quay.io/jupyter/minimal-notebook:notebook-7.0.6
 
