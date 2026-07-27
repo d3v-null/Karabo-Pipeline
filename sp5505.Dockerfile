@@ -598,7 +598,7 @@ RUN spack test run 'py-astropy-healpix' && \
 # TODO: Verify hyperbeam (Spack-installed) can be imported
 # RUN python -c "from mwa_hyperbeam import FEEBeam; print('mwa_hyperbeam (Spack) import successful')"
 
-ARG PIP_EXTRAS="psrecord==1.4 click aoquality losoto kneed seaborn"
+ARG PIP_EXTRAS="psrecord==1.4 click aoquality losoto kneed seaborn nest-asyncio==1.6.0"
 ARG PIP_GIT_EXTRAS="git+https://github.com/d3v-null/SSINS.git@eavils-copilot git+https://github.com/d3v-null/mwa_qa.git@dev git+https://github.com/tjgalvin/fits_warp.git"
 
 # Install optional extras via pip (not available in Spack)
