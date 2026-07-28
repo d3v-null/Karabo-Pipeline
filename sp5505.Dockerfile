@@ -405,6 +405,19 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     ac_cv_lib_curl_curl_easy_init=no spack install --no-cache --no-checksum --show-log-on-error py-healpy && \
     ac_cv_lib_curl_curl_easy_init=no spack install --use-cache --no-check-signature --no-checksum --fail-fast --show-log-on-error && \
     spack gc -y && \
+    # Strip build-only artifacts that never help a running container:
+    # static archives (only used at link time; shared libs remain) and,
+    # when CUDA is enabled, the desktop profiler/debugger GUIs that ship
+    # inside the CUDA toolkit (nsight-compute/systems, the legacy visual
+    # profiler, compute-sanitizer). Together these accounted for several
+    # GB in the final image without being used by anything at runtime.
+    find /opt/software -name '*.a' -delete && \
+    if [ -n "${CUDA_ARCH}" ]; then \
+        CUDA_ROOT=$(spack location -i cuda) && \
+        rm -rf "${CUDA_ROOT}"/nsight-compute-* "${CUDA_ROOT}"/nsight-systems-* \
+               "${CUDA_ROOT}"/libnvvp "${CUDA_ROOT}"/extras \
+               "${CUDA_ROOT}"/nsightee_plugins "${CUDA_ROOT}"/compute-sanitizer; \
+    fi && \
     spack env view regenerate && \
     if [ -n "${SPACK_MIRROR_OCI}" ] && spack mirror list | awk '{print $1}' | grep -qx 'oci-push'; then \
         spack buildcache update-index -k oci-push || spack buildcache update-index oci-push || true; \

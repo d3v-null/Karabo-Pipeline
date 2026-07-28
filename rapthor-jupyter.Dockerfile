@@ -218,6 +218,10 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache-2026.07.2,sh
     print(f'Duplicate packages found: {e}') or sys.exit(1) if e else print('No duplicate packages, OK')" && \
     ac_cv_lib_curl_curl_easy_init=no spack install --use-cache --no-check-signature --no-checksum --fail-fast --show-log-on-error && \
     spack gc -y && \
+    # Static archives are only needed at link time; the shared libs
+    # copied into the runtime image already satisfy everything at
+    # runtime. Removing them trims several GB with no functional risk.
+    find /opt/software -name '*.a' -delete && \
     spack env view regenerate && \
     /opt/view/bin/pip install --no-cache-dir jupyterlab notebook ipykernel 'requests>=2.32' packaging && \
     fix-permissions /opt/view /opt/spack_env /opt/software

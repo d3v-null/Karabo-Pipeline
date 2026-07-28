@@ -233,6 +233,10 @@ sys.exit(1) if e or m or x else print('Concretized package graph OK')" && \
         spack buildcache update-index -k oci-push || spack buildcache update-index oci-push; \
     fi && \
     spack gc -y && \
+    # Static archives are only needed at link time; the shared libs
+    # copied into the runtime image already satisfy everything at
+    # runtime. Removing them trims several GB with no functional risk.
+    find /opt/software -name '*.a' -delete && \
     spack env view regenerate && \
     /opt/view/bin/pip check && \
     /opt/view/bin/pip install --no-cache-dir --upgrade-strategy only-if-needed \
