@@ -244,6 +244,7 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     python3 -c "import yaml,sys;p='/opt/spack_env/spack.yaml';f=open(p);c=yaml.safe_load(f);f.close();\
     pkgs=c.setdefault('spack',{}).setdefault('packages',{});\
     [pkgs.setdefault(k,{}).update({'require':v}) for k,v in [\
+        ('llvm','~clang~lldb~lld~polly~libomptarget'),\
         ('py-numpy','@2:'),\
         ('py-zipp','@:3.17'),\
         ('py-tables','@3.9.2'),\

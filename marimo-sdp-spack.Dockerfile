@@ -127,6 +127,8 @@ spack:
   packages:
     all:
       target: [x86_64_v2]
+    llvm:
+      require: "~clang~lldb~lld~polly~libomptarget"
     rust:
       require: "@1.81.0:"
     casacore:

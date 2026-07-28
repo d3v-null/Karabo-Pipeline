@@ -157,6 +157,7 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache-2026.07.2,sh
     python3 -c "import yaml,sys;p='/opt/spack_env/spack.yaml';f=open(p);c=yaml.safe_load(f);f.close();\
     pkgs=c.setdefault('spack',{}).setdefault('packages',{});\
     [pkgs.setdefault(k,{}).update({'require':v}) for k,v in [\
+        ('llvm','~clang~lldb~lld~polly~libomptarget'),\
         ('py-numpy','@${NUMPY_VERSION}'),\
         ('py-scipy','@${SCIPY_VERSION}'),\
         ('py-matplotlib','@${MATPLOTLIB_VERSION}'),\
