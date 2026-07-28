@@ -29,20 +29,23 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 # py-cdshealpix's locked Cargo dependencies require Rust >=1.81.  Install the
 # prebuilt toolchain once in this cacheable layer; Spack discovers it as an
 # external package, so it is never rebuilt from source.
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
+RUN set -o pipefail && \
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
     sh -s -- -y --profile minimal --default-toolchain 1.81.0 --no-modify-path && \
     rustc --version && cargo --version
 # git clone --depth=1 --single-branch --branch=2026.07.2 \
 #   https://gitlab.com/ska-telescope/sdp/ska-sdp-spack.git /opt/ska-sdp-spack && \
 #   rm -rf /opt/ska-sdp-spack/.git && \
-RUN test -d /opt/ska-sdp-spack/packages && \
+RUN set -o pipefail && \
+    test -d /opt/ska-sdp-spack/packages && \
     . ${SPACK_ROOT}/share/spack/setup-env.sh && \
     if ! spack config get repos | grep -Fq /opt/ska-sdp-spack; then \
         spack repo add /opt/ska-sdp-spack; \
     fi
 
 COPY --link spack-overlay /opt/karabo-spack
-RUN for package in /opt/karabo-spack/packages/*; do \
+RUN set -o pipefail && \
+    for package in /opt/karabo-spack/packages/*; do \
         case "$(basename "${package}")" in \
             dp3|everybeam|py-astropy-healpix|py-bdsf|py-cwltool|py-lsmtool|py-python-dateutil|py-rapthor|py-schema-salad|py-ska-sdp-ical|py-toil|wsclean) ;; \
             *) rm -rf "${package}" ;; \
@@ -184,6 +187,7 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache-2026.07.2,sh
     --mount=type=cache,target=/opt/spack-misc-cache,id=rapthor-sdp-spack-misc-toil9-v4,sharing=locked \
     --mount=type=secret,id=spack_oci_username,required=false \
     --mount=type=secret,id=spack_oci_password,required=false \
+    set -o pipefail && \
     . ${SPACK_ROOT}/share/spack/setup-env.sh && \
     spack env activate --without-view /opt/spack_env && \
     arch=$(uname -m) && spack_target=${SPACK_TARGET:-} && \
@@ -231,7 +235,7 @@ sys.exit(1) if e or m or x else print('Concretized package graph OK')" && \
     spack gc -y && \
     spack env view regenerate && \
     /opt/view/bin/pip check && \
-    /opt/view/bin/pip install --upgrade-strategy only-if-needed \
+    /opt/view/bin/pip install --no-cache-dir --upgrade-strategy only-if-needed \
         jupyterlab notebook ipykernel packaging \
         'requests>=2.32' 'mistune<3.1' && \
     chmod -R a+rX /opt/view /opt/._view /opt/spack_env /opt/karabo-spack
@@ -346,7 +350,7 @@ ARG NB_UID=1000
 ARG NB_GID=100
 ARG PYTHON_VERSION=3.11
 
-RUN python -m pip install git+https://github.com/NERSC/slurm-magic.git
+RUN python -m pip install --no-cache-dir git+https://github.com/NERSC/slurm-magic.git
 
 # KubeSpawner runs `jupyterhub-singleuser`; Marimo needs the CLI + lab extension.
 # Install into the Spack view Python that already ships JupyterLab in this image.

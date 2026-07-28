@@ -49,7 +49,9 @@ ARG RUST_VERSION=1.85.1
 # rust 1.86 cannot find -lcudart in hyperdrive on arm64
 ENV CARGO_HOME=/opt/cargo \
     RUSTUP_HOME=/opt/rustup
-RUN curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain $RUST_VERSION --no-modify-path && \
+RUN set -o pipefail && \
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
+    sh -s -- -y --profile minimal --default-toolchain $RUST_VERSION --no-modify-path && \
     ln -sf /opt/cargo/bin/* /usr/local/bin/ && \
     rustc --version | grep -Fq "$RUST_VERSION"
 
@@ -208,6 +210,7 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     --mount=type=cache,target=/opt/spack-misc-cache,id=spack-misc-cache,sharing=locked \
     --mount=type=secret,id=spack_oci_username,required=false \
     --mount=type=secret,id=spack_oci_password,required=false \
+    set -o pipefail; \
     mkdir -p /opt/{software,view,buildcache,spack-source-cache,spack-misc-cache}; \
     arch=$(uname -m); \
     spack_target="${SPACK_TARGET}"; \
@@ -719,10 +722,10 @@ ARG NB_GID=100
 RUN mkdir -p /opt/Karabo-Pipeline /home/${NB_USER}/{.astropy/cache,.cache,.config/matplotlib}
 COPY --chown=${NB_UID}:${NB_GID} karabo /opt/Karabo-Pipeline/karabo
 COPY --chown=${NB_UID}:${NB_GID} setup.cfg pyproject.toml /opt/Karabo-Pipeline/
-RUN python -m pip install --no-deps -e /opt/Karabo-Pipeline && \
+RUN python -m pip install --no-cache-dir --no-deps -e /opt/Karabo-Pipeline && \
     fix-permissions /opt/Karabo-Pipeline /home/${NB_USER}
 
-RUN python -m pip install git+https://github.com/NERSC/slurm-magic.git
+RUN python -m pip install --no-cache-dir git+https://github.com/NERSC/slurm-magic.git
 
 USER ${NB_UID}
 # Register kernel for jovyan user using the Spack Python

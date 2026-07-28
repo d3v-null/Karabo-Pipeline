@@ -69,7 +69,8 @@ RUN git clone --depth=1 --single-branch --branch=v1.1.1 https://github.com/spack
 # py-cdshealpix's locked Cargo dependencies require Rust >=1.81.  Install the
 # prebuilt toolchain once in this cacheable layer; Spack discovers it as an
 # external package, so it is never rebuilt from source.
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
+RUN set -o pipefail && \
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
     sh -s -- -y --profile minimal --default-toolchain 1.81.0 --no-modify-path && \
     rustc --version && cargo --version
 
@@ -218,7 +219,7 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache-2026.07.2,sh
     ac_cv_lib_curl_curl_easy_init=no spack install --use-cache --no-check-signature --no-checksum --fail-fast --show-log-on-error && \
     spack gc -y && \
     spack env view regenerate && \
-    /opt/view/bin/pip install jupyterlab notebook ipykernel 'requests>=2.32' packaging && \
+    /opt/view/bin/pip install --no-cache-dir jupyterlab notebook ipykernel 'requests>=2.32' packaging && \
     fix-permissions /opt/view /opt/spack_env /opt/software
 
 # ----------- Runtime image -----------
@@ -319,7 +320,7 @@ ARG NB_UID=1000
 ARG NB_GID=100
 ARG PYTHON_VERSION=3.12
 
-RUN python -m pip install git+https://github.com/NERSC/slurm-magic.git
+RUN python -m pip install --no-cache-dir git+https://github.com/NERSC/slurm-magic.git
 
 # KubeSpawner runs `jupyterhub-singleuser`; install Marimo and its JupyterLab
 # extension into the Spack Python environment that provides JupyterLab.
