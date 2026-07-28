@@ -556,6 +556,9 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name != 'pull_request'
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Download digests
         uses: actions/download-artifact@v4
         with:
@@ -598,12 +601,21 @@ jobs:
           IMAGE_REF="${{ fromJSON(steps.meta-cpu-pass.outputs.json).tags[0] }}"
           docker buildx imagetools inspect "$IMAGE_REF"
 
+      - name: Analyze final image layer sizes
+        run: |
+          IMAGE_REF="${{ fromJSON(steps.meta-cpu-pass.outputs.json).tags[0] }}"
+          docker pull --platform linux/amd64 "$IMAGE_REF"
+          python3 .github/scripts/analyze_image_layers.py "$IMAGE_REF"
+
   promote-pass:
     name: Publish -pass tag after tests pass
     needs: [build-pretest, test]
     runs-on: ubuntu-latest
     if: github.event_name != 'pull_request'
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Download digests
         uses: actions/download-artifact@v4
         with:
@@ -645,3 +657,9 @@ jobs:
         run: |
           IMAGE_REF="${{ fromJSON(steps.meta-pass.outputs.json).tags[0] }}"
           docker buildx imagetools inspect "$IMAGE_REF"
+
+      - name: Analyze final image layer sizes
+        run: |
+          IMAGE_REF="${{ fromJSON(steps.meta-pass.outputs.json).tags[0] }}"
+          docker pull --platform linux/amd64 "$IMAGE_REF"
+          python3 .github/scripts/analyze_image_layers.py "$IMAGE_REF"
