@@ -248,12 +248,13 @@ jobs:
           docker run --rm "${IMAGE_REF}" python --version
           docker run --rm "${IMAGE_REF}" marimo --version
           docker run --rm "${IMAGE_REF}" python -c "import jupyterhub, marimo; print('Marimo and JupyterHub imports successful')"
-          docker run --rm "${IMAGE_REF}" python -c "import numpy; assert numpy.__version__.startswith('1.'), numpy.__version__; print('numpy', numpy.__version__)"
-          docker run --rm "${IMAGE_REF}" python -c "import scipy; assert scipy.__version__.startswith('1.12'), scipy.__version__; print('scipy', scipy.__version__)"
-          docker run --rm "${IMAGE_REF}" python -c "import GPy; print('GPy', GPy.__version__)"
+          docker run --rm "${IMAGE_REF}" python -c "import numpy; assert numpy.__version__.startswith('2.'), numpy.__version__; print('numpy', numpy.__version__)"
+          docker run --rm "${IMAGE_REF}" python -c "import scipy; assert scipy.__version__.startswith('1.14'), scipy.__version__; print('scipy', scipy.__version__)"
           docker run --rm "${IMAGE_REF}" python -c "import ps_eor; from ps_eor import ml_gpr; print('ps_eor+ml_gpr OK')"
           docker run --rm "${IMAGE_REF}" python -c "import torch; print('torch', torch.__version__)"
-          docker run --rm "${IMAGE_REF}" python -c "from scipy.integrate import trapz; print('trapz OK')"
+          docker run --rm "${IMAGE_REF}" python -c "import gpytorch; print('gpytorch', gpytorch.__version__)"
+          docker run --rm "${IMAGE_REF}" python -c "import pyro; print('pyro', pyro.__version__)"
+          docker run --rm "${IMAGE_REF}" python -c "from scipy.integrate import trapezoid; print('trapezoid OK')"
           docker run --rm "${IMAGE_REF}" python -c "import imageio, tqdm; print('imageio/tqdm OK')"
 
       - name: Check pip metadata consistency (non-fatal)
@@ -298,26 +299,47 @@ jobs:
       - name: Test kernel execution
         run: |
           IMAGE_REF="${{ fromJSON(steps.meta-pretest.outputs.json).tags[0] }}"
-          docker run --rm "${IMAGE_REF}" python -c "
-          import subprocess
-          import sys
-          result = subprocess.run([
-              sys.executable, '-m', 'jupyter', 'execute',
-              '--kernel=swf8',
-              '--ExecutePreprocessor.timeout=60',
-              '-'
-          ], input='''
-          import numpy as np
-          import GPy
-          from ps_eor import ml_gpr
-          print(\"Kernel test passed\")
-          ''', capture_output=True, text=True)
-          print(result.stdout)
-          if result.returncode != 0:
-              print(result.stderr)
-              # Don't fail on kernel test - jupyter execute may not be available
-              print('Warning: kernel execution test skipped')
-          "
+          # `jupyter execute --kernel=... -` doesn't accept stdin as a notebook
+          # source (nbclient's CLI reads an actual .ipynb path, not '-'), so
+          # write a real one-cell notebook and pass its path. Mount it
+          # read-only and let --output land inside the container's own
+          # filesystem (relative to the input's parent dir per `jupyter
+          # execute --help-all`) rather than bind-mounting an output path too
+          # — writing back to a host-mounted dir hits a uid mismatch (image
+          # runs as jovyan/1000) that has nothing to do with the test itself.
+          cat > /tmp/test_kernel.ipynb <<'EOF'
+          {
+           "cells": [
+            {
+             "cell_type": "code",
+             "execution_count": null,
+             "id": "cell1",
+             "metadata": {},
+             "outputs": [],
+             "source": [
+              "import numpy as np\n",
+              "import torch\n",
+              "import gpytorch\n",
+              "from ps_eor import ml_gpr\n",
+              "print('Kernel test passed')"
+             ]
+            }
+           ],
+           "metadata": {
+            "kernelspec": {
+             "display_name": "SWF-8 ps_eor (Spack Py3.11)",
+             "language": "python",
+             "name": "swf8"
+            }
+           },
+           "nbformat": 4,
+           "nbformat_minor": 5
+          }
+          EOF
+          docker run --rm \
+            -v /tmp/test_kernel.ipynb:/tmp/test_kernel.ipynb:ro \
+            "${IMAGE_REF}" \
+            jupyter execute /tmp/test_kernel.ipynb --kernel_name=swf8 --timeout=60 --output=/tmp/out.ipynb
 
   promote-pass:
     name: Publish -pass tag after tests pass
