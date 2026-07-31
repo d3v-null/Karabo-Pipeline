@@ -184,30 +184,9 @@ def main() -> None:
                 _fail(f"ps_eor 1.0 package missing top-level {name}")
             _ok(f"ml_gpr.{name}")
 
-    # Exact names phase3_gpr_mwa_demo.py uses today (`ml_gpr.X`, not submodules).
-    # On ps_eor 1.0 these live under submodules / were renamed — fail loudly so
-    # we do not ship an image CI-green for GPR while the demo cannot import.
-    notebook_flat = (
-        "MultiData",
-        "VAEFitter",
-        "VAEKernTorch",
-        "MRBF",
-        "MExponential",
-        "MWhiteHeteroscedastic",
-        "Uniform",
-        "MultiGPRegressor",
-        "MCMCSampler",
-    )
-    missing_flat = [n for n in notebook_flat if not hasattr(ml_gpr, n)]
-    if missing_flat:
-        _fail(
-            "phase3_gpr_mwa_demo.py flat API missing on ps_eor.ml_gpr: "
-            + ", ".join(missing_flat)
-            + ". Either re-export 0.34-compatible aliases from ml_gpr.__init__ "
-            "or update the Marimo notebook for the ps_eor 1.0 package API "
-            "(UVScaledKernel / UniformPrior / MultiGPRegressor(components=…))."
-        )
-    _ok("notebook flat ml_gpr.* API present")
+    # phase3_gpr_mwa_demo.py targets ps_eor 1.0 (submodules + UVScaledKernel /
+    # WhiteHeteroscedasticKernel / components=dict). Symbol resolution above
+    # already gates that surface — do not require legacy flat ml_gpr.MRBF etc.
 
     # --- functional: CHIPS-like CartDataCube + MultiData + PS builder ---
     pspec.psutil.set_cosmology(WMAP7)
