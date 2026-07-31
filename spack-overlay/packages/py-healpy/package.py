@@ -55,7 +55,9 @@ class PyHealpy(PythonPackage):
     # Allow toggling MPI/OpenMP through to healpix-cxx and libsharp
     # variant("mpi", default=True, description="Enable MPI via healpix-cxx/libsharp")
     # variant("openmp", default=True, description="Enable OpenMP via healpix-cxx/libsharp")
-    depends_on("py-scipy@1.10.1:1.10", type=("build", "run"), when="+scipy")
+    # 1.10–1.12: keep NumPy-1-era stacks (e.g. SWF-8 / GPy) working. SciPy
+    # 1.14+ belongs with NumPy 2; use ~scipy or builtin healpy there.
+    depends_on("py-scipy@1.10.1:1.12", type=("build", "run"), when="+scipy")
     depends_on("py-astropy", type=("build", "run"))
     # Optional plotting support; avoid heavy GUI stack for headless verify builds
     variant("plot", default=True, description="Enable plotting support via matplotlib")
