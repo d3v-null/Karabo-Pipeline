@@ -352,13 +352,45 @@ RUN arch=$(uname -m) && \
 
 ENV PATH="/opt/view/bin:${PATH}"
 
+# healpy 1.16 still does `from scipy.integrate import trapz`, removed in SciPy
+# 1.14. Without this shim, `import healpy` / `from ps_eor import pspec` fail and
+# the phase3 GPR notebook cannot load. Applied via sitecustomize so every
+# interpreter (notebook kernel, CI, CLI) sees it.
+RUN python - <<'PY'
+from pathlib import Path
+import sysconfig
+
+site = Path(sysconfig.get_paths()["purelib"])
+path = site / "sitecustomize.py"
+marker = "SWF8_SCIPY_TRAPZ_SHIM"
+block = f'''
+# {marker}: healpy 1.16 × SciPy 1.14 compat (phase3 / ps_eor.pspec)
+def _swf8_scipy_trapz_shim():
+    try:
+        import scipy.integrate as _si
+    except Exception:
+        return
+    if not hasattr(_si, "trapz") and hasattr(_si, "trapezoid"):
+        _si.trapz = _si.trapezoid  # type: ignore[attr-defined]
+
+_swf8_scipy_trapz_shim()
+'''
+existing = path.read_text() if path.is_file() else ""
+if marker not in existing:
+    path.write_text(existing + ("\n" if existing and not existing.endswith("\n") else "") + block)
+print("wrote", path)
+PY
+
 RUN python -c "import numpy; assert numpy.__version__.startswith('2.'), numpy.__version__" && \
     python -c "import scipy; assert scipy.__version__.startswith('1.14'), scipy.__version__" && \
+    python -c "import scipy.integrate as si; assert hasattr(si, 'trapz'), 'trapz shim missing'" && \
+    python -c "import healpy; print('healpy', healpy.__version__)" && \
     python -c "import ps_eor; print('ps_eor', ps_eor.__version__)" && \
-    python -c "from ps_eor import ml_gpr; print('ps_eor.ml_gpr OK')" && \
+    python -c "from ps_eor import ml_gpr, datacube, psutil, pspec; print('ps_eor+ml_gpr+pspec OK')" && \
     python -c "import torch; print('torch', torch.__version__)" && \
     python -c "import gpytorch; print('gpytorch', gpytorch.__version__)" && \
     python -c "import pyro; print('pyro', pyro.__version__)" && \
+    python -c "import emcee, corner; print('emcee', emcee.__version__, 'corner', corner.__version__)" && \
     python -c "import imageio, tqdm; print('imageio/tqdm OK')" && \
     python -c "from scipy.integrate import trapezoid; print('trapezoid OK')"
 

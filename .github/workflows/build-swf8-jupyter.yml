@@ -13,6 +13,7 @@ on:
       - "swf8-jupyter.Dockerfile"
       - "spack-overlay/**"
       - ".github/workflows/build-swf8-jupyter.yml"
+      - ".github/scripts/test_phase3_notebook_stack.py"
   push:
     branches:
       - main
@@ -21,6 +22,7 @@ on:
       - "swf8-jupyter.Dockerfile"
       - "spack-overlay/**"
       - ".github/workflows/build-swf8-jupyter.yml"
+      - ".github/scripts/test_phase3_notebook_stack.py"
 
 env:
   REGISTRY: ghcr.io
@@ -213,6 +215,9 @@ jobs:
           platform=${{ matrix.platform }}
           echo "PLATFORM_PAIR=${platform//\//-}" >> $GITHUB_ENV
 
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Docker meta (-pretest)
         id: meta-pretest
         uses: docker/metadata-action@v5
@@ -250,12 +255,29 @@ jobs:
           docker run --rm "${IMAGE_REF}" python -c "import jupyterhub, marimo; print('Marimo and JupyterHub imports successful')"
           docker run --rm "${IMAGE_REF}" python -c "import numpy; assert numpy.__version__.startswith('2.'), numpy.__version__; print('numpy', numpy.__version__)"
           docker run --rm "${IMAGE_REF}" python -c "import scipy; assert scipy.__version__.startswith('1.14'), scipy.__version__; print('scipy', scipy.__version__)"
-          docker run --rm "${IMAGE_REF}" python -c "import ps_eor; from ps_eor import ml_gpr; print('ps_eor+ml_gpr OK')"
+          docker run --rm "${IMAGE_REF}" python -c "import scipy.integrate as si; assert hasattr(si, 'trapz'), 'trapz shim missing (healpy/pspec)'"
+          docker run --rm "${IMAGE_REF}" python -c "import healpy; print('healpy', healpy.__version__)"
+          docker run --rm "${IMAGE_REF}" python -c "import ps_eor; from ps_eor import ml_gpr, datacube, psutil, pspec; print('ps_eor+ml_gpr+pspec OK', ps_eor.__version__)"
           docker run --rm "${IMAGE_REF}" python -c "import torch; print('torch', torch.__version__)"
           docker run --rm "${IMAGE_REF}" python -c "import gpytorch; print('gpytorch', gpytorch.__version__)"
           docker run --rm "${IMAGE_REF}" python -c "import pyro; print('pyro', pyro.__version__)"
+          docker run --rm "${IMAGE_REF}" python -c "import emcee, corner; print('emcee', emcee.__version__, 'corner', corner.__version__)"
           docker run --rm "${IMAGE_REF}" python -c "from scipy.integrate import trapezoid; print('trapezoid OK')"
           docker run --rm "${IMAGE_REF}" python -c "import imageio, tqdm; print('imageio/tqdm OK')"
+
+      - name: Phase-3 notebook stack (imports + GPR/PS smoke)
+        run: |
+          IMAGE_REF="${{ fromJSON(steps.meta-pretest.outputs.json).tags[0] }}"
+          # Mirrors capabilities exercised by phase3_gpr_mwa_demo.py (CHIPS cube,
+          # PowerSpectraBuilder.get, MultiData, MultiGPRegressor, MCMCSampler,
+          # VAEFitter/VAEKernTorch symbols, imageio GIF). Fails if healpy/pspec
+          # or the ml_gpr surface is broken — plain `import ml_gpr` is not enough.
+          docker run --rm \
+            -e MPLCONFIGDIR=/tmp/mpl \
+            -e OPENBLAS_NUM_THREADS=1 \
+            -v "$PWD/.github/scripts/test_phase3_notebook_stack.py:/tmp/test_phase3_notebook_stack.py:ro" \
+            "${IMAGE_REF}" \
+            python /tmp/test_phase3_notebook_stack.py
 
       - name: Check pip metadata consistency (non-fatal)
         run: |
@@ -320,7 +342,11 @@ jobs:
               "import numpy as np\n",
               "import torch\n",
               "import gpytorch\n",
-              "from ps_eor import ml_gpr\n",
+              "import healpy\n",
+              "from ps_eor import ml_gpr, datacube, psutil, pspec\n",
+              "from astropy.cosmology import WMAP7\n",
+              "pspec.psutil.set_cosmology(WMAP7)\n",
+              "assert hasattr(ml_gpr, 'MLGPRForegroundFitter') or hasattr(ml_gpr, 'MCMCSampler')\n",
               "print('Kernel test passed')"
              ]
             }
@@ -337,9 +363,10 @@ jobs:
           }
           EOF
           docker run --rm \
+            -e MPLCONFIGDIR=/tmp/mpl \
             -v /tmp/test_kernel.ipynb:/tmp/test_kernel.ipynb:ro \
             "${IMAGE_REF}" \
-            jupyter execute /tmp/test_kernel.ipynb --kernel_name=swf8 --timeout=60 --output=/tmp/out.ipynb
+            jupyter execute /tmp/test_kernel.ipynb --kernel_name=swf8 --timeout=120 --output=/tmp/out.ipynb
 
   promote-pass:
     name: Publish -pass tag after tests pass
