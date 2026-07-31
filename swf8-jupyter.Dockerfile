@@ -1,12 +1,13 @@
 # SWF-8 Jupyter/Marimo image: ps_eor[ml-gpr] (MWA Phase-3 CHIPS → LOFAR-style GPR)
 #
-# Counterpart to rapthor-jupyter.Dockerfile. Default ps_eor version is the
-# 1.0 tag (GPyTorch ML-GPR backend, no GPy). NumPy 1.24 / SciPy 1.12 are
-# still pinned below — not because 1.0 requires them (it's numpy>=1.20,
-# scipy>=1.10), but because they're shared with the healpy/reproject/tables
-# stack from ska-sdp-spack. Legacy ps_eor 0.34.1 (GPy backend) is still
-# buildable via --build-arg PS_EOR_VERSION=0.34.1; see
-# docs/ps_eor-spack-packaging.md.
+# Counterpart to rapthor-jupyter.Dockerfile — and now on the same NumPy 2.2 /
+# SciPy 1.14 stack (see version pins below), default ps_eor version is the
+# 1.0 tag (GPyTorch ML-GPR backend, no GPy). Legacy ps_eor 0.34.1 (GPy
+# backend) needs numpy<2/scipy<=1.12, so rolling back to it also requires
+# overriding NUMPY_VERSION/SCIPY_VERSION/TABLES_VERSION/NUMEXPR_VERSION/
+# ASTROPY_HEALPIX_VERSION/PYERFA_VERSION/PYFFTW_VERSION back to their
+# numpy1-era values together (see docs/ps_eor-spack-packaging.md) — it's no
+# longer a single-flag toggle now that numpy2 is the default.
 #
 # build:
 #   docker build . -f swf8-jupyter.Dockerfile --tag swf8-jupyter:latest
@@ -126,14 +127,14 @@ RUN set -o pipefail; \
     test -f /opt/karabo-spack/packages/py-gpy/package.py && \
     spack repo add /opt/karabo-spack
 
-# Shared numpy1.x/scipy1.12 stack (healpy/reproject/tables via ska-sdp-spack).
-# ps_eor@1.0 itself only needs numpy>=1.20/scipy>=1.10; these tighter values
-# are kept so --build-arg PS_EOR_VERSION=0.34.1 (legacy GPy path, which does
-# need numpy<2/scipy<=1.12) still concretizes without changing anything else.
-# 1.24.x: avoids Spack's numpy@1.25 %% gcc@11 conflict; still within
-# py-numexpr@2.8:2.9's numpy@:1.25 cap.
-ARG NUMPY_VERSION=1.24.4
-ARG SCIPY_VERSION=1.12.0
+# NumPy 2 / SciPy 1.14 stack (matches rapthor-jupyter's proven combo — see
+# py-scipy's own package.py: `depends_on("py-numpy@1.23.5:2.2", when="@1.14")`,
+# i.e. scipy@1.14 caps numpy at <=2.2, hence exactly 2.2.0, not a later 2.x).
+# Versions below researched directly against spack-packages
+# (github.com/spack/spack-packages @ releases/v2025.11, matching spack v1.1.1's
+# pinned builtin repo) rather than guessed:
+ARG NUMPY_VERSION=2.2.0
+ARG SCIPY_VERSION=1.14.1
 ARG MATPLOTLIB_VERSION=3.9.2
 # Astropy 7 + cfitsio 4 (healpy 1.16); Astropy 6 forces cfitsio@:3.
 ARG ASTROPY_VERSION=7.0.1
@@ -142,10 +143,19 @@ ARG H5PY_VERSION=3.12.1
 ARG HDF5_VERSION=1.14.3
 ARG REPROJECT_VERSION=0.14.1
 ARG HEALPY_VERSION=1.16.6
-ARG ASTROPY_HEALPIX_VERSION=1.0.2
-ARG PYERFA_VERSION=2.0.1.1
-ARG NUMEXPR_VERSION=2.9.0
-ARG TABLES_VERSION=3.9.0
+# astropy-healpix@:1.0.2 hard-caps numpy@:1 (py-numpy@2: only when @1.0.3:).
+ARG ASTROPY_HEALPIX_VERSION=1.0.3
+# pyerfa@2.0.1.1 caps numpy@1.25:1; @2.0.1.5: needs numpy@2.0.0rc1: to build.
+ARG PYERFA_VERSION=2.0.1.5
+# py-tables@3.10: requires numexpr@2.10.2: — needs to move together with
+# TABLES_VERSION below.
+ARG NUMEXPR_VERSION=2.10.2
+# py-tables@:3.9 hard-caps numpy@:1 (py-numpy@1.25: only when @3.10:).
+# karabo overlay's py-pyfftw@0.13.1 caps its own numpy dep <2.0 (see
+# spack-overlay/packages/py-pyfftw/package.py) and needs Cython<3.0; @0.14.0
+# is the numpy2-targeted release, needs Cython>=3.
+ARG TABLES_VERSION=3.10.2
+ARG PYFFTW_VERSION=0.14.0
 ARG PS_EOR_VERSION=1.0
 ARG GPY_VERSION=1.13.2
 ARG SKLEARN_VERSION=1.5.2
@@ -154,28 +164,16 @@ ARG SPACK_TARGET=""
 ARG SPACK_BUILDCACHE_LOCAL=""
 ARG SPACK_MIRROR_OCI=""
 
-# py-zipp pinned below (@:3.19, i.e. highest available <=3.19.x): zipp>=3.20
-# moved pyproject.toml to a PEP 639 SPDX license string, which this env's old
-# py-setuptools (63.4.3) rejects with "project.license must be valid exactly
-# by one definition". An exact @3.19.2 pin failed concretization (spack's
-# package.py doesn't define that literal version) so use a range instead and
-# let spack pick whatever <=3.19 version it actually has.
-#
-# py-maturin@1.9.6 hit the identical error (its pyproject.toml has
-# license = "MIT OR Apache-2.0"). First tried globally pinning py-setuptools
-# to a modern version (80.9.0) so PEP 639 strings parse everywhere — that
-# failed concretization outright: py-numpy hard-requires
-# `setuptools@:63 when @:1.25` (numpy's legacy distutils-based build breaks
-# on newer setuptools), and py-numpy is pinned to 1.24.4 here for the
-# GPy/ps_eor SciPy-1.12 stack. A single global setuptools version can't
-# satisfy both old-numpy and new-maturin at once. Pin py-maturin itself to
-# an older pre-PEP-639 version instead, same pattern as zipp above.
-#
-# py-cython pinned to @:3.0: scipy@1.12.0 (pinned above for the GPy/ps_eor
-# stack) predates Cython 3.1's removal of the implicit `long` builtin alias.
-# Building scipy's _ccallback_c.pyx with Cython 3.1.3 (whatever spack's
-# concretizer picked absent a pin) fails with "undeclared name not builtin:
-# long". Cap Cython below that removal.
+# py-zipp/py-maturin/py-cython pins from the numpy1.24/GPy build are DROPPED
+# here (not present in the require dict below): the PEP-639-SPDX-license
+# rejection that forced them was caused by py-numpy hard-requiring
+# `setuptools@:63 when @:1.25` — with numpy pinned to 2.2.0 now, that
+# constraint no longer applies, so spack is free to pick a modern
+# py-setuptools that parses PEP 639 strings fine, and py-cython isn't
+# capped away from 3.1.x either. If concretization or the scipy build hits
+# the same "undeclared name not builtin: long" Cython-3.1 error seen on the
+# 1.24/GPy stack, re-add a `('py-cython','@:3.0')` require here — scipy@1.14
+# only needs cython>=3.0.8, so that pin is compatible if needed again.
 #
 # ROOT CAUSE (confirmed via the diagnostic block further down, now removed
 # from the failure path since it's fixed): spack's python-3.11.11 build
@@ -241,7 +239,7 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache-swf8-2026.07
         ('py-pandas','@${PANDAS_VERSION} ~performance'),\
         ('py-astropy','@${ASTROPY_VERSION}'),\
         ('py-reproject','@${REPROJECT_VERSION}'),\
-        ('py-healpy','@${HEALPY_VERSION}'),\
+        ('py-healpy','@${HEALPY_VERSION} ~scipy'),\
         ('py-astropy-healpix','@${ASTROPY_HEALPIX_VERSION}'),\
         ('py-pyerfa','@${PYERFA_VERSION}'),\
         ('py-numexpr','@${NUMEXPR_VERSION}'),\
@@ -249,9 +247,7 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache-swf8-2026.07
         ('py-scikit-learn','@${SKLEARN_VERSION}'),\
         ('py-tables','@${TABLES_VERSION}'),\
         ('py-dask','@2024.7.1 ~dataframe ~distributed'),\
-        ('py-zipp','@:3.19'),\
-        ('py-maturin','@:1.7'),\
-        ('py-cython','@:3.0'),\
+        ('py-pyfftw','@${PYFFTW_VERSION}'),\
         ('cfitsio','@4.5.0'),\
         ('zlib','@1.2:'),\
         ('hdf5','@${HDF5_VERSION}+hl~mpi+threadsafe')]];\
@@ -356,15 +352,15 @@ RUN arch=$(uname -m) && \
 
 ENV PATH="/opt/view/bin:${PATH}"
 
-RUN python -c "import numpy; assert numpy.__version__.startswith('1.'), numpy.__version__" && \
-    python -c "import scipy; assert scipy.__version__.startswith('1.12'), scipy.__version__" && \
+RUN python -c "import numpy; assert numpy.__version__.startswith('2.'), numpy.__version__" && \
+    python -c "import scipy; assert scipy.__version__.startswith('1.14'), scipy.__version__" && \
     python -c "import ps_eor; print('ps_eor', ps_eor.__version__)" && \
     python -c "from ps_eor import ml_gpr; print('ps_eor.ml_gpr OK')" && \
     python -c "import torch; print('torch', torch.__version__)" && \
     python -c "import gpytorch; print('gpytorch', gpytorch.__version__)" && \
     python -c "import pyro; print('pyro', pyro.__version__)" && \
     python -c "import imageio, tqdm; print('imageio/tqdm OK')" && \
-    python -c "from scipy.integrate import trapz; print('trapz OK')"
+    python -c "from scipy.integrate import trapezoid; print('trapezoid OK')"
 
 ARG NB_USER=jovyan
 ARG NB_UID=1000
@@ -380,7 +376,7 @@ RUN python -m pip install --no-cache-dir \
     python -c 'import jupyterhub; assert jupyterhub.__version__ == "4.1.6", jupyterhub.__version__' && \
     jupyterhub-singleuser --help >/dev/null && \
     marimo --version && \
-    { python -m pip check || echo "pip check: non-fatal metadata mismatches (see above) — actual imports already verified above (numpy/scipy/ps_eor/ml_gpr/torch/gpytorch/pyro/trapz), some spack-built packages report placeholder versions (e.g. astropy-healpix 0.0.0) since they're built from source tarballs without git metadata for setuptools_scm to read; cosmetic, not a real inconsistency."; }
+    { python -m pip check || echo "pip check: non-fatal metadata mismatches (see above) — actual imports already verified above (numpy/scipy/ps_eor/ml_gpr/torch/gpytorch/pyro/trapezoid), some spack-built packages report placeholder versions (e.g. astropy-healpix 0.0.0) since they're built from source tarballs without git metadata for setuptools_scm to read; cosmetic, not a real inconsistency."; }
 
 RUN install -d -o ${NB_UID} -g ${NB_GID} /home/${NB_USER}/.astropy/cache
 
