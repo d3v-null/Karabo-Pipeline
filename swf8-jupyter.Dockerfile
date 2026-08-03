@@ -311,6 +311,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     apt-get update && apt-get --no-install-recommends install -y \
     ca-certificates \
     curl \
+    ffmpeg \
     git \
     libgomp1 \
     libopenblas0 \
@@ -402,13 +403,57 @@ ARG PYTHON_VERSION=3.11
 RUN python -m pip install --no-cache-dir \
     "jupyterhub==4.1.6" \
     "marimo[sandbox]>=0.19.11" \
-    "marimo-jupyter-extension>=0.1.4" && \
+    "marimo-jupyter-extension>=0.1.4" \
+    "playwright>=1.40" \
+    "nbconvert[webpdf]>=7.0" && \
     ln -sf "$(command -v marimo)" /usr/local/bin/marimo && \
     ln -sf "$(command -v jupyterhub-singleuser)" /usr/local/bin/jupyterhub-singleuser && \
     python -c 'import jupyterhub; assert jupyterhub.__version__ == "4.1.6", jupyterhub.__version__' && \
     jupyterhub-singleuser --help >/dev/null && \
     marimo --version && \
     { python -m pip check || echo "pip check: non-fatal metadata mismatches (see above) — actual imports already verified above (numpy/scipy/ps_eor/ml_gpr/torch/gpytorch/pyro/trapezoid), some spack-built packages report placeholder versions (e.g. astropy-healpix 0.0.0) since they're built from source tarballs without git metadata for setuptools_scm to read; cosmetic, not a real inconsistency."; }
+
+# Marimo PDF export (WebPDF): Chromium + OS libs under /opt/ms-playwright.
+# sitecustomize shim forces --no-sandbox and subprocess WebPDF (avoids marimo
+# asyncio + nbconvert ThreadPoolExecutor deadlock in k8s).
+COPY docker/swf8_webpdf_nosandbox.py /tmp/swf8_webpdf_nosandbox.py
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get --no-install-recommends install -y \
+      libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 \
+      libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 \
+      libpango-1.0-0 libasound2 libatspi2.0-0 libxshmfence1 libx11-xcb1 \
+      libxcb1 libxext6 libx11-6 fonts-liberation ca-certificates \
+      libdbus-1-3 libgtk-3-0 libglib2.0-0 && \
+    mkdir -p /opt/ms-playwright && \
+    PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright python -m playwright install chromium && \
+    chmod -R a+rX /opt/ms-playwright && \
+    SITE=$(python -c "import sysconfig; print(sysconfig.get_paths()['purelib'])") && \
+    cp /tmp/swf8_webpdf_nosandbox.py "$SITE/swf8_webpdf_nosandbox.py" && \
+    SC="$SITE/sitecustomize.py" && \
+    (grep -q SWF8_WEBPDF_NOSANDBOX "$SC" 2>/dev/null || \
+      printf '\n# SWF8_WEBPDF_NOSANDBOX\ntry:\n    import swf8_webpdf_nosandbox  # noqa: F401\nexcept Exception:\n    pass\n' >> "$SC") && \
+    rm -f /tmp/swf8_webpdf_nosandbox.py
+
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
+
+# Headless Phase-3 CHIPS → GPR combined-PNG CLI (+ VAE fitters, ffmpeg above).
+# Usage:
+#   phase3-gpr-plot run --grid URL_OR_TAR_OR_DIR --out /tmp/out --obsid 1442001088
+#   phase3-gpr-plot batch 1442001088 … --out /tmp/out --grids-dir /data
+#   phase3-gpr-plot gif a.png b.png --out movie.gif
+COPY docker/phase3_gpr /opt/phase3_gpr
+ENV PHASE3_FITTER_DIR=/opt/phase3_gpr/gpr_emulator \
+    PYTHONPATH=/opt/phase3_gpr
+RUN test -f /opt/phase3_gpr/phase3_gpr_cli.py && \
+    test -f /opt/phase3_gpr/gpr_emulator/vae_z6.8_n2000_9params_2latent_v0.0.pt && \
+    printf '%s\n' '#!/bin/bash' \
+      'exec python /opt/phase3_gpr/phase3_gpr_cli.py "$@"' \
+      > /usr/local/bin/phase3-gpr-plot && \
+    chmod 755 /usr/local/bin/phase3-gpr-plot && \
+    command -v ffmpeg >/dev/null && \
+    python /opt/phase3_gpr/phase3_gpr_cli.py --help >/dev/null && \
+    echo "phase3-gpr-plot OK"
 
 RUN install -d -o ${NB_UID} -g ${NB_GID} /home/${NB_USER}/.astropy/cache
 

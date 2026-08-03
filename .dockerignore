@@ -11,10 +11,9 @@ karabo/examples/psrecord_out/
 karabo/examples/*.fits
 karabo/examples/*.uvfits
 karabo/out/
+out/
 mwa_full_embedded_element_pattern.h5
 # Local scratch/output from notebook runs (Measurement Sets, images, zips).
-# These aren't tracked in git but can bloat the build context if present
-# in a local checkout (seen adding ~1.5GB to karabo/examples alone).
 karabo/examples/*.ms
 karabo/examples/*.ms/
 karabo/examples/*.ms.zip
@@ -48,6 +47,7 @@ build/
 # Documentation and temporary files
 *.md
 !README.md
+!docker/phase3_gpr/HANDOVER.md
 *.svg
 *.png
 !karabo/**/*.png
@@ -66,6 +66,8 @@ actionlint.tar.gz
 sysdeps.Dockerfile
 *.Dockerfile
 !sp5505.Dockerfile
+!swf8-jupyter.Dockerfile
+!docker/swf8-phase3-gpr.Dockerfile
 build_*.sh
 monitor_*.sh
 poll_*.sh
