@@ -1,0 +1,83 @@
+--- a/ddecal/gain_solvers/IterativeDiagonalSolverCuda.h
++++ b/ddecal/gain_solvers/IterativeDiagonalSolverCuda.h
+@@ -21,8 +21,8 @@
+  public:
+   IterativeDiagonalSolverCuda(bool keep_buffers = false);
+   SolveResult Solve(const SolveData<VisMatrix>& data,
+-                    std::vector<std::vector<DComplex>>& solutions, double time,
+-                    std::ostream* stat_stream) override;
++                    std::vector<std::vector<DComplex>>& solutions,
++                    double time) override;
+ 
+   size_t NSolutionPolarizations() const override { return 2; }
+ 
+@@ -47,8 +47,7 @@
+                       SolverBase::SolveResult& result,
+                       std::vector<std::vector<DComplex>>& solutions,
+                       SolutionSpan& next_solutions,
+-                      std::vector<double>& step_magnitudes,
+-                      std::ostream* stat_stream);
++                      std::vector<double>& step_magnitudes);
+ 
+   /// If this variable if false gpu buffers are not initialized
+   bool gpu_buffers_initialized_ = false;
+--- a/ddecal/gain_solvers/IterativeDiagonalSolverCuda.cc
++++ b/ddecal/gain_solvers/IterativeDiagonalSolverCuda.cc
+@@ -321,11 +321,11 @@
+     bool& has_converged, bool& constraints_satisfied, bool& done,
+     SolverBase::SolveResult& result,
+     std::vector<std::vector<std::complex<double>>>& solutions,
+-    SolutionSpan& next_solutions, std::vector<double>& step_magnitudes,
+-    std::ostream* stat_stream) {
++    SolutionSpan& next_solutions, std::vector<double>& step_magnitudes) {
++  (void)result;
+   constraints_satisfied =
+-      ApplyConstraints(iteration, time, has_previously_converged, result,
+-                       next_solutions, stat_stream);
++      ApplyConstraints(iteration, time, has_previously_converged,
++                       next_solutions);
+ 
+   double avg_squared_diff;
+   has_converged =
+@@ -342,8 +342,7 @@
+ template <typename VisMatrix>
+ SolverBase::SolveResult IterativeDiagonalSolverCuda<VisMatrix>::Solve(
+     const SolveData<VisMatrix>& data,
+-    std::vector<std::vector<DComplex>>& solutions, double time,
+-    std::ostream* stat_stream) {
++    std::vector<std::vector<DComplex>>& solutions, double time) {
+   PrepareConstraints();
+   context_->setCurrent();
+ 
+@@ -441,7 +440,7 @@
+       // Start iteration (dtod copies and kernel execution only)
+       PerformIteration<VisMatrix>(
+           phase_only, step_size, channel_block_data, *execute_stream_,
+-          NAntennas(), NSolutions(), NDirections(),
++          NAntennas(), NSubSolutions(), NDirections(),
+           gpu_buffers_.solution_map[buffer_id],
+           gpu_buffers_.solutions[buffer_id],
+           gpu_buffers_.next_solutions[buffer_id],
+@@ -476,20 +475,12 @@
+     nvtxRangeId_t nvtx_range_cpu = nvtxRangeStart("CPU");
+     PostProcessing(iteration, time, has_previously_converged, has_converged,
+                    constraints_satisfied, done, result, solutions,
+-                   next_solutions, step_magnitudes, stat_stream);
++                   next_solutions, step_magnitudes);
+     nvtxRangeEnd(nvtx_range_cpu);
+   } while (!done);
+ 
+-  // When we have not converged yet, we set the nr of iterations to the max+1,
+-  // so that non-converged iterations can be distinguished from converged ones.
+-  if (has_converged && constraints_satisfied) {
+-    result.iterations = iteration;
+-  } else {
+-    result.iterations = iteration + 1;
+-  }
+-
+   if (!keep_buffers_) DeallocateHostBuffers();
+-  return result;
++  return MakeResult(iteration, has_converged, constraints_satisfied);
+ }
+ 
+ template class IterativeDiagonalSolverCuda<aocommon::MC2x2F>;

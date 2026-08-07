@@ -1,12 +1,14 @@
 # https://gitlab.com/ska-telescope/sdp/ska-sdp-spack/-/raw/5c515ba11992398717151feed33fb74ddf314f2d/packages/dp3/package.py
 # remove all versions except 6.5.1.20260109 for MWA support
+# +cuda enables DP3 BUILD_WITH_CUDA (HAVE_CUDA_SOLVER). Off by default via CudaPackage.
 from spack_repo.builtin.build_systems.cmake import CMakePackage
+from spack_repo.builtin.build_systems.cuda import CudaPackage
 
-from spack.package import depends_on, join_path, variant, version, which
+from spack.package import depends_on, join_path, patch, variant, version, which
 import os
 
 
-class Dp3(CMakePackage):
+class Dp3(CMakePackage, CudaPackage):
     """LOFAR preprocessing software, including averaging,
     flagging, various kinds of calibration and more."""
 
@@ -27,8 +29,21 @@ class Dp3(CMakePackage):
         no_cache=True,
     )
 
+    # IterativeDiagonalSolverCuda was not updated when SolverBase
+    # dropped SolveResult/stat_stream from ApplyConstraints/Solve and
+    # renamed NSolutions() -> NSubSolutions() (76d6920 / 5168437).
+    # Without this, +cuda builds fail compiling CudaSolvers.
+    patch(
+        "cuda-solverbase-api.patch",
+        sha256="bd3411d07dbfe919e81fc3cca29519e891ccbff52660d447705fdb54e6d9c13f",
+        when="@6.6+cuda",
+    )
+
     variant("python", default=True, description="Enable Python support")
     variant("idg", default=False, description="Enable IDG support")
+    # CudaPackage provides +cuda / cuda_arch. BUILD_WITH_CUDA enables
+    # IterativeDiagonalSolverCuda; runtime still needs ddecal.usegpu=true, and
+    # that path only covers diagonal+directioniterative (not scalarphase).
 
     depends_on("c", type="build", when="@:6.4.1")
     depends_on("cxx", type="build")
@@ -49,6 +64,7 @@ class Dp3(CMakePackage):
     depends_on("everybeam@0.1.3", when="@5.1")
     depends_on("everybeam@0.1.1", when="@5.0")
     depends_on("idg@1.2.0:", when="+idg")
+    depends_on("idg@1.2.0:+cuda", when="+idg+cuda")
     depends_on("lofarstman", type="run")
     depends_on("openblas threads=pthreads")
     depends_on("boost+date_time+test+program_options")
@@ -57,20 +73,36 @@ class Dp3(CMakePackage):
     depends_on("git")
     depends_on("python", when="+python")
 
+    def _cuda_stub_dir(self):
+        if "+cuda" not in self.spec:
+            return None
+        cuda_prefix = self.spec["cuda"].prefix
+        for stub in (
+            os.path.join(cuda_prefix, "lib64", "stubs"),
+            os.path.join(cuda_prefix, "lib", "stubs"),
+        ):
+            if os.path.isdir(stub):
+                return stub
+        return None
+
     def cmake_args(self):
         args = [
             self.define("PORTABLE", True)  # let Spack determine arch build flags
         ]
 
-        if "idg" in self.spec and "+cuda" in self.spec["idg"]:
-            cuda_prefix = self.spec["idg"]["cuda"].prefix
-            stubs_dirs = [os.path.join(cuda_prefix, "lib64", "stubs"), os.path.join(cuda_prefix, "lib", "stubs")]
-            for stub in stubs_dirs:
-                if os.path.isdir(stub):
-                    args.append(self.define("CMAKE_EXE_LINKER_FLAGS", f"-L{stub} -Wl,-rpath-link,{stub}"))
-                    args.append(self.define("CMAKE_SHARED_LINKER_FLAGS", f"-L{stub} -Wl,-rpath-link,{stub}"))
-                    args.append(self.define("CMAKE_MODULE_LINKER_FLAGS", f"-L{stub} -Wl,-rpath-link,{stub}"))
-                    break
+        if "+cuda" in self.spec:
+            args.append(self.define("BUILD_WITH_CUDA", True))
+            arches = list(self.spec.variants["cuda_arch"].value)
+            if arches:
+                args.append(self.define("CMAKE_CUDA_ARCHITECTURES", ";".join(arches)))
+
+        stub = self._cuda_stub_dir()
+        if stub:
+            # Link against driver stubs so CUDA builds succeed without a GPU/driver.
+            flags = f"-L{stub} -Wl,-rpath-link,{stub}"
+            args.append(self.define("CMAKE_EXE_LINKER_FLAGS", flags))
+            args.append(self.define("CMAKE_SHARED_LINKER_FLAGS", flags))
+            args.append(self.define("CMAKE_MODULE_LINKER_FLAGS", flags))
 
         return args
 
@@ -82,6 +114,10 @@ class Dp3(CMakePackage):
             or int(str(self.spec.version.joined)) >= 52
         ):
             env.set("OPENBLAS_NUM_THREADS", "1")
+        stub = self._cuda_stub_dir()
+        if stub:
+            env.prepend_path("LIBRARY_PATH", stub)
+            env.prepend_path("LD_LIBRARY_PATH", stub)
 
     def setup_run_environment(self, env):
         env.set("OPENBLAS_NUM_THREADS", "1")
