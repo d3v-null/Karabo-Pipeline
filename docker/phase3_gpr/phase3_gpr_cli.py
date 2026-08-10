@@ -252,6 +252,68 @@ def correct_decoherence(ps_obj, factor=2.15):
     return ps_obj
 
 
+def uv_to_ell(u: float) -> float:
+    """Baseline length in λ → multipole ℓ (= 2π|u|)."""
+    return float(2.0 * np.pi * u)
+
+
+def k_perp_lims_for_uv(umin: float, umax: float, z: float) -> tuple[float, float]:
+    """k⊥ limits at redshift z that span the same angular (uv / ℓ) window."""
+    el_min, el_max = uv_to_ell(umin), uv_to_ell(umax)
+    return (
+        float(psutil.l_to_k(el_min, z=z)),
+        float(psutil.l_to_k(el_max, z=z)),
+    )
+
+
+def add_ell_top_axis(ax, z: float, *, fontsize: float = 7):
+    """Secondary top axis: angular scale θ≈180°/ℓ in arcmin for k⊥ at redshift z."""
+
+    # Characteristic angular scale: θ[rad]≈π/ℓ → θ[']=10800/ℓ.
+    _ARCMAX = 180.0 * 60.0  # arcmin in 180°
+
+    def _forward(k):
+        k = np.asanyarray(k, dtype=float)
+        out = np.full(np.shape(k), np.nan, dtype=float)
+        ok = np.isfinite(k) & (k > 0)
+        if np.any(ok):
+            ell = psutil.k_to_l(k[ok], z=z)
+            out[ok] = np.where(ell > 0, _ARCMAX / ell, np.nan)
+        return out
+
+    def _inverse(theta_arcmin):
+        theta_arcmin = np.asanyarray(theta_arcmin, dtype=float)
+        out = np.full(np.shape(theta_arcmin), np.nan, dtype=float)
+        ok = np.isfinite(theta_arcmin) & (theta_arcmin > 0)
+        if np.any(ok):
+            ell = _ARCMAX / theta_arcmin[ok]
+            out[ok] = psutil.l_to_k(ell, z=z)
+        return out
+
+    sec = ax.secondary_xaxis("top", functions=(_forward, _inverse))
+    sec.set_xlabel(r"$\theta\,[\mathrm{arcmin}]$", fontsize=fontsize)
+    sec.tick_params(axis="x", labelsize=max(fontsize - 1, 5))
+    return sec
+
+
+def set_kperp_angular_window(
+    ax, umin: float, umax: float, z: float, *, log: bool = True, fontsize: float = 7
+):
+    """Force k⊥ xlim to the shared uv window and label θ [arcmin] on top."""
+    k0, k1 = k_perp_lims_for_uv(umin, umax, z)
+    if not (np.isfinite(k0) and np.isfinite(k1) and k1 > k0 > 0):
+        return None
+    if log:
+        ax.set_xscale("log")
+    ax.set_xlim(k0, k1)
+    sec = add_ell_top_axis(ax, z, fontsize=fontsize)
+    # Keep panel titles clear of the secondary angular spine.
+    ttl = ax.get_title()
+    if ttl:
+        ax.set_title(ttl, fontsize=ax.title.get_fontsize(), pad=14)
+    return sec
+
+
 def prior_quantile_bands(sampler_or_result):
     from ps_eor.ml_gpr.samplers import _prior_quantile_bands as _pqb
 
@@ -284,6 +346,9 @@ def stitch_spatial_ps(
     blend_edge:
       Unused (kept for API stability); blend uses a linear weight across the
       full overlap.
+
+    Cross-band k⊥ grids are aligned on multipole ℓ (shared angular modes), not
+    raw k — DM(z) differs between bands so equal-k is not equal-angle.
     """
     from ps_eor.pspec import SpatialPowerSpectra
 
@@ -298,26 +363,28 @@ def stitch_spatial_ps(
     else:
         split = float(split_hz) if split_hz is not None else 0.5 * (overlap_lo + overlap_hi)
 
+    el_lo = np.asarray(ps_lo.el, dtype=float)
+    el_hi = np.asarray(ps_hi.el, dtype=float)
     k_lo = np.asarray(ps_lo.k_per, dtype=float)
-    k_hi = np.asarray(ps_hi.k_per, dtype=float)
     d_lo_all = np.asarray(ps_lo.data, dtype=float)
     e_lo_all = np.asarray(ps_lo.err, dtype=float)
     d_hi_all = np.asarray(ps_hi.data, dtype=float)
     e_hi_all = np.asarray(ps_hi.err, dtype=float)
 
-    def _align_k(d_src, e_src, k_src):
-        if k_lo.shape == k_src.shape and np.allclose(k_lo, k_src, rtol=1e-3, atol=0):
+    def _align_el(d_src, e_src, el_src):
+        # Same angular modes across redshift (ℓ = 2π|u|), not same k⊥.
+        if el_lo.shape == el_src.shape and np.allclose(el_lo, el_src, rtol=1e-3, atol=0):
             return d_src, e_src
-        d_out = np.empty((d_src.shape[0], k_lo.size), dtype=float)
+        d_out = np.empty((d_src.shape[0], el_lo.size), dtype=float)
         e_out = np.empty_like(d_out)
         for i in range(d_src.shape[0]):
-            d_out[i] = np.interp(k_lo, k_src, d_src[i], left=np.nan, right=np.nan)
-            e_out[i] = np.interp(k_lo, k_src, e_src[i], left=np.nan, right=np.nan)
+            d_out[i] = np.interp(el_lo, el_src, d_src[i], left=np.nan, right=np.nan)
+            e_out[i] = np.interp(el_lo, el_src, e_src[i], left=np.nan, right=np.nan)
         return d_out, e_out
 
-    d_hi_all, e_hi_all = _align_k(d_hi_all, e_hi_all, k_hi)
+    d_hi_all, e_hi_all = _align_el(d_hi_all, e_hi_all, el_hi)
     k_per = k_lo
-    el = np.asarray(ps_lo.el)
+    el = el_lo
     cl = bool(getattr(ps_lo, "cl", False))
 
     scale = 1.0
@@ -726,12 +793,12 @@ def run_pipeline(
     gs = fig.add_gridspec(
         7,
         12,
-        height_ratios=[1.0, 1.15, 0.95, 1.15, 1.15, 1.55, 1.05],
-        hspace=0.55,
+        height_ratios=[1.0, 1.25, 1.05, 1.15, 1.25, 1.55, 1.05],
+        hspace=0.72,
         wspace=0.40,
         left=0.055,
         right=0.97,
-        top=0.96,
+        top=0.955,
         bottom=0.035,
     )
 
@@ -741,7 +808,7 @@ def run_pipeline(
         sefds[zi].plot_uv(ax=ax, norm=LogNorm(vmin=1e3, vmax=5e3))
         ax.set_title(f"UV SEFD  z={Z_VALS[zi]:.1f}  [{title_id}]", fontsize=9)
 
-    # Row 1: 2D PS
+    # Row 1: 2D PS — shared angular (uv) window on k⊥, ℓ on top
     for zi in range(3):
         ax = fig.add_subplot(gs[1, zi * 4 : (zi + 1) * 4])
         ps2ds[zi].plot(
@@ -756,9 +823,11 @@ def run_pipeline(
             ax.set_ylabel("")
         ax.set_title(f"PS 2D  z={Z_VALS[zi]:.1f}  [{title_id}]", fontsize=9)
         ax.set_yscale("log")
-        ax.set_xscale("log")
+        set_kperp_angular_window(ax, umin, umax, Z_VALS[zi])
 
-    # Row 2: 1D PS
+    # Row 2: 1D PS — isotropic k (not pure k⊥); share limits across z and show ℓ twin
+    k1d_lo = min(float(ps3ds[zi].k_bins.min()) for zi in range(3))
+    k1d_hi = max(float(ps3ds[zi].k_bins.max()) for zi in range(3))
     for zi in range(3):
         ax = fig.add_subplot(gs[2, zi * 4 : (zi + 1) * 4])
         ax.step(ps3ds[zi].k_bins[:-1], ps3ds[zi].data * 1e6, where="post", label="P(k)")
@@ -775,6 +844,10 @@ def run_pipeline(
             ax.legend(fontsize=6, loc="best", frameon=False)
         ax.set_yscale("log")
         ax.set_xscale("log")
+        if np.isfinite(k1d_lo) and np.isfinite(k1d_hi) and k1d_hi > k1d_lo > 0:
+            ax.set_xlim(k1d_lo, k1d_hi)
+        add_ell_top_axis(ax, Z_VALS[zi])
+        ax.set_title(ax.get_title(), fontsize=9, pad=14)
 
     # Row 3: MCMC convergence (compact)
     ndim = sampler_result.get_n_params()
@@ -791,7 +864,7 @@ def run_pipeline(
         loc="left",
     )
 
-    # Row 4: GPR components 2D (primary band)
+    # Row 4: GPR components 2D (primary band) — same angular k⊥ window
     ncols_comp = len(comp_list) + 3
     width = 12 // ncols_comp
     for ci in range(ncols_comp):
@@ -815,10 +888,11 @@ def run_pipeline(
             ax.set_title("Noise", fontsize=8)
         if ci != 0:
             ax.set_ylabel("")
-        ax.set_xscale("log")
         ax.set_yscale("log")
+        set_kperp_angular_window(ax, umin, umax, Z_VALS[iz], fontsize=6)
 
     # Row 5: residual + excess stitched across ~30 MHz (hard cut, no blend)
+    # k⊥ axis uses z=7.0 (lower band) conversion; ℓ twin = true shared angle.
     ax_r = fig.add_subplot(gs[5, 0:6])
     ax_e = fig.add_subplot(gs[5, 6:12])
     res_full.plot(ax=ax_r, title=None, k_only=True)
@@ -829,6 +903,7 @@ def run_pipeline(
     )
     if np.isfinite(split_mhz):
         ax_r.axhline(split_mhz, color="k", ls=":", lw=0.8, alpha=0.5)
+    set_kperp_angular_window(ax_r, umin, umax, Z_VALS[0], log=False)
     ex_full.plot(ax=ax_e, title=None, k_only=True)
     ax_e.set_title(
         f"Excess  {f_span[0]:.1f}–{f_span[1]:.1f} MHz  "
@@ -837,6 +912,7 @@ def run_pipeline(
     )
     if np.isfinite(split_mhz):
         ax_e.axhline(split_mhz, color="k", ls=":", lw=0.8, alpha=0.5)
+    set_kperp_angular_window(ax_e, umin, umax, Z_VALS[0], log=False)
 
     # Row 6: excess uv abs / angle (primary band) + compact 1D component curves
     ax_abs = fig.add_subplot(gs[6, 0:4])
@@ -906,8 +982,8 @@ def run_pipeline(
                 labelspacing=0.2,
                 handlelength=1.2,
             )
-    ax_fp.set_xscale("log")
     ax_fp.set_yscale("log")
+    set_kperp_angular_window(ax_fp, umin, umax, Z_VALS[iz])
 
     out_png = Path(out_png)
     out_png.parent.mkdir(parents=True, exist_ok=True)
