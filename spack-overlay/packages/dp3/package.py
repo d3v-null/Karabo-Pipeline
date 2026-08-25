@@ -6,6 +6,7 @@ from spack_repo.builtin.build_systems.cuda import CudaPackage
 
 from spack.package import depends_on, join_path, patch, variant, version, which
 import os
+import re
 
 
 class Dp3(CMakePackage, CudaPackage):
@@ -152,6 +153,44 @@ class Dp3(CMakePackage, CudaPackage):
             if new != text:
                 with open(fast_predict, "w") as fh:
                     fh.write(new)
+
+        # 32-bit NEON has no double SIMD. On aarch64 xsimd still walks
+        # neon + neon64, so FastPredict's radec2lmn (batch<double>) fails.
+        # Restrict ARM to neon64 only; x86 is unchanged (this is target-gated).
+        if self.spec.satisfies("target=aarch64:") or self.spec.satisfies(
+            "target=arm:"
+        ):
+            self._patch_fastpredict_arm_xsimd(predict)
+
+    def _patch_fastpredict_arm_xsimd(self, predict):
+        arch_h = join_path(predict, "include", "predict", "XSimdArchitectures.h")
+        if os.path.isfile(arch_h):
+            with open(arch_h) as fh:
+                text = fh.read()
+            new = re.sub(
+                r"(xsimd::neon64),([^\n]*\n)\s*xsimd::neon\b[^\n]*\n(\s*)>>",
+                r"\1\2\3>>",
+                text,
+            )
+            if new != text:
+                with open(arch_h, "w") as fh:
+                    fh.write(new)
+
+        # 6.6 uses untemplated xsimd::dispatch(), which defaults to neon+neon64.
+        neon64 = "xsimd::dispatch<xsimd::arch_list<xsimd::neon64>>("
+        for dirpath, _, filenames in os.walk(predict):
+            for name in filenames:
+                if not name.endswith((".h", ".hpp", ".cpp", ".cc")):
+                    continue
+                path = os.path.join(dirpath, name)
+                with open(path) as fh:
+                    text = fh.read()
+                if "xsimd::dispatch(" not in text:
+                    continue
+                new = text.replace("xsimd::dispatch(", neon64)
+                if new != text:
+                    with open(path, "w") as fh:
+                        fh.write(new)
 
     def _cuda_stub_dir(self):
         if "+cuda" not in self.spec:
