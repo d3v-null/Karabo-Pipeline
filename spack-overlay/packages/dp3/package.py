@@ -192,6 +192,16 @@ class Dp3(CMakePackage, CudaPackage):
                     with open(path, "w") as fh:
                         fh.write(new)
 
+        # PredictPlanExecCPU.cpp includes x86-only immintrin.h (unused).
+        cpu_cc = join_path(predict, "src", "PredictPlanExecCPU.cpp")
+        if os.path.isfile(cpu_cc):
+            with open(cpu_cc) as fh:
+                text = fh.read()
+            new = text.replace("#include <immintrin.h>\n", "")
+            if new != text:
+                with open(cpu_cc, "w") as fh:
+                    fh.write(new)
+
     def _cuda_stub_dir(self):
         if "+cuda" not in self.spec:
             return None

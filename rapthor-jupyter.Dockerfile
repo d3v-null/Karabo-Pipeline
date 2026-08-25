@@ -134,7 +134,7 @@ ARG BDSF_VERSION=1.13.0.20260409
 ARG AOFLAGGER_VERSION=3.4.0
 ARG WSCLEAN_VERSION=3.6.20260109
 ARG EVERYBEAM_VERSION=0.8.3
-# 6.6.20260819 = DP3 f4403bae (v6.6-130); overlay +fastpredict enables it.
+# 6.6.20260819 = DP3 f4403bae (v6.6-130); +fastpredict on x86, ~fastpredict on ARM.
 ARG DP3_VERSION=6.6.20260819
 ARG RAPTHOR_VERSION=2.1.20260630
 # Empty CUDA_ARCH => CPU-only (default). Non-empty enables DP3/IDG/WSClean CUDA.
@@ -171,12 +171,18 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache-2026.07.2,sh
     # py-pandas +performance pulls py-numba → py-llvmlite → llvm (~12GB).
     # Numba is optional for pandas; ~performance matches swf8-jupyter and
     # keeps LLVM out of the install tree / runtime image.
+    # FastPredict is x86-oriented (immintrin.h / xsimd neon). Keep it off on ARM.
+    if [ "$arch" = "aarch64" ] || [ "$arch" = "arm64" ]; then \
+        FP_VARIANT="~fastpredict"; \
+    else \
+        FP_VARIANT="+fastpredict"; \
+    fi; \
     if [ -n "${CUDA_ARCH}" ]; then \
-        DP3_REQUIRE="@${DP3_VERSION}+idg+cuda+fastpredict cuda_arch=${CUDA_ARCH}"; \
+        DP3_REQUIRE="@${DP3_VERSION}+idg+cuda${FP_VARIANT} cuda_arch=${CUDA_ARCH}"; \
         IDG_REQUIRE="+cuda"; \
         WSCLEAN_REQUIRE="~mpi+cuda"; \
     else \
-        DP3_REQUIRE="@${DP3_VERSION}+idg~cuda+fastpredict"; \
+        DP3_REQUIRE="@${DP3_VERSION}+idg~cuda${FP_VARIANT}"; \
         IDG_REQUIRE="~cuda"; \
         WSCLEAN_REQUIRE="~mpi~cuda"; \
     fi; \
@@ -409,7 +415,7 @@ RUN shopt -s nullglob && llvm_prefs=(/opt/software/*/llvm-*) && \
     python -c "import rapthor; print('rapthor OK')" && \
     rapthor --version && \
     DP3 --version && \
-    python -c "import json; from pathlib import Path; p=Path('/opt/view/bin/DP3').resolve().parents[1]/'.spack'/'spec.json'; nodes=json.loads(p.read_text()).get('spec',{}).get('nodes',[]); dp3=next(n for n in nodes if n.get('name')=='dp3'); assert dp3.get('parameters',{}).get('fastpredict') is True, dp3.get('parameters'); print('DP3 FastPredict enabled')" && \
+    python -c "import json,platform; from pathlib import Path; p=Path('/opt/view/bin/DP3').resolve().parents[1]/'.spack'/'spec.json'; nodes=json.loads(p.read_text()).get('spec',{}).get('nodes',[]); dp3=next(n for n in nodes if n.get('name')=='dp3'); fp=dp3.get('parameters',{}).get('fastpredict'); arm=platform.machine() in ('aarch64','arm64'); assert fp is (not arm), (fp, platform.machine()); print('DP3 FastPredict', 'disabled on ARM' if arm else 'enabled')" && \
     if [ -n "${CUDA_ARCH}" ]; then \
       python -c "import ctypes,os,sys; major=os.environ.get('CUDA_VERSION','').split('.')[0]; libs=['libcudart.so']+([f'libcudart.so.{major}'] if major else []);\
 [ctypes.CDLL(lib) or print(f'SUCCESS: {lib} loaded') for lib in libs]; print('DP3 CUDA runtime libs OK')"; \
@@ -465,8 +471,12 @@ RUN rm -f /opt/conda/bin/jupyter* && \
     ln -s /opt/view/bin/jupyter-notebook /opt/conda/bin/jupyter-notebook
 
 # Tiny 3-antenna MS + 1 Jy point source; FastPredict must run and write vis.
+# Skipped on ARM: FastPredict is not compiled there.
 RUN OPENBLAS_NUM_THREADS=1 python - <<'PY'
-import subprocess, tempfile
+import platform, subprocess, sys, tempfile
+if platform.machine() in ("aarch64", "arm64"):
+    print("skip FastPredict smoke on ARM")
+    sys.exit(0)
 import numpy as np
 from casacore.tables import default_ms, table, makearrcoldesc
 
