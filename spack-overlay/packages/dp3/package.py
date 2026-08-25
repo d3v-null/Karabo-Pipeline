@@ -41,6 +41,13 @@ class Dp3(CMakePackage, CudaPackage):
 
     variant("python", default=True, description="Enable Python support")
     variant("idg", default=False, description="Enable IDG support")
+    # DP3 6.6 defaults USE_FAST_PREDICT=OFF; +fastpredict compiles the
+    # accelerated predict library and enables predict.usefastpredict.
+    variant(
+        "fastpredict",
+        default=True,
+        description="Enable FastPredict (USE_FAST_PREDICT / predict.usefastpredict)",
+    )
     # CudaPackage provides +cuda / cuda_arch. BUILD_WITH_CUDA enables
     # IterativeDiagonalSolverCuda; runtime still needs ddecal.usegpu=true, and
     # that path only covers diagonal+directioniterative (not scalarphase).
@@ -73,6 +80,68 @@ class Dp3(CMakePackage, CudaPackage):
     depends_on("git")
     depends_on("python", when="+python")
 
+    # xtensor 0.26+ moved headers (xtensor/xtensor.hpp ->
+    # xtensor/containers/xtensor.hpp). DP3 6.6 already uses the new paths;
+    # the FastPredict submodule still uses the old ones.
+    _FASTPREDICT_XTENSOR_INCLUDES = (
+        ("#include <xtensor/xtensor_forward.hpp>", "#include <xtensor/core/xtensor_forward.hpp>"),
+        ("#include <xtensor/xtensor.hpp>", "#include <xtensor/containers/xtensor.hpp>"),
+        ("#include <xtensor/xarray.hpp>", "#include <xtensor/containers/xarray.hpp>"),
+        ("#include <xtensor/xadapt.hpp>", "#include <xtensor/containers/xadapt.hpp>"),
+        ("#include <xtensor/xview.hpp>", "#include <xtensor/views/xview.hpp>"),
+        ("#include <xtensor/xindex_view.hpp>", "#include <xtensor/views/xindex_view.hpp>"),
+        ("#include <xtensor/xcomplex.hpp>", "#include <xtensor/misc/xcomplex.hpp>"),
+        ("#include <xtensor/xmath.hpp>", "#include <xtensor/core/xmath.hpp>"),
+        ("#include <xtensor/xlayout.hpp>", "#include <xtensor/core/xlayout.hpp>"),
+        ("#include <xtensor/xshape.hpp>", "#include <xtensor/core/xshape.hpp>"),
+        ("#include <xtensor/xbuilder.hpp>", "#include <xtensor/generators/xbuilder.hpp>"),
+        ("#include <xtensor/xrandom.hpp>", "#include <xtensor/generators/xrandom.hpp>"),
+        ("#include <xtensor/xio.hpp>", "#include <xtensor/io/xio.hpp>"),
+        ("#include <xtensor/xcsv.hpp>", "#include <xtensor/io/xcsv.hpp>"),
+    )
+
+    def patch(self):
+        if "+fastpredict" not in self.spec:
+            return
+        predict = join_path(self.stage.source_path, "external", "predict")
+        if not os.path.isdir(predict):
+            return
+        for dirpath, _, filenames in os.walk(predict):
+            for name in filenames:
+                if not name.endswith((".h", ".hpp", ".cpp", ".cc")):
+                    continue
+                path = os.path.join(dirpath, name)
+                with open(path) as fh:
+                    text = fh.read()
+                new = text
+                for old, repl in self._FASTPREDICT_XTENSOR_INCLUDES:
+                    new = new.replace(old, repl)
+                if new != text:
+                    with open(path, "w") as fh:
+                        fh.write(new)
+
+        # 6.6 FastPredict.cc includes aocommon threading headers that are not
+        # in the pinned aocommon, and uses ThreadPool without including it.
+        fast_predict = join_path(self.stage.source_path, "steps", "FastPredict.cc")
+        if os.path.isfile(fast_predict):
+            with open(fast_predict) as fh:
+                text = fh.read()
+            new = text
+            for inc in (
+                "#include <aocommon/barrier.h>\n",
+                "#include <aocommon/recursivefor.h>\n",
+                "#include <aocommon/staticfor.h>\n",
+            ):
+                new = new.replace(inc, "")
+            if "#include <aocommon/threadpool.h>" not in new:
+                new = new.replace(
+                    "#include <aocommon/logger.h>\n",
+                    "#include <aocommon/logger.h>\n#include <aocommon/threadpool.h>\n",
+                )
+            if new != text:
+                with open(fast_predict, "w") as fh:
+                    fh.write(new)
+
     def _cuda_stub_dir(self):
         if "+cuda" not in self.spec:
             return None
@@ -87,7 +156,8 @@ class Dp3(CMakePackage, CudaPackage):
 
     def cmake_args(self):
         args = [
-            self.define("PORTABLE", True)  # let Spack determine arch build flags
+            self.define("PORTABLE", True),  # let Spack determine arch build flags
+            self.define_from_variant("USE_FAST_PREDICT", "fastpredict"),
         ]
 
         if "+cuda" in self.spec:

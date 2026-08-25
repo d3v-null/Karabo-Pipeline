@@ -134,6 +134,7 @@ ARG BDSF_VERSION=1.13.0.20260409
 ARG AOFLAGGER_VERSION=3.4.0
 ARG WSCLEAN_VERSION=3.6.20260109
 ARG EVERYBEAM_VERSION=0.8.3
+# 6.6 FastPredict is CMake-off by default; overlay +fastpredict enables it.
 ARG DP3_VERSION=6.6
 ARG RAPTHOR_VERSION=2.1.20260630
 # Empty CUDA_ARCH => CPU-only (default). Non-empty enables DP3/IDG/WSClean CUDA.
@@ -146,7 +147,7 @@ ARG SPACK_MIRROR_OCI=""
 
 RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache-2026.07.2,sharing=locked \
     --mount=type=cache,target=/opt/spack-source-cache,id=spack-source-cache,sharing=locked \
-    --mount=type=cache,target=/opt/spack-misc-cache,id=spack-misc-cache-dp3cuda2,sharing=locked \
+    --mount=type=cache,target=/opt/spack-misc-cache,id=spack-misc-cache-dp3fastpredict,sharing=locked \
     --mount=type=secret,id=spack_oci_username,required=false \
     --mount=type=secret,id=spack_oci_password,required=false \
     mkdir -p /opt/{software,view,buildcache,spack-source-cache,spack-misc-cache}; \
@@ -171,11 +172,11 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache-2026.07.2,sh
     # Numba is optional for pandas; ~performance matches swf8-jupyter and
     # keeps LLVM out of the install tree / runtime image.
     if [ -n "${CUDA_ARCH}" ]; then \
-        DP3_REQUIRE="@${DP3_VERSION}+idg+cuda cuda_arch=${CUDA_ARCH}"; \
+        DP3_REQUIRE="@${DP3_VERSION}+idg+cuda+fastpredict cuda_arch=${CUDA_ARCH}"; \
         IDG_REQUIRE="+cuda"; \
         WSCLEAN_REQUIRE="~mpi+cuda"; \
     else \
-        DP3_REQUIRE="@${DP3_VERSION}+idg~cuda"; \
+        DP3_REQUIRE="@${DP3_VERSION}+idg~cuda+fastpredict"; \
         IDG_REQUIRE="~cuda"; \
         WSCLEAN_REQUIRE="~mpi~cuda"; \
     fi; \
@@ -408,6 +409,7 @@ RUN shopt -s nullglob && llvm_prefs=(/opt/software/*/llvm-*) && \
     python -c "import rapthor; print('rapthor OK')" && \
     rapthor --version && \
     DP3 --version && \
+    python -c "import json; from pathlib import Path; p=Path('/opt/view/bin/DP3').resolve().parents[1]/'.spack'/'spec.json'; nodes=json.loads(p.read_text()).get('spec',{}).get('nodes',[]); dp3=next(n for n in nodes if n.get('name')=='dp3'); assert dp3.get('parameters',{}).get('fastpredict') is True, dp3.get('parameters'); print('DP3 FastPredict enabled')" && \
     if [ -n "${CUDA_ARCH}" ]; then \
       python -c "import ctypes,os,sys; major=os.environ.get('CUDA_VERSION','').split('.')[0]; libs=['libcudart.so']+([f'libcudart.so.{major}'] if major else []);\
 [ctypes.CDLL(lib) or print(f'SUCCESS: {lib} loaded') for lib in libs]; print('DP3 CUDA runtime libs OK')"; \
