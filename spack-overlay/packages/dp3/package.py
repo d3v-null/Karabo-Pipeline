@@ -29,6 +29,14 @@ class Dp3(CMakePackage, CudaPackage):
         no_cache=True,
     )
 
+    # v6.6-130 (2026-08-19): FastPredict CMake-on, EveryBeam >=0.8.3.
+    version(
+        "6.6.20260819",
+        commit="f4403baee12544eac167eb0d5e62d2289b7a15ed",
+        submodules=True,
+        no_cache=True,
+    )
+
     # IterativeDiagonalSolverCuda was not updated when SolverBase
     # dropped SolveResult/stat_stream from ApplyConstraints/Solve and
     # renamed NSolutions() -> NSubSolutions() (76d6920 / 5168437).
@@ -36,13 +44,13 @@ class Dp3(CMakePackage, CudaPackage):
     patch(
         "cuda-solverbase-api.patch",
         sha256="bd3411d07dbfe919e81fc3cca29519e891ccbff52660d447705fdb54e6d9c13f",
-        when="@6.6+cuda",
+        when="@6.6:+cuda",
     )
 
     variant("python", default=True, description="Enable Python support")
     variant("idg", default=False, description="Enable IDG support")
-    # DP3 6.6 defaults USE_FAST_PREDICT=OFF; +fastpredict compiles the
-    # accelerated predict library and enables predict.usefastpredict.
+    # Release 6.6 defaults USE_FAST_PREDICT=OFF; later snapshots default ON.
+    # +fastpredict compiles the accelerated predict library.
     variant(
         "fastpredict",
         default=True,
@@ -62,6 +70,7 @@ class Dp3(CMakePackage, CudaPackage):
     depends_on("casacore@3.7.1:", when="@6.4:,latest")
     depends_on("everybeam@0.7.4:", when="@latest,master")
     depends_on("everybeam@0.7.4:0.9", when="@6.5.1.20260109:")
+    depends_on("everybeam@0.8.3:0.9", when="@6.6.20260819:")
     depends_on("everybeam@0.7.4:0.7", when="@6.3:6.5.1.0")
     depends_on("everybeam@0.6", when="@6.1:6.2")
     depends_on("everybeam@0.5.3", when="@6.0")
@@ -120,10 +129,12 @@ class Dp3(CMakePackage, CudaPackage):
                     with open(path, "w") as fh:
                         fh.write(new)
 
-        # 6.6 FastPredict.cc includes aocommon threading headers that are not
-        # in the pinned aocommon, and uses ThreadPool without including it.
+        # Release 6.6 FastPredict.cc includes aocommon threading headers that
+        # are not in the pinned aocommon, and uses ThreadPool without including
+        # it. Later snapshots switched to schaapcommon threading — do not
+        # inject aocommon/threadpool.h there.
         fast_predict = join_path(self.stage.source_path, "steps", "FastPredict.cc")
-        if os.path.isfile(fast_predict):
+        if str(self.spec.version) == "6.6" and os.path.isfile(fast_predict):
             with open(fast_predict) as fh:
                 text = fh.read()
             new = text
