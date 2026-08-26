@@ -290,6 +290,44 @@ jobs:
             perf --version || test $? -eq 126
             echo "benchmon stack OK"'
 
+      - name: Verify cwltool can evaluate CWL JavaScript
+        run: |
+          IMAGE_REF="${{ fromJSON(steps.meta-pretest.outputs.json).tags[0] }}"
+          # Regression guard: `import cwltool` succeeds without a Node engine,
+          # but every rapthor operation dies at runtime with
+          # cwl_utils.errors.JavascriptException. Only executing a workflow
+          # that evaluates a JS expression catches it.
+          docker run --rm "${IMAGE_REF}" bash -c '
+            set -e
+            command -v node
+            node --version
+            d=$(mktemp -d); cd "$d"
+            cat > js.cwl <<CWL
+          cwlVersion: v1.2
+          class: ExpressionTool
+          requirements: {InlineJavascriptRequirement: {}}
+          inputs: {num: int}
+          outputs: {doubled: int}
+          expression: "\${ return {doubled: inputs.num * 2}; }"
+          CWL
+            out=$(cwltool --quiet js.cwl --num 21 2>&1)
+            echo "$out"
+            echo "$out" | grep -q 42 || { echo "CWL JS evaluation failed" >&2; exit 1; }
+            echo "cwltool JavaScript evaluation OK"'
+
+      - name: Verify /tmp is world-writable and sticky
+        run: |
+          IMAGE_REF="${{ fromJSON(steps.meta-pretest.outputs.json).tags[0] }}"
+          # COPYing anything into /tmp rewrites its mode and drops the sticky
+          # bit, leaving it root-only 755. That breaks apt in downstream builds
+          # and every non-root process needing scratch -- i.e. each Toil step
+          # running under an arbitrary host uid.
+          mode=$(docker run --rm "${IMAGE_REF}" stat -c '%a' /tmp)
+          echo "/tmp mode: ${mode}"
+          [ "${mode}" = "1777" ] || { echo "expected 1777" >&2; exit 1; }
+          docker run --rm --user 12345:12345 "${IMAGE_REF}" \
+            bash -c 'touch /tmp/probe && echo "non-root can write /tmp"'
+
       - name: Verify none of the Jupyter/conda bloat came back
         run: |
           IMAGE_REF="${{ fromJSON(steps.meta-pretest.outputs.json).tags[0] }}"

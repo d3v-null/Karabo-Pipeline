@@ -351,12 +351,20 @@ ENV DEBIAN_FRONTEND=noninteractive
 # libcurl4 (+ its gnutls/ldap/sasl/ssh/nghttp2/psl/brotli/idn2 chain) and
 # libltdl7. pciutils + linux-tools are for benchmon's profiling collectors,
 # which the demo's benchmon-collectors.yaml runs from this image.
+#
+# nodejs is NOT optional: cwltool evaluates CWL JavaScript expressions through
+# a Node engine, and without one every rapthor operation dies with
+# cwl_utils.errors.JavascriptException. Spack lists node-js as a run dep of
+# py-cwltool but satisfies it as an *external* from the builder base's apt, so
+# it never lands in /opt/software and must be provided here. The jupyter base
+# this image replaced happened to supply it via /opt/conda/bin/node.
 RUN apt-get update && apt-get --no-install-recommends install -y \
       ca-certificates \
       libcap2-bin \
       libcurl4 \
       libltdl7 \
       linux-tools-generic \
+      nodejs \
       pciutils \
  && rm -rf /var/lib/apt/lists/*
 
@@ -416,8 +424,15 @@ RUN for m in numpy scipy pandas casacore.tables kubernetes toil cwltool \
 
 # Tiny 3-antenna MS + 1 Jy point source; FastPredict must run and write vis.
 # Skipped on ARM: FastPredict is not compiled there.
-COPY --link docker/rapthor-lean/fastpredict_smoke.py /tmp/fastpredict_smoke.py
-RUN OPENBLAS_NUM_THREADS=1 python3 /tmp/fastpredict_smoke.py && rm -f /tmp/fastpredict_smoke.py
+# Deliberately NOT /tmp: COPYing into /tmp rewrites the directory's mode and
+# drops its sticky bit, leaving it root-only 755 instead of 1777. That breaks
+# apt inside any downstream build ("Couldn't create temporary file
+# /tmp/apt.conf.*") and every non-root process needing scratch -- which is each
+# Toil/apptainer step running under an arbitrary host uid.
+COPY --link docker/rapthor-lean/fastpredict_smoke.py /opt/smoke/fastpredict_smoke.py
+RUN OPENBLAS_NUM_THREADS=1 python3 /opt/smoke/fastpredict_smoke.py && rm -rf /opt/smoke
+# Belt and braces: assert the invariant rather than trusting it.
+RUN test "$(stat -c '%a' /tmp)" = "1777" || { echo "/tmp is $(stat -c '%a' /tmp), expected 1777" >&2; exit 1; }
 
 USER ${NB_UID}
 WORKDIR "/home/${NB_USER}"
