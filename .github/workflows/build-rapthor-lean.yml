@@ -1,9 +1,11 @@
 ---
-name: Build Marimo SDP Spack Container
+# Size-optimised sibling of build-rapthor-jupyter.yml, building
+# rapthor-lean.Dockerfile: the same Spack stack with no Jupyter, conda or TeX.
+# Measured 1721 MB on disk / 521 MB compressed, against 5679 MB / 1.52 GB for
+# rapthor-jupyter. This is the image the SRCNet OKE demo pulls as
+# RAPTHOR_IMAGE once per CWL step, so its size is on the demo's critical path.
+name: Build Rapthor Lean Container
 
-# DISABLED: automatic pull_request/push triggers removed. This image is no
-# longer built on every change to marimo-sdp-spack.Dockerfile / spack-overlay.
-# It can still be run on demand from the Actions tab (workflow_dispatch).
 on:
   workflow_dispatch:
     inputs:
@@ -11,10 +13,25 @@ on:
         description: "Skip tests during build (1=yes, 0=no)"
         required: false
         default: "0"
+  pull_request:
+    paths:
+      - "rapthor-lean.Dockerfile"
+      - "docker/rapthor-lean/**"
+      - "spack-overlay/**"
+      - ".github/workflows/build-rapthor-lean.yml"
+  push:
+    branches:
+      - main
+      - numpy2
+    paths:
+      - "rapthor-lean.Dockerfile"
+      - "docker/rapthor-lean/**"
+      - "spack-overlay/**"
+      - ".github/workflows/build-rapthor-lean.yml"
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: marimo-sdp-spack
+  IMAGE_NAME: rapthor-lean
 
 jobs:
   build-pretest:
@@ -30,6 +47,8 @@ jobs:
         include:
           - os: ubuntu-22.04
             platform: linux/amd64
+          - os: ubuntu-22.04-arm
+            platform: linux/arm64
     steps:
       - name: Prepare
         run: |
@@ -97,24 +116,28 @@ jobs:
           flavor: |
             suffix=-pretest
           labels: |
-            org.opencontainers.image.title=Marimo SDP Spack
-            org.opencontainers.image.description=Marimo and Jupyter with the Rapthor pipeline on SDP Spack
+            org.opencontainers.image.title=Rapthor Lean
+            org.opencontainers.image.description=Minimal Rapthor LOFAR pipeline runtime (no Jupyter/conda/TeX)
 
       - name: Build - by digest (always push)
         id: build-push
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: ./marimo-sdp-spack.Dockerfile
+          file: ./rapthor-lean.Dockerfile
           platforms: ${{ matrix.platform }}
           labels: ${{ steps.meta-pretest.outputs.labels }}
           outputs: type=image,name=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
           build-args: |
             SPACK_TARGET=${{ matrix.platform == 'linux/amd64' && 'x86_64_v2' || 'aarch64' }}
-            SPACK_MIRROR_OCI=oci://${{ env.REGISTRY }}/${{ github.repository_owner }}/marimo-sdp-spack-buildcache
+            # Deliberately the *rapthor-jupyter* buildcache, not a lean-specific
+            # one: rapthor-lean.Dockerfile concretises to the identical CPU-only
+            # Spack spec, so sharing the mirror makes every package a binary hit
+            # for both images instead of compiling the same stack twice.
+            SPACK_MIRROR_OCI=oci://${{ env.REGISTRY }}/${{ github.repository_owner }}/rapthor-jupyter-spack-buildcache
           secrets: |
-            spack_oci_username=${{ github.event_name != 'pull_request' && github.actor || '' }}
-            spack_oci_password=${{ github.event_name != 'pull_request' && github.token || '' }}
+            spack_oci_username=${{ github.actor }}
+            spack_oci_password=${{ github.token }}
           cache-from: |
             type=registry,ref=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:buildcache-${{ env.PLATFORM_PAIR }}
           cache-to: |
@@ -197,6 +220,8 @@ jobs:
         include:
           - os: ubuntu-22.04
             platform: linux/amd64
+          - os: ubuntu-22.04-arm
+            platform: linux/arm64
     steps:
       - name: Prepare
         run: |
@@ -235,72 +260,65 @@ jobs:
       - name: Run smoke tests
         run: |
           IMAGE_REF="${{ fromJSON(steps.meta-pretest.outputs.json).tags[0] }}"
-          docker run --rm "${IMAGE_REF}" python --version
-          docker run --rm "${IMAGE_REF}" marimo --version
-          docker run --rm "${IMAGE_REF}" python -c "import jupyterhub, marimo; print('Marimo and JupyterHub imports successful')"
-          docker run --rm "${IMAGE_REF}" python -c "import rapthor; print('Rapthor import successful')"
-          docker run --rm "${IMAGE_REF}" python -c "import casacore.tables; print('python-casacore OK')"
-          docker run --rm "${IMAGE_REF}" python -c "import numpy; print('numpy', numpy.__version__)"
-          docker run --rm "${IMAGE_REF}" python -c "import everybeam, losoto, reproject; print('Overlay package imports successful')"
-          docker run --rm "${IMAGE_REF}" pip check
+          docker run --rm "${IMAGE_REF}" python3 --version
+          # PATH alone must be enough: the demo's run-ical.sh imports rapthor
+          # with PYTHONPATH deliberately cleared.
+          docker run --rm -e PYTHONPATH= "${IMAGE_REF}" python3 -c "
+          import casacore.tables, numpy, rapthor, toil, cwltool, lsmtool, losoto
+          import bdsf, benchmon, everybeam, astropy, reproject, tables, numexpr
+          import h5py, matplotlib, scipy, pandas, kubernetes
+          print('all runtime imports OK; numpy', numpy.__version__)"
           docker run --rm "${IMAGE_REF}" rapthor --version
 
-      - name: Verify Jupyter kernel is registered
+      - name: Verify pipeline executables
         run: |
           IMAGE_REF="${{ fromJSON(steps.meta-pretest.outputs.json).tags[0] }}"
-          docker run --rm "${IMAGE_REF}" jupyter kernelspec list | grep -q rapthor
+          docker run --rm -e OPENBLAS_NUM_THREADS=1 "${IMAGE_REF}" DP3 --version
+          docker run --rm -e OPENBLAS_NUM_THREADS=1 "${IMAGE_REF}" wsclean --version
+          docker run --rm "${IMAGE_REF}" aoflagger --version
+          docker run --rm "${IMAGE_REF}" toil-cwl-runner --version
 
-      - name: Verify Jupyter server starts and responds
+      - name: Verify benchmon profiling stack
         run: |
           IMAGE_REF="${{ fromJSON(steps.meta-pretest.outputs.json).tags[0] }}"
-          CID=$(docker run -d -p 127.0.0.1:8888:8888 \
-            --health-cmd='curl -fsS http://127.0.0.1:8888/api/status?token=test || exit 1' \
-            --health-interval=10s \
-            --health-retries=12 \
-            --health-timeout=5s \
-            "${IMAGE_REF}" start-notebook.sh \
-              --NotebookApp.token='test' \
-              --ServerApp.token='test' \
-              --ServerApp.ip='0.0.0.0' \
-              --ServerApp.port=8888)
-          echo "Started container $CID, waiting for healthy status..."
-          for i in $(seq 1 60); do
-            STATUS=$(docker inspect --format='{{.State.Health.Status}}' "$CID" 2>/dev/null || echo "unknown")
-            echo "Health check $i/60: $STATUS"
-            if [ "$STATUS" = "healthy" ]; then
-              echo "Container is healthy!"
-              break
-            fi
-            sleep 2
-          done
-          docker logs "$CID" --tail 50 || true
-          curl -fsS "http://127.0.0.1:8888/api/status?token=test"
-          echo "Jupyter server responded successfully"
-          docker rm -f "$CID" >/dev/null
+          # The demo's benchmon-collectors.yaml runs these from this image.
+          docker run --rm "${IMAGE_REF}" bash -c '
+            set -e
+            benchmon-run --help >/dev/null
+            benchmon-visu --help >/dev/null
+            command -v benchmon-start benchmon-stop dool perf lspci
+            perf --version || test $? -eq 126
+            echo "benchmon stack OK"'
 
-      - name: Test kernel execution
+      - name: Verify none of the Jupyter/conda bloat came back
         run: |
           IMAGE_REF="${{ fromJSON(steps.meta-pretest.outputs.json).tags[0] }}"
-          docker run --rm "${IMAGE_REF}" python -c "
-          import subprocess
-          import sys
-          result = subprocess.run([
-              sys.executable, '-m', 'jupyter', 'execute',
-              '--kernel=rapthor',
-              '--ExecutePreprocessor.timeout=60',
-              '-'
-          ], input='''
-          import rapthor
-          import casacore.tables
-          import numpy as np
-          print(\"Kernel test passed\")
-          ''', capture_output=True, text=True)
-          print(result.stdout)
-          if result.returncode != 0:
-              print(result.stderr)
-              # Don't fail on kernel test - jupyter execute may not be available
-              print('Warning: kernel execution test skipped')
-          "
+          docker run --rm "${IMAGE_REF}" bash -c '
+            set -e
+            for p in /opt/conda /usr/share/texlive /usr/bin/pandoc /opt/spack; do
+              if [ -e "$p" ]; then echo "regression: $p is back in the image" >&2; exit 1; fi
+            done
+            # /opt/view must be a symlink into /opt/._view, not a second copy.
+            test -L /opt/view || { echo "regression: /opt/view is not a symlink (view duplicated)" >&2; exit 1; }
+            for m in marimo jupyterlab notebook jupyterhub; do
+              if python3 -c "import $m" 2>/dev/null; then
+                echo "regression: $m is installed in the lean image" >&2; exit 1
+              fi
+            done
+            echo "no notebook/conda/TeX bloat present"'
+
+      - name: Enforce image size budget
+        run: |
+          IMAGE_REF="${{ fromJSON(steps.meta-pretest.outputs.json).tags[0] }}"
+          used=$(docker run --rm --user 0 "${IMAGE_REF}" bash -c 'du -sm / 2>/dev/null | cut -f1' | tail -1)
+          echo "on-disk contents: ${used} MB (rapthor-jupyter baseline: 5679 MB)"
+          # Measured 1721 MB; fail well before it drifts back toward the
+          # jupyter image, but leave room for genuine dependency growth.
+          if [ "${used}" -gt 2400 ]; then
+            echo "image grew past the 2400 MB budget - re-run the layer analysis" >&2
+            exit 1
+          fi
+
 
   promote-pass:
     name: Publish -pass tag after tests pass
@@ -353,8 +371,10 @@ jobs:
           IMAGE_REF="${{ fromJSON(steps.meta-pass.outputs.json).tags[0] }}"
           docker buildx imagetools inspect "$IMAGE_REF"
 
-      - name: Analyze final image layer sizes
+      - name: Analyze final image size (layers + on-disk paths)
         run: |
           IMAGE_REF="${{ fromJSON(steps.meta-pass.outputs.json).tags[0] }}"
           docker pull --platform linux/amd64 "$IMAGE_REF"
+          # Reports docker-history layer diffs AND du of /opt/software|/opt/view
+          # (dive-style symlink following misattributes view COPY as multi-GB).
           python3 .github/scripts/analyze_image_layers.py "$IMAGE_REF"
