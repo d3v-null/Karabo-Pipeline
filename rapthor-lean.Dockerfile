@@ -46,6 +46,11 @@
 # NOTE: as with rapthor-jupyter, DP3 and WSClean refuse to start unless
 # OPENBLAS_NUM_THREADS=1 is set by the caller. That is unchanged here on
 # purpose, so the demo's existing environment keeps its exact meaning.
+#
+# NOTE: the runtime image is built to run with no internet egress. Astropy's
+# IERS Earth-orientation table is baked into its download cache at build time
+# and pinned there; see "Offline Earth-orientation data" below. Only the build
+# needs network.
 
 FROM quay.io/jupyter/minimal-notebook:notebook-7.0.6 AS builder
 
@@ -400,8 +405,152 @@ ARG NB_USER=jovyan
 ARG NB_UID=1000
 ARG NB_GID=100
 RUN groupadd -g ${NB_GID} -o users 2>/dev/null || true; \
-    useradd -m -s /bin/bash -u ${NB_UID} -g ${NB_GID} ${NB_USER} && \
-    install -d -o ${NB_UID} -g ${NB_GID} /home/${NB_USER}/.astropy/cache
+    useradd -m -s /bin/bash -u ${NB_UID} -g ${NB_GID} ${NB_USER}
+
+# ----------- Offline Earth-orientation data (astropy IERS) ------------------
+# The demo cluster resolves DNS but has no HTTPS egress, so astropy's IERS
+# auto-download does not fail fast: every process that touches a UTC->UT1
+# conversion stalls for `remote_timeout` on datacenter.iers.org, again on the
+# maia.usno.navy.mil mirror, and *still* ends up on the IERS-B table bundled
+# with astropy, which stops about a year short of the wall clock:
+#
+#   IERSRangeError: (some) times are outside of range covered by IERS table.
+#
+# So the download is not merely slow, it is fatal. Fix: bake a real IERS-A
+# table (finals2000A.all — measured EOPs plus ~1 year of predictions) into
+# astropy's own download cache at build time and pin it with a config file, so
+# `IERS_Auto.open()` is a cache hit that never opens a socket.
+#
+#   * XDG_CONFIG_HOME/XDG_CACHE_HOME rather than ~/.astropy, because $HOME is
+#     not dependable here: HTCondor pilots run this image under apptainer as
+#     `nobody` and Toil runs worker containers under the host uid. /opt is
+#     readable by every uid, and the cache dir is 1777 so anything that still
+#     wants to write a cache can. ~jovyan/.astropy is symlinked to the same
+#     place to cover a pilot environment that clobbers XDG_*.
+#   * auto_max_age is astropy's "re-download once the predictions are older
+#     than N days" trigger — the one knob that would put the network back on
+#     the critical path. 36500 days pins the baked table for the life of the
+#     image; rebuild to refresh it (predictions run out ~1 year after build,
+#     and the build asserts at least 90 days of headroom).
+#   * allow_internet = False turns every *other* astropy download (sites.json,
+#     ephemerides) from a 10s stall into an immediate, legible error.
+#   * iers_degraded_accuracy = warn is the safety net: should the table ever be
+#     missing or outrun, times fall back to IERS-B accuracy with a warning
+#     rather than raising, so an aging image degrades instead of dying.
+#   * MPLCONFIGDIR, because matplotlib keeps both its config and its font cache
+#     under XDG_CONFIG_HOME; without it matplotlib falls back to a fresh temp
+#     dir and rebuilds the font cache in every one of the pipeline's CWL steps.
+#
+# Unset XDG_CONFIG_HOME to get stock (network-using) astropy behaviour back.
+#
+# NOTE: the residual `IERSStaleWarning: leap-second file is expired` comes from
+# the leap-second table compiled into ERFA and is cosmetic — no leap second has
+# been introduced since 2017, and with auto_max_age pinned astropy accepts that
+# table rather than trying to fetch a newer one. A current IERS Leap_Second.dat
+# is baked in beside the EOP table regardless.
+ENV XDG_CONFIG_HOME=/opt/xdg/config \
+    XDG_CACHE_HOME=/opt/xdg/cache \
+    MPLCONFIGDIR=/opt/xdg/cache/matplotlib
+
+RUN install -d -m 0755 /opt/xdg/config/astropy /opt/xdg/cache/astropy/iers && \
+    install -d -m 1777 /opt/xdg/cache/matplotlib && \
+    printf '%s\n' \
+      '# Baked by rapthor-lean.Dockerfile: this image runs without egress.' \
+      '[utils.data]' \
+      'allow_internet = False' \
+      'remote_timeout = 3.0' \
+      '' \
+      '[utils.iers.iers]' \
+      'auto_max_age = 36500.0' \
+      'remote_timeout = 3.0' \
+      'iers_degraded_accuracy = warn' \
+      'system_leap_second_file = /opt/xdg/cache/astropy/iers/Leap_Second.dat' \
+      > /opt/xdg/config/astropy/astropy.cfg
+
+# The URLs come from astropy itself, so they stay in lockstep with the astropy
+# version this image ships rather than drifting into a 404 on the next bump.
+# This is the one step here that needs the *builder* to have network.
+RUN python3 - <<'PY'
+import shutil
+import urllib.request
+
+from astropy.utils.data import import_file_to_cache, is_url_in_cache
+from astropy.utils.iers import IERS_A, IERS_A_URL, IERS_LEAP_SECOND_URL, LeapSeconds
+
+IERS_DIR = "/opt/xdg/cache/astropy/iers"
+eop, leap = f"{IERS_DIR}/finals2000A.all", f"{IERS_DIR}/Leap_Second.dat"
+
+for url, dest in ((IERS_A_URL, eop), (IERS_LEAP_SECOND_URL, leap)):
+    print(f"fetching {url} -> {dest}", flush=True)
+    with urllib.request.urlopen(url, timeout=60) as response, open(dest, "wb") as out:
+        shutil.copyfileobj(response, out)
+
+# Parse before trusting: a captive portal or an error page would otherwise be
+# cached as gospel and only surface mid-pipeline.
+table = IERS_A.open(eop)
+LeapSeconds.from_iers_leap_seconds(leap)
+print(f"IERS-A rows={len(table)} mjd={table['MJD'].min():.0f}..{table['MJD'].max():.0f}")
+
+# Seeding astropy's URL-keyed download cache is what makes IERS_Auto.open() a
+# no-network cache hit. Only the primary URL is seeded; the mirror is consulted
+# solely when the primary is missing, and a second copy is 3.7MB for nothing.
+import_file_to_cache(IERS_A_URL, eop)
+assert is_url_in_cache(IERS_A_URL), IERS_A_URL
+PY
+
+# Prewarm the font cache, then hand /opt/xdg to every possible uid: read for the
+# baked data, write for the caches, and ~jovyan/.astropy pointing at both.
+RUN python3 -c "import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot as plt; plt.plot([0, 1]); plt.savefig('/dev/null', format='png')" && \
+    test -n "$(ls /opt/xdg/cache/matplotlib/fontlist-*.json)" && \
+    rm -rf /home/${NB_USER}/.astropy && \
+    install -d -o ${NB_UID} -g ${NB_GID} /home/${NB_USER}/.astropy && \
+    ln -s /opt/xdg/cache/astropy /home/${NB_USER}/.astropy/cache && \
+    ln -s /opt/xdg/config/astropy /home/${NB_USER}/.astropy/config && \
+    chmod -R a+rX /opt/xdg && \
+    chmod 1777 /opt/xdg/cache /opt/xdg/cache/matplotlib && \
+    du -sh /opt/xdg
+
+# Offline proof, at build time: allow_internet=False from the config above means
+# a cache miss cannot be papered over by the builder's own network. Runs as an
+# unprivileged uid that owns nothing, which is how the pilots run it.
+USER 61234
+RUN HOME=/nonexistent python3 - <<'PY'
+import warnings
+
+with warnings.catch_warnings(record=True) as caught:
+    warnings.simplefilter("always")
+    import astropy.units as u
+    from astropy.coordinates import AltAz, EarthLocation, SkyCoord
+    from astropy.time import Time, TimeDelta
+    from astropy.utils import iers
+
+    now = Time.now()
+    print("ut1", now.ut1.iso)
+    site = EarthLocation(lat=-26.825 * u.deg, lon=116.764 * u.deg, height=377 * u.m)
+    altaz = SkyCoord(ra=180 * u.deg, dec=-30 * u.deg).transform_to(
+        AltAz(obstime=now, location=site)
+    )
+    print("altaz", altaz.alt)
+    table = iers.earth_orientation_table.get()
+    messages = [f"{c.category.__name__}: {c.message}" for c in caught]
+
+print("table", type(table).__name__, table.meta.get("data_url"))
+for message in messages:
+    print("warning:", message)
+
+assert type(table).__name__ == "IERS_Auto", type(table)
+offenders = [
+    m for m in messages
+    if "failed to download" in m or "using local IERS-B" in m or "degraded" in m
+]
+assert not offenders, offenders
+
+# The predictions must still cover a demo window, or this image is born stale.
+horizon = (now + TimeDelta(90, format="jd")).mjd
+assert table["MJD"].max().value >= horizon, (table["MJD"].max(), horizon)
+print("IERS-A covers now+90d, no downloads attempted")
+PY
+USER root
 
 # Fail the build here rather than three hours into a demo.
 RUN for m in numpy scipy pandas casacore.tables kubernetes toil cwltool \
