@@ -1,15 +1,20 @@
 # build me with ./build_sp5505.sh
 
-# Global ARG that can be passed at build time
+# Global ARGs: defaults live here once. Stages redeclare without values.
 ARG PYTHON_VERSION=3.10
+ARG CUDA_VERSION=12.2.2
+ARG CUDA_ARCH="75,80,86,89,90"
+# CUDA_ARCH covers T4/RTX2000, A100, RTX3000, L40, GH200. Empty => CPU-only.
 
 FROM quay.io/jupyter/minimal-notebook:notebook-7.0.6 AS builder
 
 USER root
 SHELL ["/bin/bash", "-lc"]
 
-# Re-declare ARG to make it available in this stage
-ARG PYTHON_VERSION=3.10
+# Re-declare global ARGs (defaults are above the first FROM)
+ARG PYTHON_VERSION
+ARG CUDA_VERSION
+ARG CUDA_ARCH
 
 # Essential build dependencies
 # These are found by spack external find, and later garbage collected by spack.# Do not include runtime dependencies here.
@@ -195,9 +200,6 @@ ARG EVERYBEAM_VERSION=0.8.3
 # The local Spack overlay provides EveryBeam 0.8.3 for DP3 6.6 MWA support.
 ARG DP3_VERSION=6.6
 # DP3 6.6 is compatible with EveryBeam 0.7.4 through 0.9.
-ARG CUDA_VERSION=12.2.2
-ARG CUDA_ARCH="75,80,86,89,90"
-# covers T4/RTX2000, A100, RTX3000, L40, GH200
 ARG RAPTHOR_VERSION=2.1.20260216
 
 # Create Spack environment and install deps
@@ -440,6 +442,11 @@ FROM quay.io/jupyter/minimal-notebook:notebook-7.0.6
 USER root
 SHELL ["/bin/bash", "-lc"]
 
+ARG CUDA_ARCH
+ARG CUDA_VERSION
+ENV CUDA_ARCH=${CUDA_ARCH} \
+    CUDA_VERSION=${CUDA_VERSION}
+
 # Runtime dependencies
 ENV DEBIAN_FRONTEND=noninteractive
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
@@ -455,7 +462,33 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     libgomp1 \
     time \
     wget \
-    zstd
+    zstd; \
+    # nvidia-smi is a driver utility; Spack cuda does not ship it. Extract only
+    # the binary — do not apt-install nvidia-utils (pulls libnvidia-compute*
+    # which would mask the host driver, same class of bug as libcuda stubs).
+    if [ -n "${CUDA_ARCH}" ]; then \
+        found=""; \
+        for pkg in $(apt-cache search --names-only '^nvidia-utils-[0-9]+$' | awk '{print $1}' | sort -Vr); do \
+            rm -rf /tmp/nvutils && mkdir -p /tmp/nvutils && \
+            (cd /tmp && apt-get download "$pkg") && \
+            deb=$(ls /tmp/${pkg}_*.deb) && \
+            dpkg-deb -c "$deb" > /tmp/nvutils.list && \
+            if grep -q 'usr/bin/nvidia-smi$' /tmp/nvutils.list; then \
+                dpkg-deb -x "$deb" /tmp/nvutils && \
+                install -m 0755 /tmp/nvutils/usr/bin/nvidia-smi /usr/local/bin/nvidia-smi && \
+                found="$pkg"; \
+                rm -rf /tmp/nvutils "$deb" /tmp/nvutils.list; \
+                break; \
+            fi; \
+            rm -f "$deb" /tmp/nvutils.list; \
+        done; \
+        if [ -z "$found" ] || [ ! -x /usr/local/bin/nvidia-smi ]; then \
+            echo "ERROR: could not extract nvidia-smi from nvidia-utils-*" >&2; \
+            exit 1; \
+        fi; \
+        echo "Installed nvidia-smi from ${found}"; \
+        command -v nvidia-smi; \
+    fi
 
 # Install audria
 RUN git clone --depth=1 https://github.com/scaidermern/audria.git /opt/audria && \
@@ -776,6 +809,7 @@ RUN python -c "from astropy.time import Time; t=Time.now(); from astropy.utils.d
 RUN if [ -z "${CUDA_VERSION:-}" ] || [ -z "${CUDA_ARCH:-}" ]; then \
     exit 0; \
     fi; \
+    command -v nvidia-smi; \
     export CUDA_VERSION="$CUDA_VERSION"; \
     python - <<"PY"
 import ctypes
