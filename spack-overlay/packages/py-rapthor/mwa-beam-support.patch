@@ -46,8 +46,16 @@ diff -ruN a/rapthor/pipeline/steps/ddecal_solve.cwl b/rapthor/pipeline/steps/dde
    - solve1.initialsolutions.missingantennabehavior=unit
 diff -ruN a/rapthor/pipeline/steps/predict_model_data.cwl b/rapthor/pipeline/steps/predict_model_data.cwl
 --- a/rapthor/pipeline/steps/predict_model_data.cwl	2026-09-30 14:04:03.628194771 +0000
-+++ b/rapthor/pipeline/steps/predict_model_data.cwl	2026-09-30 14:04:03.808186087 +0000
-@@ -24,6 +24,7 @@
++++ b/rapthor/pipeline/steps/predict_model_data.cwl	2026-09-30 15:47:58.401638781 +0000
+@@ -17,6 +17,7 @@
+   - steps=[predict]
+   - predict.operation=replace
+   - predict.applycal.correction=phase000
++  - predict.applycal.missingantennabehavior=flag
+   - predict.applycal.fastphase.correction=phase000
+   - predict.applycal.fastphase.solset=sol000
+   - predict.applycal.slowgain.correction=amplitude000
+@@ -24,6 +25,7 @@
    - predict.applycal.normalization.correction=amplitude000
    - predict.applycal.normalization.solset=sol000
    - predict.usebeammodel=True
@@ -57,15 +65,17 @@ diff -ruN a/rapthor/pipeline/steps/predict_model_data.cwl b/rapthor/pipeline/ste
    - msout.storagemanager=Dysco
 diff -ruN a/rapthor/pipeline/steps/prepare_imaging_data.cwl b/rapthor/pipeline/steps/prepare_imaging_data.cwl
 --- a/rapthor/pipeline/steps/prepare_imaging_data.cwl	2026-09-30 14:04:03.628194771 +0000
-+++ b/rapthor/pipeline/steps/prepare_imaging_data.cwl	2026-09-30 14:04:03.808186087 +0000
-@@ -19,6 +19,7 @@
++++ b/rapthor/pipeline/steps/prepare_imaging_data.cwl	2026-09-30 15:47:58.401638781 +0000
+@@ -19,7 +19,9 @@
    - bdaavg.type=bdaaverager
    - bdaavg.minchannels=1
    - bdaavg.frequencybase=0.0
 +  - applybeam.coefficients_path=/opt/mwa_full_embedded_element_pattern.h5
    - applycal.type=applycal
++  - applycal.missingantennabehavior=flag
    - applycal.correction=phase000
    - applycal.slowgain.correction=amplitude000
+   - applycal.slowgain.solset=sol000
 diff -ruN a/rapthor/pipeline/steps/wsclean_image_facets.cwl b/rapthor/pipeline/steps/wsclean_image_facets.cwl
 --- a/rapthor/pipeline/steps/wsclean_image_facets.cwl	2026-09-30 14:04:03.628194771 +0000
 +++ b/rapthor/pipeline/steps/wsclean_image_facets.cwl	2026-09-30 14:04:03.808186087 +0000
