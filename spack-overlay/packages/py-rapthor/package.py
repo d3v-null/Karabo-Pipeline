@@ -171,6 +171,14 @@ class PyRapthor(PythonPackage):
     depends_on("wsclean@3.6.20250630:", type="run")
     depends_on("cfitsio+utils", type="run")  # Rapthor uses 'fpack' from cfitsio.
 
+    # MWA support: point DP3 applybeam/predict/ddecal and WSClean at the
+    # MWA full-embedded-element beam (/opt/mwa_full_embedded_element_pattern.h5,
+    # /opt), drop facet-beam options (unsupported for MWA in EveryBeam), do
+    # not invert the beam in prepare-imaging-data, and tolerate a missing
+    # h5parm in the imaging operation. Verified to apply cleanly to the
+    # 20260203, 20260216 and 20260219 commits; later commits changed the
+    # touched files.
+    patch("mwa-beam-support.patch", when="@2.1.20260203:2.1.20260219")
     patch("kubernetes-batch-system.patch", when="@2.1.20260630")
     patch("toil-runtime-options.patch", when="@2.1.20260630")
     # StreamFlow is an alternate CWL runner; SKA images use Toil/WES. Keep it

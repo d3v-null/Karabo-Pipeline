@@ -1,0 +1,136 @@
+diff -ruN a/rapthor/operations/image.py b/rapthor/operations/image.py
+--- a/rapthor/operations/image.py	2026-09-30 14:04:03.636194384 +0000
++++ b/rapthor/operations/image.py	2026-09-30 14:04:03.808186087 +0000
+@@ -251,11 +251,11 @@
+                                not self.apply_normalizations):
+             # No solutions should be preapplied, so define steps
+             # without an applycal step
+-            prepare_data_steps = ['applybeam', 'shift']
++            prepare_data_steps = ['shift']
+         else:
+             # Solutions should be applied, so add an applycal step
+             # and set various parameters as needed
+-            prepare_data_steps = ['applybeam', 'shift', 'applycal']
++            prepare_data_steps = ['shift', 'applycal']
+             prepare_data_applycal_steps = []
+             if self.preapply_dde_solutions:
+                 # Fast phases and slow amplitudes (if generated) should be
+@@ -282,7 +282,8 @@
+         prepare_data_steps = f"[{','.join(prepare_data_steps)}]"
+ 
+         # Set the h5parm to use to apply the DDE solutions as needed
+-        h5parm = CWLFile(self.field.h5parm_filename).to_json() if not self.apply_none else None
++        h5parm = (CWLFile(self.field.h5parm_filename).to_json()
++                  if (not self.apply_none and self.field.h5parm_filename is not None) else None)
+ 
+         # Set the data interval to use when screens are applied so that final solution
+         # interval is removed
+diff -ruN a/rapthor/pipeline/steps/ddecal_solve.cwl b/rapthor/pipeline/steps/ddecal_solve.cwl
+--- a/rapthor/pipeline/steps/ddecal_solve.cwl	2026-09-30 14:04:03.628194771 +0000
++++ b/rapthor/pipeline/steps/ddecal_solve.cwl	2026-09-30 14:04:03.808186087 +0000
+@@ -15,6 +15,7 @@
+ arguments:
+   - msout=
+   - applybeam.type=applybeam
++  - applybeam.coefficients_path=/opt/mwa_full_embedded_element_pattern.h5
+   - applybeam.beammode=array_factor
+   - applybeam.usemodeldata=True
+   - applybeam.invert=False
+@@ -27,6 +28,7 @@
+   - predict.type=wgridderpredict
+   - solve1.type=ddecal
+   - solve1.usebeammodel=True
++  - solve1.coefficients_path=/opt/mwa_full_embedded_element_pattern.h5
+   - solve1.beam_interval=120
+   - solve1.beammode=array_factor
+   - solve1.initialsolutions.missingantennabehavior=unit
+diff -ruN a/rapthor/pipeline/steps/predict_model_data.cwl b/rapthor/pipeline/steps/predict_model_data.cwl
+--- a/rapthor/pipeline/steps/predict_model_data.cwl	2026-09-30 14:04:03.628194771 +0000
++++ b/rapthor/pipeline/steps/predict_model_data.cwl	2026-09-30 14:04:03.808186087 +0000
+@@ -24,6 +24,7 @@
+   - predict.applycal.normalization.correction=amplitude000
+   - predict.applycal.normalization.solset=sol000
+   - predict.usebeammodel=True
++  - predict.coefficients_path=/opt/mwa_full_embedded_element_pattern.h5
+   - predict.beam_interval=120
+   - predict.beammode=array_factor
+   - msout.storagemanager=Dysco
+diff -ruN a/rapthor/pipeline/steps/prepare_imaging_data.cwl b/rapthor/pipeline/steps/prepare_imaging_data.cwl
+--- a/rapthor/pipeline/steps/prepare_imaging_data.cwl	2026-09-30 14:04:03.628194771 +0000
++++ b/rapthor/pipeline/steps/prepare_imaging_data.cwl	2026-09-30 14:04:03.808186087 +0000
+@@ -19,6 +19,7 @@
+   - bdaavg.type=bdaaverager
+   - bdaavg.minchannels=1
+   - bdaavg.frequencybase=0.0
++  - applybeam.coefficients_path=/opt/mwa_full_embedded_element_pattern.h5
+   - applycal.type=applycal
+   - applycal.correction=phase000
+   - applycal.slowgain.correction=amplitude000
+diff -ruN a/rapthor/pipeline/steps/wsclean_image_facets.cwl b/rapthor/pipeline/steps/wsclean_image_facets.cwl
+--- a/rapthor/pipeline/steps/wsclean_image_facets.cwl	2026-09-30 14:04:03.628194771 +0000
++++ b/rapthor/pipeline/steps/wsclean_image_facets.cwl	2026-09-30 14:04:03.808186087 +0000
+@@ -13,7 +13,8 @@
+   - -no-update-model-required
+   - -local-rms
+   - -join-channels
+-  - -apply-facet-beam
++  - valueFrom: '/opt'
++    prefix: -mwa-path
+   - -log-time
+   - valueFrom: 'wgridder'
+     prefix: -gridder
+@@ -29,8 +30,6 @@
+     prefix: -auto-threshold
+   - valueFrom: '1.3'
+     prefix: -mgain-boosting
+-  - valueFrom: '120'
+-    prefix: -facet-beam-update
+   - valueFrom: 'briggs'
+     # Note: we have to set part of the 'weight' argument here and part below, as it has
+     # three parts (e.g., '-weight briggs -0.5'), and WSClean will not parse the value
+diff -ruN a/rapthor/pipeline/steps/wsclean_image_no_dde.cwl b/rapthor/pipeline/steps/wsclean_image_no_dde.cwl
+--- a/rapthor/pipeline/steps/wsclean_image_no_dde.cwl	2026-09-30 14:04:03.628194771 +0000
++++ b/rapthor/pipeline/steps/wsclean_image_no_dde.cwl	2026-09-30 14:04:03.808186087 +0000
+@@ -14,6 +14,8 @@
+   - -local-rms
+   - -join-channels
+   - -apply-primary-beam
++  - valueFrom: '/opt'
++    prefix: -mwa-path
+   - -log-time
+   - valueFrom: 'wgridder'
+     prefix: -gridder
+diff -ruN a/rapthor/pipeline/steps/wsclean_mpi_image_facets.cwl b/rapthor/pipeline/steps/wsclean_mpi_image_facets.cwl
+--- a/rapthor/pipeline/steps/wsclean_mpi_image_facets.cwl	2026-09-30 14:04:03.628194771 +0000
++++ b/rapthor/pipeline/steps/wsclean_mpi_image_facets.cwl	2026-09-30 14:04:03.808186087 +0000
+@@ -18,7 +18,8 @@
+   - -no-update-model-required
+   - -local-rms
+   - -join-channels
+-  - -apply-facet-beam
++  - valueFrom: '/opt'
++    prefix: -mwa-path
+   - -log-time
+   - valueFrom: 'wgridder'
+     prefix: -gridder
+@@ -34,8 +35,6 @@
+     prefix: -auto-threshold
+   - valueFrom: '1.3'
+     prefix: -mgain-boosting
+-  - valueFrom: '120'
+-    prefix: -facet-beam-update
+   - valueFrom: 'briggs'
+     # Note: we have to set part of the 'weight' argument here and part below, as it has
+     # three parts (e.g., '-weight briggs -0.5'), and WSClean will not parse the value
+diff -ruN a/rapthor/pipeline/steps/wsclean_mpi_image_no_dde.cwl b/rapthor/pipeline/steps/wsclean_mpi_image_no_dde.cwl
+--- a/rapthor/pipeline/steps/wsclean_mpi_image_no_dde.cwl	2026-09-30 14:04:03.628194771 +0000
++++ b/rapthor/pipeline/steps/wsclean_mpi_image_no_dde.cwl	2026-09-30 14:04:03.808186087 +0000
+@@ -19,6 +19,8 @@
+   - -local-rms
+   - -join-channels
+   - -apply-primary-beam
++  - valueFrom: '/opt'
++    prefix: -mwa-path
+   - -log-time
+   - valueFrom: 'wgridder'
+     prefix: -gridder
