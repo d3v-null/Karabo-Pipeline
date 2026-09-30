@@ -201,11 +201,16 @@ ARG EVERYBEAM_VERSION=0.8.3
 ARG DP3_VERSION=6.6
 # DP3 6.6 is compatible with EveryBeam 0.7.4 through 0.9.
 ARG RAPTHOR_VERSION=2.1.20260216
+# QuartiCal (goquartical) + its RATT stack (dask-ms, codex-africanus, stimela/scabha,
+# tigger-lsm) come from the local Spack overlay.
+ARG QUARTICAL_VERSION=0.2.6
 
 # Create Spack environment and install deps
 ARG SPACK_TARGET=""
 ARG SPACK_BUILDCACHE_LOCAL=""
 ARG SPACK_MIRROR_OCI=""
+# Cap Spack build parallelism (the build host is shared).
+ARG SPACK_BUILD_JOBS=16
 
 RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=locked \
     --mount=type=cache,target=/opt/spack-source-cache,id=spack-source-cache,sharing=locked \
@@ -228,6 +233,7 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     fi; \
     echo "SPACK_TARGET=${spack_target} <- (uname -m)=$arch"; \
     spack config add "config:install_tree:root:/opt/software"; \
+    spack config add "config:build_jobs:${SPACK_BUILD_JOBS}"; \
     # DO NOT MODIFY CONCRETIZATION OR VIEW SETTINGS
     spack config add "concretizer:unify:when_possible"; \
     # view config set via python3 yaml manipulation below (with py-mistune@:2 exclude) \
@@ -366,6 +372,7 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     'dp3@'$DP3_VERSION'+idg' \
     "${IDG_SPEC}" \
     'py-rapthor@'$RAPTHOR_VERSION \
+    'py-quartical@'$QUARTICAL_VERSION \
     && \
     spack concretize --force && \
     # sanity check avoids 4 hours wasted build time for it to fail regenerating view
@@ -637,7 +644,12 @@ RUN spack test run 'py-astropy-healpix' && \
     spack test run 'py-katbeam' && \
     spack test run 'py-tools21cm' && \
     spack test run 'hyperbeam' && \
-    spack test run 'wsclean'
+    spack test run 'wsclean' && \
+    # QuartiCal (goquartical) and the rapthor MWA beam patch
+    python -c "import quartical, daskms, africanus, scabha, Tigger; print('quartical', quartical.__version__ if hasattr(quartical, '__version__') else 'OK')" && \
+    goquartical --help > /dev/null && \
+    grep -q 'coefficients_path=/opt/mwa_full_embedded_element_pattern.h5' \
+        "$(python -c 'import rapthor, os; print(os.path.dirname(rapthor.__file__))')/pipeline/steps/ddecal_solve.cwl"
     # spack test run 'aoflagger'
 
 # TODO: Clean up test artifacts

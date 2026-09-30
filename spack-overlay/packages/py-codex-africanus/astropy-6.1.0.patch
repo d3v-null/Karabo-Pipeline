@@ -1,0 +1,11 @@
+--- a/pyproject.toml	2026-09-30 14:13:24.773108659 +0000
++++ b/pyproject.toml	2026-09-30 14:13:24.777108465 +0000
+@@ -8,7 +8,7 @@
+ dependencies = ['appdirs >=1.4.4', 'decorator >=5.1.1', 'numpy >=2.0', 'numba >=0.60']
+ 
+ [project.optional-dependencies]
+-astropy = ['astropy >=6.1.4']
++astropy = ['astropy >=6.1.0']
+ cuda = ['cupy >=13.3.0', 'jinja2 >=3.1.4']
+ dask = ['dask[array] >=2024.0']
+ ducc0 = ['ducc0 >=0.35.0']
