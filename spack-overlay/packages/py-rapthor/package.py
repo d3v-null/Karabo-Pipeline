@@ -177,7 +177,8 @@ class PyRapthor(PythonPackage):
     # not invert the beam in prepare-imaging-data, and tolerate a missing
     # h5parm in the imaging operation, and flag (rather than abort on) fully
     # flagged tiles that have no h5parm entries (applycal
-    # missingantennabehavior=flag). Verified to apply cleanly to the
+    # missingantennabehavior=flag), and reference slow-gain phases to the
+    # first unflagged station in process_gains.py. Verified to apply cleanly to the
     # 20260203, 20260216 and 20260219 commits; later commits changed the
     # touched files.
     patch("mwa-beam-support.patch", when="@2.1.20260203:2.1.20260219")

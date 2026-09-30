@@ -144,3 +144,20 @@ diff -ruN a/rapthor/pipeline/steps/wsclean_mpi_image_no_dde.cwl b/rapthor/pipeli
    - -log-time
    - valueFrom: 'wgridder'
      prefix: -gridder
+diff -ruN a/rapthor/scripts/process_gains.py b/rapthor/scripts/process_gains.py
+--- a/rapthor/scripts/process_gains.py	2026-09-30 14:04:03.632194578 +0000
++++ b/rapthor/scripts/process_gains.py	2026-09-30 16:08:50.896598623 +0000
+@@ -169,6 +169,13 @@
+     npol = amps.shape[4]
+     if phasesoltab is not None:
+         phases = phasesoltab.val[:]
++        # The default reference station (index 0) may be a fully flagged
++        # tile (common for MWA), which would turn every referenced phase
++        # into NaN; use the first station with any unflagged solutions.
++        _w = phasesoltab.weight[:]
++        _ok = [s for s in range(_w.shape[2]) if np.any(_w[:, :, s] > 0)]
++        if _ok and not np.any(_w[:, :, ref_id] > 0):
++            ref_id = _ok[0]
+         for stat in range(nstat):
+             phases[:, :, stat, :, :] = phases[:, :, stat, :, :] - phases[:, :, ref_id, :, :]
+ 
