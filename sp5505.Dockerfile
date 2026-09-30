@@ -647,7 +647,8 @@ RUN spack test run 'py-astropy-healpix' && \
     spack test run 'wsclean' && \
     # QuartiCal (goquartical) and the rapthor MWA beam patch
     python -c "import quartical, daskms, africanus, scabha, Tigger; print('quartical', quartical.__version__ if hasattr(quartical, '__version__') else 'OK')" && \
-    goquartical --help > /dev/null && \
+    # QuartiCal has no --help flag; "goquartical help" prints the full help.
+    goquartical help > /dev/null && \
     grep -q 'coefficients_path=/opt/mwa_full_embedded_element_pattern.h5' \
         "$(python -c 'import rapthor, os; print(os.path.dirname(rapthor.__file__))')/pipeline/steps/ddecal_solve.cwl"
     # spack test run 'aoflagger'
