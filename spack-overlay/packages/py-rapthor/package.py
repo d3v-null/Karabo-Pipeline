@@ -1,6 +1,6 @@
 from spack_repo.builtin.build_systems.python import PythonPackage
 
-from spack.package import depends_on, license, patch, version
+from spack.package import depends_on, license, patch, variant, version
 
 
 class PyRapthor(PythonPackage):
@@ -100,6 +100,17 @@ class PyRapthor(PythonPackage):
 
     version("master", branch="master", no_cache=True)
 
+    # MWA beam support (see mwa-beam-support.patch). Kept as a variant so the
+    # patched build gets its own spec hash: with concretizer reuse enabled,
+    # an unpatched py-rapthor already present in the install tree or the
+    # persistent buildcache would otherwise be reused silently.
+    variant(
+        "mwa",
+        default=False,
+        description="Apply the MWA beam support patch (EveryBeam MWA paths under /opt)",
+        when="@2.1.20260203:2.1.20260219",
+    )
+
     depends_on("python@3.9:", type=("build", "run"))
     depends_on("py-setuptools@45:70", type="build")
     depends_on("py-setuptools-scm@6.2:+toml", type="build")
@@ -181,7 +192,7 @@ class PyRapthor(PythonPackage):
     # first unflagged station in process_gains.py. Verified to apply cleanly to the
     # 20260203, 20260216 and 20260219 commits; later commits changed the
     # touched files.
-    patch("mwa-beam-support.patch", when="@2.1.20260203:2.1.20260219")
+    patch("mwa-beam-support.patch", when="+mwa @2.1.20260203:2.1.20260219")
     patch("kubernetes-batch-system.patch", when="@2.1.20260630")
     patch("toil-runtime-options.patch", when="@2.1.20260630")
     # StreamFlow is an alternate CWL runner; SKA images use Toil/WES. Keep it

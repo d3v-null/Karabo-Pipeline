@@ -371,7 +371,9 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     # aoflagger is transitive from DP3 \
     'dp3@'$DP3_VERSION'+idg' \
     "${IDG_SPEC}" \
-    'py-rapthor@'$RAPTHOR_VERSION \
+    # +mwa selects the overlay's MWA beam patch (own spec hash, so an unpatched
+    # rapthor in the buildcache is never reused).
+    'py-rapthor@'$RAPTHOR_VERSION'+mwa' \
     'py-quartical@'$QUARTICAL_VERSION \
     && \
     spack concretize --force && \
