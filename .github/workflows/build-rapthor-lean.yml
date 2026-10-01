@@ -4,34 +4,34 @@
 # Measured 1721 MB on disk / 521 MB compressed, against 5679 MB / 1.52 GB for
 # rapthor-jupyter. This is the image the SRCNet OKE demo pulls as
 # RAPTHOR_IMAGE once per CWL step, so its size is on the demo's critical path.
-name: Build Rapthor Lean Container
+name: Build Rapthor Lean Container (reusable)
 
+# Reusable: called once per flavour by build-rapthor-images.yml.
+#   image_name=rapthor-lean, rapthor_mwa=0  -> plain LOFAR image
+#   image_name=rapthor-mwa,  rapthor_mwa=1  -> py-rapthor +mwa (MWA beam support
+#                                             patch) plus the MWA beam file
 on:
-  workflow_dispatch:
+  workflow_call:
     inputs:
+      image_name:
+        description: "Image name under ghcr.io/<owner>/"
+        required: true
+        type: string
+      rapthor_mwa:
+        description: "Build the py-rapthor +mwa variant and ship the MWA beam (1/0)"
+        required: false
+        default: "0"
+        type: string
       skip_tests:
         description: "Skip tests during build (1=yes, 0=no)"
         required: false
         default: "0"
-  pull_request:
-    paths:
-      - "rapthor-lean.Dockerfile"
-      - "docker/rapthor-lean/**"
-      - "spack-overlay/**"
-      - ".github/workflows/build-rapthor-lean.yml"
-  push:
-    branches:
-      - main
-      - numpy2
-    paths:
-      - "rapthor-lean.Dockerfile"
-      - "docker/rapthor-lean/**"
-      - "spack-overlay/**"
-      - ".github/workflows/build-rapthor-lean.yml"
+        type: string
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: rapthor-lean
+  IMAGE_NAME: ${{ inputs.image_name }}
+  RAPTHOR_MWA: ${{ inputs.rapthor_mwa }}
 
 jobs:
   build-pretest:
@@ -116,8 +116,8 @@ jobs:
           flavor: |
             suffix=-pretest
           labels: |
-            org.opencontainers.image.title=Rapthor Lean
-            org.opencontainers.image.description=Minimal Rapthor LOFAR pipeline runtime (no Jupyter/conda/TeX)
+            org.opencontainers.image.title=${{ inputs.rapthor_mwa == '1' && 'Rapthor MWA' || 'Rapthor Lean' }}
+            org.opencontainers.image.description=${{ inputs.rapthor_mwa == '1' && 'Minimal Rapthor runtime with MWA beam support (no Jupyter/conda/TeX)' || 'Minimal Rapthor LOFAR pipeline runtime (no Jupyter/conda/TeX)' }}
 
       - name: Build - by digest (always push)
         id: build-push
@@ -130,6 +130,7 @@ jobs:
           outputs: type=image,name=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
           build-args: |
             SPACK_TARGET=${{ matrix.platform == 'linux/amd64' && 'x86_64_v2' || 'aarch64' }}
+            RAPTHOR_MWA=${{ inputs.rapthor_mwa }}
             # Deliberately the *rapthor-jupyter* buildcache, not a lean-specific
             # one: rapthor-lean.Dockerfile concretises to the identical CPU-only
             # Spack spec, so sharing the mirror makes every package a binary hit
@@ -158,7 +159,7 @@ jobs:
         if: steps.build-push.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
-          name: digests-${{ env.PLATFORM_PAIR }}
+          name: digests-${{ env.IMAGE_NAME }}-${{ env.PLATFORM_PAIR }}
           path: /tmp/digests/*
           if-no-files-found: error
           retention-days: 1
@@ -172,7 +173,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: /tmp/digests
-          pattern: digests-*
+          pattern: digests-${{ env.IMAGE_NAME }}-*
           merge-multiple: true
 
       - name: Set up Docker Buildx
@@ -269,6 +270,22 @@ jobs:
           import h5py, matplotlib, scipy, pandas, kubernetes
           print('all runtime imports OK; numpy', numpy.__version__)"
           docker run --rm "${IMAGE_REF}" rapthor --version
+
+      - name: Verify MWA beam support (mwa flavour only)
+        if: inputs.rapthor_mwa == '1'
+        run: |
+          IMAGE_REF="${{ fromJSON(steps.meta-pretest.outputs.json).tags[0] }}"
+          docker run --rm --platform ${{ matrix.platform }} "$IMAGE_REF" bash -c '
+            set -e
+            test -s /opt/mwa_full_embedded_element_pattern.h5
+            d=$(python3 -c "import rapthor, os; print(os.path.dirname(rapthor.__file__))")
+            grep -c coefficients_path "$d/pipeline/steps/ddecal_solve.cwl" | grep -qx 2
+            grep -q -- "-mwa-path" "$d/pipeline/steps/wsclean_image_no_dde.cwl"
+            ! grep -q -- "apply-facet-beam" "$d/pipeline/steps/wsclean_image_facets.cwl"
+            grep -q "missingantennabehavior=flag" "$d/pipeline/steps/prepare_imaging_data.cwl"
+            grep -q "rapthor-mwa" "$d/scripts/filter_skymodel.py"
+            echo "MWA beam support verified"
+          '
 
       - name: Verify pipeline executables
         run: |
@@ -371,7 +388,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: /tmp/digests
-          pattern: digests-*
+          pattern: digests-${{ env.IMAGE_NAME }}-*
           merge-multiple: true
 
       - name: Set up Docker Buildx

@@ -1,0 +1,284 @@
+diff -ruN a/rapthor/operations/image.py b/rapthor/operations/image.py
+--- a/rapthor/operations/image.py	2026-09-30 14:04:03.636194384 +0000
++++ b/rapthor/operations/image.py	2026-09-30 14:04:03.808186087 +0000
+@@ -251,11 +251,11 @@
+                                not self.apply_normalizations):
+             # No solutions should be preapplied, so define steps
+             # without an applycal step
+-            prepare_data_steps = ['applybeam', 'shift']
++            prepare_data_steps = ['shift']
+         else:
+             # Solutions should be applied, so add an applycal step
+             # and set various parameters as needed
+-            prepare_data_steps = ['applybeam', 'shift', 'applycal']
++            prepare_data_steps = ['shift', 'applycal']
+             prepare_data_applycal_steps = []
+             if self.preapply_dde_solutions:
+                 # Fast phases and slow amplitudes (if generated) should be
+@@ -282,7 +282,8 @@
+         prepare_data_steps = f"[{','.join(prepare_data_steps)}]"
+ 
+         # Set the h5parm to use to apply the DDE solutions as needed
+-        h5parm = CWLFile(self.field.h5parm_filename).to_json() if not self.apply_none else None
++        h5parm = (CWLFile(self.field.h5parm_filename).to_json()
++                  if (not self.apply_none and self.field.h5parm_filename is not None) else None)
+ 
+         # Set the data interval to use when screens are applied so that final solution
+         # interval is removed
+diff -ruN a/rapthor/pipeline/steps/ddecal_solve.cwl b/rapthor/pipeline/steps/ddecal_solve.cwl
+--- a/rapthor/pipeline/steps/ddecal_solve.cwl	2026-09-30 14:04:03.628194771 +0000
++++ b/rapthor/pipeline/steps/ddecal_solve.cwl	2026-09-30 14:04:03.808186087 +0000
+@@ -15,6 +15,7 @@
+ arguments:
+   - msout=
+   - applybeam.type=applybeam
++  - applybeam.coefficients_path=/opt/mwa_full_embedded_element_pattern.h5
+   - applybeam.beammode=array_factor
+   - applybeam.usemodeldata=True
+   - applybeam.invert=False
+@@ -27,6 +28,7 @@
+   - predict.type=wgridderpredict
+   - solve1.type=ddecal
+   - solve1.usebeammodel=True
++  - solve1.coefficients_path=/opt/mwa_full_embedded_element_pattern.h5
+   - solve1.beam_interval=120
+   - solve1.beammode=array_factor
+   - solve1.initialsolutions.missingantennabehavior=unit
+diff -ruN a/rapthor/pipeline/steps/predict_model_data.cwl b/rapthor/pipeline/steps/predict_model_data.cwl
+--- a/rapthor/pipeline/steps/predict_model_data.cwl	2026-09-30 14:04:03.628194771 +0000
++++ b/rapthor/pipeline/steps/predict_model_data.cwl	2026-09-30 15:47:58.401638781 +0000
+@@ -17,6 +17,7 @@
+   - steps=[predict]
+   - predict.operation=replace
+   - predict.applycal.correction=phase000
++  - predict.applycal.missingantennabehavior=flag
+   - predict.applycal.fastphase.correction=phase000
+   - predict.applycal.fastphase.solset=sol000
+   - predict.applycal.slowgain.correction=amplitude000
+@@ -24,6 +25,7 @@
+   - predict.applycal.normalization.correction=amplitude000
+   - predict.applycal.normalization.solset=sol000
+   - predict.usebeammodel=True
++  - predict.coefficients_path=/opt/mwa_full_embedded_element_pattern.h5
+   - predict.beam_interval=120
+   - predict.beammode=array_factor
+   - msout.storagemanager=Dysco
+diff -ruN a/rapthor/pipeline/steps/prepare_imaging_data.cwl b/rapthor/pipeline/steps/prepare_imaging_data.cwl
+--- a/rapthor/pipeline/steps/prepare_imaging_data.cwl	2026-09-30 14:04:03.628194771 +0000
++++ b/rapthor/pipeline/steps/prepare_imaging_data.cwl	2026-09-30 15:47:58.401638781 +0000
+@@ -19,7 +19,9 @@
+   - bdaavg.type=bdaaverager
+   - bdaavg.minchannels=1
+   - bdaavg.frequencybase=0.0
++  - applybeam.coefficients_path=/opt/mwa_full_embedded_element_pattern.h5
+   - applycal.type=applycal
++  - applycal.missingantennabehavior=flag
+   - applycal.correction=phase000
+   - applycal.slowgain.correction=amplitude000
+   - applycal.slowgain.solset=sol000
+diff -ruN a/rapthor/pipeline/steps/wsclean_image_facets.cwl b/rapthor/pipeline/steps/wsclean_image_facets.cwl
+--- a/rapthor/pipeline/steps/wsclean_image_facets.cwl	2026-09-30 14:04:03.628194771 +0000
++++ b/rapthor/pipeline/steps/wsclean_image_facets.cwl	2026-09-30 14:04:03.808186087 +0000
+@@ -13,7 +13,8 @@
+   - -no-update-model-required
+   - -local-rms
+   - -join-channels
+-  - -apply-facet-beam
++  - valueFrom: '/opt'
++    prefix: -mwa-path
+   - -log-time
+   - valueFrom: 'wgridder'
+     prefix: -gridder
+@@ -29,8 +30,6 @@
+     prefix: -auto-threshold
+   - valueFrom: '1.3'
+     prefix: -mgain-boosting
+-  - valueFrom: '120'
+-    prefix: -facet-beam-update
+   - valueFrom: 'briggs'
+     # Note: we have to set part of the 'weight' argument here and part below, as it has
+     # three parts (e.g., '-weight briggs -0.5'), and WSClean will not parse the value
+diff -ruN a/rapthor/pipeline/steps/wsclean_image_no_dde.cwl b/rapthor/pipeline/steps/wsclean_image_no_dde.cwl
+--- a/rapthor/pipeline/steps/wsclean_image_no_dde.cwl	2026-09-30 14:04:03.628194771 +0000
++++ b/rapthor/pipeline/steps/wsclean_image_no_dde.cwl	2026-09-30 14:04:03.808186087 +0000
+@@ -14,6 +14,8 @@
+   - -local-rms
+   - -join-channels
+   - -apply-primary-beam
++  - valueFrom: '/opt'
++    prefix: -mwa-path
+   - -log-time
+   - valueFrom: 'wgridder'
+     prefix: -gridder
+diff -ruN a/rapthor/pipeline/steps/wsclean_mpi_image_facets.cwl b/rapthor/pipeline/steps/wsclean_mpi_image_facets.cwl
+--- a/rapthor/pipeline/steps/wsclean_mpi_image_facets.cwl	2026-09-30 14:04:03.628194771 +0000
++++ b/rapthor/pipeline/steps/wsclean_mpi_image_facets.cwl	2026-09-30 14:04:03.808186087 +0000
+@@ -18,7 +18,8 @@
+   - -no-update-model-required
+   - -local-rms
+   - -join-channels
+-  - -apply-facet-beam
++  - valueFrom: '/opt'
++    prefix: -mwa-path
+   - -log-time
+   - valueFrom: 'wgridder'
+     prefix: -gridder
+@@ -34,8 +35,6 @@
+     prefix: -auto-threshold
+   - valueFrom: '1.3'
+     prefix: -mgain-boosting
+-  - valueFrom: '120'
+-    prefix: -facet-beam-update
+   - valueFrom: 'briggs'
+     # Note: we have to set part of the 'weight' argument here and part below, as it has
+     # three parts (e.g., '-weight briggs -0.5'), and WSClean will not parse the value
+diff -ruN a/rapthor/pipeline/steps/wsclean_mpi_image_no_dde.cwl b/rapthor/pipeline/steps/wsclean_mpi_image_no_dde.cwl
+--- a/rapthor/pipeline/steps/wsclean_mpi_image_no_dde.cwl	2026-09-30 14:04:03.628194771 +0000
++++ b/rapthor/pipeline/steps/wsclean_mpi_image_no_dde.cwl	2026-09-30 14:04:03.808186087 +0000
+@@ -19,6 +19,8 @@
+   - -local-rms
+   - -join-channels
+   - -apply-primary-beam
++  - valueFrom: '/opt'
++    prefix: -mwa-path
+   - -log-time
+   - valueFrom: 'wgridder'
+     prefix: -gridder
+diff -ruN a/rapthor/scripts/process_gains.py b/rapthor/scripts/process_gains.py
+--- a/rapthor/scripts/process_gains.py	2026-09-30 14:04:03.632194578 +0000
++++ b/rapthor/scripts/process_gains.py	2026-09-30 16:08:50.896598623 +0000
+@@ -169,6 +169,13 @@
+     npol = amps.shape[4]
+     if phasesoltab is not None:
+         phases = phasesoltab.val[:]
++        # The default reference station (index 0) may be a fully flagged
++        # tile (common for MWA), which would turn every referenced phase
++        # into NaN; use the first station with any unflagged solutions.
++        _w = phasesoltab.weight[:]
++        _ok = [s for s in range(_w.shape[2]) if np.any(_w[:, :, s] > 0)]
++        if _ok and not np.any(_w[:, :, ref_id] > 0):
++            ref_id = _ok[0]
+         for stat in range(nstat):
+             phases[:, :, stat, :, :] = phases[:, :, stat, :, :] - phases[:, :, ref_id, :, :]
+ 
+--- a/rapthor/scripts/filter_skymodel.py	1970-01-01 00:00:00.000000000 +0000
++++ b/rapthor/scripts/filter_skymodel.py	2026-09-30 21:36:16.868789583 +0000
+@@ -89,28 +89,83 @@
+     true_sky_skymodel = true_sky_skymodel if os.path.exists(true_sky_skymodel) else None
+     apparent_sky_skymodel = apparent_sky_skymodel if os.path.exists(apparent_sky_skymodel) else None
+ 
+-    nsources = filter_skymodel(
+-        flat_noise_image,
+-        true_sky_image,
+-        true_sky_skymodel,
+-        apparent_sky_skymodel,
+-        beam_ms=beamMS,
+-        vertices_file=vertices_file,
+-        input_bright_skymodel=bright_true_sky_skymodel,
+-        output_apparent_sky=f'{output_root}.apparent_sky.txt',
+-        output_true_sky=f'{output_root}.true_sky.txt',
+-        output_flat_noise_rms=f'{output_root}.flat_noise_rms.fits',
+-        output_true_rms=f'{output_root}.true_sky_rms.fits',
+-        output_catalog=f'{output_root}.source_catalog.fits',
+-        source_finder=source_finder,
+-        thresh_isl=threshisl,
+-        thresh_pix=threshpix,
+-        rmsbox=rmsbox,
+-        rmsbox_bright=rmsbox_bright,
+-        adaptive_thresh=adaptive_thresh,
+-        filter_by_mask=filter_by_mask,
+-        keep_mask=True,
+-        ncores=ncores)
++    # [rapthor-mwa: first-pass guard] lsmtool can raise (e.g. transfer_patches
++    # ValueError) when PyBDSF finds nothing usable on the Sun; treat as 0 sources
++    try:
++        nsources = filter_skymodel(
++            flat_noise_image,
++            true_sky_image,
++            true_sky_skymodel,
++            apparent_sky_skymodel,
++            beam_ms=beamMS,
++            vertices_file=vertices_file,
++            input_bright_skymodel=bright_true_sky_skymodel,
++            output_apparent_sky=f'{output_root}.apparent_sky.txt',
++            output_true_sky=f'{output_root}.true_sky.txt',
++            output_flat_noise_rms=f'{output_root}.flat_noise_rms.fits',
++            output_true_rms=f'{output_root}.true_sky_rms.fits',
++            output_catalog=f'{output_root}.source_catalog.fits',
++            source_finder=source_finder,
++            thresh_isl=threshisl,
++            thresh_pix=threshpix,
++            rmsbox=rmsbox,
++            rmsbox_bright=rmsbox_bright,
++            adaptive_thresh=adaptive_thresh,
++            filter_by_mask=filter_by_mask,
++            keep_mask=True,
++            ncores=ncores)
++    except Exception as e:  # noqa
++        print('[rapthor-mwa] first filter_skymodel pass failed:', e)
++        nsources = 0
++
++    # [rapthor-mwa: solar fallback] PyBDSF's adaptive rms boxes treat a bright,
++    # resolved Sun as "noise" and can find zero sources, which leaves no mask
++    # and crashes the next mosaic step.  Retry with large, non-adaptive rms
++    # boxes and lower thresholds; if still nothing, build a simple threshold
++    # mask and keep the unfiltered WSClean component model.
++    if nsources == 0:
++        print('[rapthor-mwa] PyBDSF found 0 sources; retrying with global rms boxes')
++        try:
++            nsources = filter_skymodel(
++                flat_noise_image, true_sky_image, true_sky_skymodel, apparent_sky_skymodel,
++                beam_ms=beamMS, vertices_file=vertices_file, input_bright_skymodel=bright_true_sky_skymodel,
++                output_apparent_sky=f'{output_root}.apparent_sky.txt', output_true_sky=f'{output_root}.true_sky.txt',
++                output_flat_noise_rms=f'{output_root}.flat_noise_rms.fits', output_true_rms=f'{output_root}.true_sky_rms.fits',
++                output_catalog=f'{output_root}.source_catalog.fits', source_finder=source_finder,
++                thresh_isl=3.0, thresh_pix=4.0, rmsbox=(1000, 300), rmsbox_bright=(1000, 300),
++                adaptive_thresh=1e9, filter_by_mask=filter_by_mask, keep_mask=True, ncores=ncores)
++        except Exception as e:  # noqa
++            print('[rapthor-mwa] retry failed:', e)
++            nsources = 0
++    if nsources == 0:
++        print('[rapthor-mwa] still 0 sources; writing threshold mask and unfiltered model')
++        import shutil
++        import numpy as np
++        from astropy.io import fits
++        with fits.open(flat_noise_image) as h:
++            data = h[0].data
++            hdr = h[0].header
++        d = data.squeeze()
++        finite = d[np.isfinite(d)]
++        med = np.median(finite)
++        mad = np.median(np.abs(finite - med)) * 1.4826
++        mask = np.zeros_like(data, dtype=np.float32)
++        mask[...] = (data > med + 5.0 * mad).astype(np.float32)
++        mask_file = os.path.basename(true_sky_image) + '.mask.fits'
++        fits.writeto(mask_file, mask, hdr, overwrite=True)
++        # rapthor needs a Patch column: group all components into one patch
++        import lsmtool
++        for src, dst in ((true_sky_skymodel, f'{output_root}.true_sky.txt'),
++                         (apparent_sky_skymodel, f'{output_root}.apparent_sky.txt')):
++            try:
++                sm = lsmtool.load(str(src))
++                sm.group('single', root='Sun')
++                sm.setPatchPositions(method='wmean')
++                sm.write(dst, clobber=True)
++            except Exception as e:  # noqa
++                print('[rapthor-mwa] lsmtool grouping failed, copying raw model:', e)
++                shutil.copy(src, dst)
++        print(f'[rapthor-mwa] mask {mask_file}: {int(mask.sum())} pixels above 5 sigma (mad {mad:.3g})')
+ 
+     # Write out number of sources found by PyBDSF for later use
+     output_diagnostics = f'{output_root}.image_diagnostics.json'
+--- a/rapthor/lib/miscellaneous.py	1970-01-01 00:00:00.000000000 +0000
++++ b/rapthor/lib/miscellaneous.py	2026-09-30 22:11:40.932821800 +0000
+@@ -666,8 +666,8 @@
+     sefd_freq_MHz = np.array([15, 30, 45, 60, 75, 120, 150, 180, 210, 240])
+     sefd_core_kJy = np.array([483, 89, 48, 32, 51, 3.6, 2.8, 3.2, 3.7, 4.1])
+     sefd_remote_kJy = np.array([483, 89, 48, 32, 51, 1.8, 1.4, 1.6, 1.8, 2.0])
+-    f_core = interp1d(sefd_freq_MHz, sefd_core_kJy)
+-    f_remote = interp1d(sefd_freq_MHz, sefd_remote_kJy)
++    f_core = interp1d(sefd_freq_MHz, sefd_core_kJy, bounds_error=False, fill_value=(sefd_core_kJy[0], sefd_core_kJy[-1]))  # [rapthor-mwa] clamp outside LOFAR SEFD table (MWA reaches 300 MHz)
++    f_remote = interp1d(sefd_freq_MHz, sefd_remote_kJy, bounds_error=False, fill_value=(sefd_remote_kJy[0], sefd_remote_kJy[-1]))  # [rapthor-mwa] clamp outside LOFAR SEFD table (MWA reaches 300 MHz)
+     sefd_core = f_core(mean_freq) * 1e3  # Jy
+     sefd_remote = f_remote(mean_freq) * 1e3  # Jy
+ 

@@ -1,0 +1,54 @@
+# Builds and publishes the two flavours of the lean Rapthor image through the
+# reusable build-rapthor-lean.yml:
+#   rapthor-lean : plain LOFAR runtime (py-rapthor ~mwa)
+#   rapthor-mwa  : py-rapthor +mwa (MWA beam support patch) + MWA beam file
+name: Build Rapthor Lean + MWA Containers
+
+on:
+  workflow_dispatch:
+    inputs:
+      skip_tests:
+        description: "Skip tests during build (1=yes, 0=no)"
+        required: false
+        default: "0"
+  pull_request:
+    paths:
+      - "rapthor-lean.Dockerfile"
+      - "docker/rapthor-lean/**"
+      - "spack-overlay/**"
+      - ".github/workflows/build-rapthor-lean.yml"
+      - ".github/workflows/build-rapthor-images.yml"
+  push:
+    branches:
+      - main
+      - numpy2
+    paths:
+      - "rapthor-lean.Dockerfile"
+      - "docker/rapthor-lean/**"
+      - "spack-overlay/**"
+      - ".github/workflows/build-rapthor-lean.yml"
+      - ".github/workflows/build-rapthor-images.yml"
+
+permissions:
+  contents: read
+  packages: write
+  actions: write
+
+jobs:
+  rapthor-lean:
+    name: rapthor-lean (no MWA)
+    uses: ./.github/workflows/build-rapthor-lean.yml
+    with:
+      image_name: rapthor-lean
+      rapthor_mwa: "0"
+      skip_tests: ${{ inputs.skip_tests || '0' }}
+    secrets: inherit
+
+  rapthor-mwa:
+    name: rapthor-mwa (+mwa variant)
+    uses: ./.github/workflows/build-rapthor-lean.yml
+    with:
+      image_name: rapthor-mwa
+      rapthor_mwa: "1"
+      skip_tests: ${{ inputs.skip_tests || '0' }}
+    secrets: inherit

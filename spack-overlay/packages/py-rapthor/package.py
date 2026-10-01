@@ -1,6 +1,6 @@
 from spack_repo.builtin.build_systems.python import PythonPackage
 
-from spack.package import depends_on, license, patch, version
+from spack.package import depends_on, license, patch, variant, version
 
 
 class PyRapthor(PythonPackage):
@@ -100,6 +100,24 @@ class PyRapthor(PythonPackage):
 
     version("master", branch="master", no_cache=True)
 
+    # MWA beam support (see mwa-beam-support-*.patch). Kept as a variant so the
+    # patched build gets its own spec hash: with concretizer reuse enabled, an
+    # unpatched py-rapthor already present in the install tree or a buildcache
+    # would otherwise be reused silently. Only offered for versions the patch
+    # is known to apply to.
+    variant(
+        "mwa",
+        default=False,
+        description="Apply the MWA beam support patch (EveryBeam MWA beam under /opt)",
+        when="@2.1.20260203:2.1.20260219",
+    )
+    variant(
+        "mwa",
+        default=False,
+        description="Apply the MWA beam support patch (EveryBeam MWA beam under /opt)",
+        when="@2.1.20260630",
+    )
+
     depends_on("python@3.9:", type=("build", "run"))
     depends_on("py-setuptools@45:70", type="build")
     depends_on("py-setuptools-scm@6.2:+toml", type="build")
@@ -171,6 +189,25 @@ class PyRapthor(PythonPackage):
     depends_on("wsclean@3.6.20250630:", type="run")
     depends_on("cfitsio+utils", type="run")  # Rapthor uses 'fpack' from cfitsio.
 
+    # MWA support (gated by +mwa):
+    # - DP3 applybeam/predict/ddecal and WSClean pointed at the MWA
+    #   full-embedded-element beam (/opt/mwa_full_embedded_element_pattern.h5,
+    #   WSClean -mwa-path /opt); facet-beam options dropped (unsupported for
+    #   MWA in EveryBeam); no beam inversion in prepare-imaging-data; missing
+    #   h5parm tolerated in the imaging operation.
+    # - applycal missingantennabehavior=flag: fully flagged tiles have no
+    #   h5parm entries.
+    # - process_gains.py references slow-gain phases to the first unflagged
+    #   station (station 0 is often a flagged MWA tile -> all-NaN phases).
+    # - filter_skymodel.py: when PyBDSF finds no sources on a bright resolved
+    #   Sun, retry with global rms boxes, then fall back to a 5-sigma threshold
+    #   mask and the unfiltered (single-patch) WSClean model.
+    # - calc_theoretical_noise: clamp the LOFAR SEFD table (ends at 240 MHz;
+    #   MWA reaches 300 MHz) instead of raising.
+    # One patch per rapthor source layout; both verified with `patch -p1
+    # --dry-run` against clean checkouts of the listed commits.
+    patch("mwa-beam-support-20260216.patch", when="+mwa @2.1.20260203:2.1.20260219")
+    patch("mwa-beam-support-20260630.patch", when="+mwa @2.1.20260630")
     patch("kubernetes-batch-system.patch", when="@2.1.20260630")
     patch("toil-runtime-options.patch", when="@2.1.20260630")
     # StreamFlow is an alternate CWL runner; SKA images use Toil/WES. Keep it

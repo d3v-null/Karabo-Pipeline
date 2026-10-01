@@ -146,6 +146,7 @@ RUN test -f /opt/karabo-spack/packages/py-toil/kubernetes-batch-system.patch && 
     test -f /opt/karabo-spack/packages/py-ska-sdp-ical/package.py && \
     test -f /opt/karabo-spack/packages/py-rapthor/kubernetes-batch-system.patch && \
     test -f /opt/karabo-spack/packages/py-rapthor/toil-runtime-options.patch && \
+    test -f /opt/karabo-spack/packages/py-rapthor/mwa-beam-support-20260630.patch && \
     test -f /opt/karabo-spack/packages/py-lsmtool/rapthor-facet-robustness.patch && \
     test -f /opt/karabo-spack/packages/dp3/cuda-solverbase-api.patch && \
     spack repo add /opt/karabo-spack
@@ -171,6 +172,10 @@ ARG EVERYBEAM_VERSION=0.8.3
 # 6.6.20260819 = DP3 f4403bae (v6.6-130); +fastpredict on x86, ~fastpredict on ARM.
 ARG DP3_VERSION=6.6.20260819
 ARG RAPTHOR_VERSION=2.1.20260630
+# RAPTHOR_MWA=1 builds the py-rapthor +mwa variant (MWA beam support patch) and
+# ships the MWA full-embedded-element beam under /opt; 0 gives the plain LOFAR
+# image. The two flavours are published as rapthor-lean and rapthor-mwa.
+ARG RAPTHOR_MWA=0
 
 ARG SPACK_TARGET=""
 ARG SPACK_BUILDCACHE_LOCAL=""
@@ -185,6 +190,9 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache-2026.07.2,sh
     --mount=type=secret,id=spack_oci_username,required=false \
     --mount=type=secret,id=spack_oci_password,required=false \
     mkdir -p /opt/{software,view,buildcache,spack-source-cache,spack-misc-cache}; \
+    RAPTHOR_MWA_VARIANT=""; \
+    if [ "${RAPTHOR_MWA}" = "1" ]; then RAPTHOR_MWA_VARIANT="+mwa"; fi; \
+    echo "RAPTHOR_MWA=${RAPTHOR_MWA} -> py-rapthor@${RAPTHOR_VERSION}${RAPTHOR_MWA_VARIANT}"; \
     arch=$(uname -m); \
     spack_target="${SPACK_TARGET}"; \
     if [ -z "${spack_target}" ]; then \
@@ -263,7 +271,7 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache-2026.07.2,sh
     spack add \
     'python@'$PYTHON_VERSION \
     'py-pip' \
-    'karabo.py-rapthor@'$RAPTHOR_VERSION \
+    "karabo.py-rapthor@${RAPTHOR_VERSION}${RAPTHOR_MWA_VARIANT}" \
     'py-ska-sdp-benchmark-monitor@0.1.0' \
     'py-ska-sdp-ical@main' \
     && \
@@ -365,6 +373,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 # this image replaced happened to supply it via /opt/conda/bin/node.
 RUN apt-get update && apt-get --no-install-recommends install -y \
       ca-certificates \
+      curl \
       libcap2-bin \
       libcurl4 \
       libltdl7 \
@@ -397,6 +406,23 @@ RUN view_store="$(echo /opt/._view/*)" && \
 # This matters: the demo's run-ical.sh calls `PYTHONPATH= python3 -c 'import
 # rapthor'` with PYTHONPATH deliberately cleared.
 ENV PATH="/opt/view/bin:${PATH}"
+
+# MWA flavour: the EveryBeam/DP3/WSClean MWA beam model the +mwa rapthor patch
+# points at (/opt/mwa_full_embedded_element_pattern.h5, WSClean -mwa-path /opt).
+# The plain flavour skips the 133 MB download and leaves the variable unset.
+ARG RAPTHOR_MWA=0
+RUN if [ "${RAPTHOR_MWA}" = "1" ]; then \
+      curl -fsSL -o /opt/mwa_full_embedded_element_pattern.h5 \
+        https://ws.mwatelescope.org/static/mwa_full_embedded_element_pattern.h5 && \
+      chmod 0644 /opt/mwa_full_embedded_element_pattern.h5 && \
+      test -s /opt/mwa_full_embedded_element_pattern.h5 && \
+      rapthor_dir="$(python3 -c 'import rapthor, os; print(os.path.dirname(rapthor.__file__))')" && \
+      grep -q coefficients_path "${rapthor_dir}/pipeline/steps/ddecal_solve.cwl" && \
+      grep -q -- '-mwa-path' "${rapthor_dir}/pipeline/steps/wsclean_image_no_dde.cwl" && \
+      echo "rapthor +mwa patch present, beam file installed"; \
+    else \
+      echo "RAPTHOR_MWA=0: plain LOFAR image"; \
+    fi
 
 # HTCondor pilots run the image under apptainer as `nobody`, and Toil runs
 # worker containers under the host uid; keep jovyan/1000 for drop-in parity
