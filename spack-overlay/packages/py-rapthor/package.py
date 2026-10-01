@@ -100,17 +100,11 @@ class PyRapthor(PythonPackage):
 
     version("master", branch="master", no_cache=True)
 
-    # MWA beam support (see mwa-beam-support-*.patch). Kept as a variant so the
+    # MWA beam support (see mwa-beam-support-20260630.patch). Kept as a variant so the
     # patched build gets its own spec hash: with concretizer reuse enabled, an
     # unpatched py-rapthor already present in the install tree or a buildcache
     # would otherwise be reused silently. Only offered for versions the patch
     # is known to apply to.
-    variant(
-        "mwa",
-        default=False,
-        description="Apply the MWA beam support patch (EveryBeam MWA beam under /opt)",
-        when="@2.1.20260203:2.1.20260219",
-    )
     variant(
         "mwa",
         default=False,
@@ -204,9 +198,8 @@ class PyRapthor(PythonPackage):
     #   mask and the unfiltered (single-patch) WSClean model.
     # - calc_theoretical_noise: clamp the LOFAR SEFD table (ends at 240 MHz;
     #   MWA reaches 300 MHz) instead of raising.
-    # One patch per rapthor source layout; both verified with `patch -p1
-    # --dry-run` against clean checkouts of the listed commits.
-    patch("mwa-beam-support-20260216.patch", when="+mwa @2.1.20260203:2.1.20260219")
+    # Verified with `patch -p1 --dry-run` against a clean checkout of 01a81e11
+    # (2.1.20260630); re-generate when moving to a newer rapthor commit.
     patch("mwa-beam-support-20260630.patch", when="+mwa @2.1.20260630")
     patch("kubernetes-batch-system.patch", when="@2.1.20260630")
     patch("toil-runtime-options.patch", when="@2.1.20260630")

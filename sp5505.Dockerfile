@@ -167,9 +167,9 @@ ARG SKLEARN_VERSION=1.5.2
 ARG TQDM_VERSION=4.66.3
 ARG PYUVDATA_VERSION=3.2.0
 # pyuvdata 3.2.0 supports numpy 2 + has MWA beam fix; previous: 2.4.2
-ARG BDSF_VERSION=1.13.0.20251010
-# 1.13.0.20251010 is the git commit from 2025-10-10 required by py-rapthor@2.0.20250915:
-# using this avoids having two py-bdsf versions in the environment view
+ARG BDSF_VERSION=1.13.0.20260409
+# 1.13.0.20260409 is the git commit required by py-rapthor@2.1.20260409:2.1.20260709;
+# pinning it avoids having two py-bdsf versions in the environment view
 ARG DASK_VERSION=2024.8.0
 # dask 2024+ supports numpy 2; previous: 2022.12.1
 ARG DUCC_VERSION=0.27
@@ -200,7 +200,11 @@ ARG EVERYBEAM_VERSION=0.8.3
 # The local Spack overlay provides EveryBeam 0.8.3 for DP3 6.6 MWA support.
 ARG DP3_VERSION=6.6
 # DP3 6.6 is compatible with EveryBeam 0.7.4 through 0.9.
-ARG RAPTHOR_VERSION=2.1.20260216
+ARG RAPTHOR_VERSION=2.1.20260630
+# Same rapthor as rapthor-lean/rapthor-jupyter/marimo. Built +mwa: the overlay's
+# MWA beam support patch (DP3/WSClean pointed at /opt/mwa_full_embedded_element_pattern.h5,
+# flagged-tile and solar-model robustness fixes), which this image's MWA_BEAM_FILE serves.
+ARG RAPTHOR_MWA_VARIANT=+mwa
 
 # Create Spack environment and install deps
 ARG SPACK_TARGET=""
@@ -365,7 +369,7 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     # aoflagger is transitive from DP3 \
     'dp3@'$DP3_VERSION'+idg' \
     "${IDG_SPEC}" \
-    'py-rapthor@'$RAPTHOR_VERSION \
+    'py-rapthor@'$RAPTHOR_VERSION$RAPTHOR_MWA_VARIANT \
     && \
     spack concretize --force && \
     # sanity check avoids 4 hours wasted build time for it to fail regenerating view
@@ -670,6 +674,13 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 
 ENV MWA_BEAM_FILE=/opt/mwa_full_embedded_element_pattern.h5
 RUN wget -O$MWA_BEAM_FILE http://ws.mwatelescope.org/static/mwa_full_embedded_element_pattern.h5 --progress=dot:mega
+# The +mwa rapthor variant points DP3/WSClean at exactly that beam file.
+RUN rapthor --version && \
+    rapthor_dir="$(python -c 'import rapthor, os; print(os.path.dirname(rapthor.__file__))')" && \
+    grep -q coefficients_path "${rapthor_dir}/pipeline/steps/ddecal_solve.cwl" && \
+    grep -q -- '-mwa-path' "${rapthor_dir}/pipeline/steps/wsclean_image_no_dde.cwl" && \
+    grep -q 'rapthor-mwa' "${rapthor_dir}/scripts/filter_skymodel.py" && \
+    echo "rapthor +mwa patch present"
 
 # This fixture is EveryBeam's upstream MWA regression MS.  The probe uses the
 # same PointResponse::Response(kFull, station, frequency, ITRF direction)
