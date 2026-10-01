@@ -190,6 +190,11 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache-2026.07.2,sh
     --mount=type=secret,id=spack_oci_username,required=false \
     --mount=type=secret,id=spack_oci_password,required=false \
     mkdir -p /opt/{software,view,buildcache,spack-source-cache,spack-misc-cache}; \
+    # Spack caches per-repo package indexes (incl. the patch sha256 index) in the
+    # misc cache and only invalidates them on package.py mtime. Editing a .patch
+    # file alone leaves a stale index and concretization fails with "Couldn't
+    # find patch for package ... with sha256". Rebuilding the indexes is cheap.
+    rm -rf /opt/spack-misc-cache/*; \
     RAPTHOR_MWA_VARIANT=""; \
     if [ "${RAPTHOR_MWA}" = "1" ]; then RAPTHOR_MWA_VARIANT="+mwa"; fi; \
     echo "RAPTHOR_MWA=${RAPTHOR_MWA} -> py-rapthor@${RAPTHOR_VERSION}${RAPTHOR_MWA_VARIANT}"; \

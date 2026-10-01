@@ -218,6 +218,11 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     --mount=type=secret,id=spack_oci_password,required=false \
     set -o pipefail; \
     mkdir -p /opt/{software,view,buildcache,spack-source-cache,spack-misc-cache}; \
+    # Spack caches per-repo package indexes (incl. the patch sha256 index) in the
+    # misc cache and only invalidates them on package.py mtime. Editing a .patch
+    # file alone leaves a stale index and concretization fails with "Couldn't
+    # find patch for package ... with sha256". Rebuilding the indexes is cheap.
+    rm -rf /opt/spack-misc-cache/*; \
     arch=$(uname -m); \
     spack_target="${SPACK_TARGET}"; \
     if [ -z "${spack_target}" ]; then \

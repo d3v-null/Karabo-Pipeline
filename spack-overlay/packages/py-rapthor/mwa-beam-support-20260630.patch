@@ -1,3 +1,75 @@
+diff -ruN stock_lean/rapthor/lib/field.py mwa_lean/rapthor/lib/field.py
+--- stock_lean/rapthor/lib/field.py	1970-01-01 00:00:00.000000000 +0000
++++ mwa_lean/rapthor/lib/field.py	2026-10-01 06:30:37.473250343 +0000
+@@ -525,6 +525,23 @@
+                 skymodel_apparent_sky = lsmtool.load(str(skymodel_apparent_sky),
+                                                      beamMS=self.beam_ms_filename)
+ 
++        # [rapthor-mwa] lsmtool projects the sources with a TAN projection centred
++        # on one of them when grouping and setting patch positions, which gives
++        # NaN positions for models that include very distant sources (e.g., A-team
++        # sources in the far sidelobes of hyperdrive srclist-by-beam output).
++        far_source_limit_deg = 45.0
++        try:
++            dist_deg = skymodel_true_sky.getDistance(self.ra, self.dec)
++            nfar = int(np.sum(dist_deg > far_source_limit_deg))
++        except Exception:  # noqa
++            nfar = 0
++        if nfar > 0:
++            self.log.warning('{0} source(s) in the input sky model are more than {1} deg from '
++                             'the phase centre (max {2:.1f} deg). Patch positions may come out '
++                             'as NaN and calibration will fail with "Error in reading position '
++                             'nan"; consider removing them (e.g., with lsmtool select by '
++                             'distance)'.format(nfar, far_source_limit_deg, float(np.max(dist_deg))))
++
+         # Check if any sky models included in rapthor are within the region of the
+         # input sky model. If so, concatenate them with the input sky model
+         if self.parset['calibration_specific']['use_included_skymodels']:
+@@ -570,7 +587,16 @@
+         # Make a source sky model, used for source avoidance
+         if find_sources:
+             self.log.info('Identifying sources...')
+-            source_skymodel.group('threshold', FWHM='40.0 arcsec', threshold=0.05)
++            _pregroup = source_skymodel.copy()  # [rapthor-mwa]
++            try:
++                source_skymodel.group('threshold', FWHM='40.0 arcsec', threshold=0.05)
++            except Exception as e:  # noqa  [rapthor-mwa]
++                # lsmtool's threshold raster fails (NaN pixel indices) for wide
++                # MWA fields straddling RA=0, and leaves the model ungrouped;
++                # restore the copy so the input patches are used instead
++                self.log.warning('Threshold grouping of the source sky model failed '
++                                 '({}); keeping the input patches'.format(e))
++                source_skymodel = _pregroup
+         source_skymodel.write(self.source_skymodel_file, clobber=True)
+         self.source_skymodel = source_skymodel.copy()  # save and make copy before grouping
+ 
+@@ -2000,12 +2026,20 @@
+             sector_bounds_width_ra = abs((bounds_xy[0] - bounds_xy[2]) * wcs.wcs.cdelt[0])  # deg
+             sector_bounds_width_dec = abs((bounds_xy[3] - bounds_xy[1]) * wcs.wcs.cdelt[1])  # deg
+ 
+-            facets = read_skymodel(self.calibration_skymodel_file,
+-                                   self.sector_bounds_mid_ra,
+-                                   self.sector_bounds_mid_dec,
+-                                   max(skymodel_bounds_width_ra, sector_bounds_width_ra),
+-                                   max(skymodel_bounds_width_dec, sector_bounds_width_dec),
+-                                   wcs=wcs)
++            try:  # [rapthor-mwa]
++                facets = read_skymodel(self.calibration_skymodel_file,
++                                       self.sector_bounds_mid_ra,
++                                       self.sector_bounds_mid_dec,
++                                       max(skymodel_bounds_width_ra, sector_bounds_width_ra),
++                                       max(skymodel_bounds_width_dec, sector_bounds_width_dec),
++                                       wcs=wcs)
++            except Exception as e:  # noqa
++                # For MWA-sized fields the facet bounding box can extend beyond
++                # the SIN projection, giving NaN vertices and an invalid polygon.
++                # The overview plot is diagnostic only, so skip the facets.
++                self.log.warning('Could not derive calibration facets for the field '
++                                 'overview plot ({}); skipping them'.format(e))
++                facets = []
+             for i, facet in enumerate(facets):
+                 facet_patch = facet.get_matplotlib_patch(wcs=wcs)
+                 label = 'Calibration facets' if i == 0 else None  # first only to avoid multiple lines in legend
 diff -ruN stock_lean/rapthor/lib/miscellaneous.py mwa_lean/rapthor/lib/miscellaneous.py
 --- stock_lean/rapthor/lib/miscellaneous.py	1970-01-01 00:00:00.000000000 +0000
 +++ mwa_lean/rapthor/lib/miscellaneous.py	2026-10-01 03:07:03.568690860 +0000
@@ -40,27 +112,44 @@ diff -ruN stock_lean/rapthor/operations/image.py mwa_lean/rapthor/operations/ima
          #
 diff -ruN stock_lean/rapthor/pipeline/steps/ddecal_solve.cwl mwa_lean/rapthor/pipeline/steps/ddecal_solve.cwl
 --- stock_lean/rapthor/pipeline/steps/ddecal_solve.cwl	1970-01-01 00:00:00.000000000 +0000
-+++ mwa_lean/rapthor/pipeline/steps/ddecal_solve.cwl	2026-10-01 03:07:03.616688037 +0000
-@@ -18,6 +18,7 @@
-   - applybeam.beammode=array_factor
++++ mwa_lean/rapthor/pipeline/steps/ddecal_solve.cwl	2026-10-01 06:53:38.776317103 +0000
+@@ -15,9 +15,10 @@
+ arguments:
+   - msout=
+   - applybeam.type=applybeam
+-  - applybeam.beammode=array_factor
++  - applybeam.beammode=full  # [rapthor-mwa] array_factor takes one element of the MWA full-Jones beam (~1e-3): model vanishes
    - applybeam.usemodeldata=True
    - applybeam.invert=False
 +  - applybeam.coefficients_path=/opt/mwa_full_embedded_element_pattern.h5
    - applycal.type=applycal
    - applycal.normalization.correction=amplitude000
    - applycal.normalization.solset=sol000
-@@ -27,6 +28,7 @@
+@@ -27,12 +28,15 @@
    - predict.type=wgridderpredict
    - solve1.type=ddecal
    - solve1.usebeammodel=True
 +  - solve1.coefficients_path=/opt/mwa_full_embedded_element_pattern.h5
    - solve1.beam_interval=120
-   - solve1.beammode=array_factor
+-  - solve1.beammode=array_factor
++  - solve1.beammode=full  # [rapthor-mwa] array_factor takes one element of the MWA full-Jones beam (~1e-3): model vanishes
++  - solve1.usefastpredict=False  # [rapthor-mwa] DP3 FastPredict + EveryBeam MWA beam races on the HDF5 coefficients file with >1 thread
    - solve1.initialsolutions.missingantennabehavior=unit
+   - solve1.applycal.normalization.correction=amplitude000
+   - solve1.applycal.normalization.solset=sol000
+   - solve2.type=ddecal
++  - solve2.usefastpredict=False  # [rapthor-mwa]
+   - solve2.initialsolutions.missingantennabehavior=unit
+   - solve2.applycal.normalization.correction=amplitude000
+   - solve2.applycal.normalization.solset=sol000
 diff -ruN stock_lean/rapthor/pipeline/steps/predict_model_data.cwl mwa_lean/rapthor/pipeline/steps/predict_model_data.cwl
 --- stock_lean/rapthor/pipeline/steps/predict_model_data.cwl	1970-01-01 00:00:00.000000000 +0000
-+++ mwa_lean/rapthor/pipeline/steps/predict_model_data.cwl	2026-10-01 03:07:03.620687803 +0000
-@@ -17,6 +17,7 @@
++++ mwa_lean/rapthor/pipeline/steps/predict_model_data.cwl	2026-10-01 06:53:38.776317103 +0000
+@@ -14,9 +14,11 @@
+ 
+ arguments:
+   - msout.overwrite=True
++  - msout.uvwcompression=False  # [rapthor-mwa] casacore UvwStMan rejects uvfits-derived MWA UVWs (not antenna-consistent to its tolerance)
    - steps=[predict]
    - predict.operation=replace
    - predict.applycal.correction=phase000
@@ -68,18 +157,28 @@ diff -ruN stock_lean/rapthor/pipeline/steps/predict_model_data.cwl mwa_lean/rapt
    - predict.applycal.fastphase.correction=phase000
    - predict.applycal.fastphase.solset=sol000
    - predict.applycal.slowgain.correction=amplitude000
-@@ -24,6 +25,7 @@
+@@ -24,8 +26,10 @@
    - predict.applycal.normalization.correction=amplitude000
    - predict.applycal.normalization.solset=sol000
    - predict.usebeammodel=True
 +  - predict.coefficients_path=/opt/mwa_full_embedded_element_pattern.h5
    - predict.beam_interval=120
-   - predict.beammode=array_factor
+-  - predict.beammode=array_factor
++  - predict.beammode=full  # [rapthor-mwa] array_factor takes one element of the MWA full-Jones beam (~1e-3): model vanishes
++  - predict.usefastpredict=False  # [rapthor-mwa] DP3 FastPredict + EveryBeam MWA beam races on the HDF5 coefficients file with >1 thread
    - msout.storagemanager=Dysco
+   - msout.storagemanager.databitrate=0  # don't compress data, as they are noiseless
+   - msout.antennacompression=False
 diff -ruN stock_lean/rapthor/pipeline/steps/prepare_imaging_data.cwl mwa_lean/rapthor/pipeline/steps/prepare_imaging_data.cwl
 --- stock_lean/rapthor/pipeline/steps/prepare_imaging_data.cwl	1970-01-01 00:00:00.000000000 +0000
-+++ mwa_lean/rapthor/pipeline/steps/prepare_imaging_data.cwl	2026-10-01 03:07:03.620687803 +0000
-@@ -19,7 +19,9 @@
++++ mwa_lean/rapthor/pipeline/steps/prepare_imaging_data.cwl	2026-10-01 06:46:35.941877433 +0000
+@@ -14,12 +14,15 @@
+ 
+ arguments:
+   - msout.overwrite=True
++  - msout.uvwcompression=False  # [rapthor-mwa] casacore UvwStMan rejects uvfits-derived MWA UVWs (not antenna-consistent to its tolerance)
+   - shift.type=phaseshifter
+   - avg.type=squash
    - bdaavg.type=bdaaverager
    - bdaavg.minchannels=1
    - bdaavg.frequencybase=0.0
@@ -157,6 +256,17 @@ diff -ruN stock_lean/rapthor/pipeline/steps/wsclean_mpi_image_no_dde.cwl mwa_lea
    - -log-time
    - valueFrom: 'wgridder'
      prefix: -gridder
+diff -ruN stock_lean/rapthor/scripts/concat_ms.py mwa_lean/rapthor/scripts/concat_ms.py
+--- stock_lean/rapthor/scripts/concat_ms.py	1970-01-01 00:00:00.000000000 +0000
++++ mwa_lean/rapthor/scripts/concat_ms.py	2026-10-01 06:46:35.941877433 +0000
+@@ -181,6 +181,7 @@
+         "msin.missingdata=True",
+         "msout.writefullresflag=False",
+         "msout.storagemanager=Dysco",
++        "msout.uvwcompression=False",  # [rapthor-mwa] casacore UvwStMan rejects uvfits-derived MWA UVWs (not antenna-consistent to its tolerance)
+     ]
+     return cmd
+ 
 diff -ruN stock_lean/rapthor/scripts/filter_skymodel.py mwa_lean/rapthor/scripts/filter_skymodel.py
 --- stock_lean/rapthor/scripts/filter_skymodel.py	1970-01-01 00:00:00.000000000 +0000
 +++ mwa_lean/rapthor/scripts/filter_skymodel.py	2026-10-01 03:07:03.588689684 +0000
