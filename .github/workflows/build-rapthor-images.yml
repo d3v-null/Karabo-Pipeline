@@ -1,5 +1,5 @@
 # Builds and publishes the two flavours of the lean Rapthor image through the
-# reusable build-rapthor-lean.yml:
+# reusable build-rapthor-lean.yml, lean first, then mwa reusing its caches:
 #   rapthor-lean : plain LOFAR runtime (py-rapthor ~mwa)
 #   rapthor-mwa  : py-rapthor +mwa (MWA beam support patch) + MWA beam file
 name: Build Rapthor Lean + MWA Containers
@@ -44,11 +44,16 @@ jobs:
       skip_tests: ${{ inputs.skip_tests || '0' }}
     secrets: inherit
 
+  # Sequential on purpose: the two images differ only in py-rapthor (+mwa), so
+  # building rapthor-lean first populates the shared Spack OCI buildcache and
+  # its Docker layer cache; rapthor-mwa then only compiles py-rapthor +mwa.
   rapthor-mwa:
     name: rapthor-mwa (+mwa variant)
+    needs: rapthor-lean
     uses: ./.github/workflows/build-rapthor-lean.yml
     with:
       image_name: rapthor-mwa
       rapthor_mwa: "1"
+      cache_from_image: rapthor-lean
       skip_tests: ${{ inputs.skip_tests || '0' }}
     secrets: inherit

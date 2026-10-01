@@ -27,6 +27,11 @@ on:
         required: false
         default: "0"
         type: string
+      cache_from_image:
+        description: "Extra image whose :buildcache-<platform> layer cache to read (e.g. rapthor-lean when building rapthor-mwa)"
+        required: false
+        default: ""
+        type: string
 
 env:
   REGISTRY: ghcr.io
@@ -141,6 +146,7 @@ jobs:
             spack_oci_password=${{ github.token }}
           cache-from: |
             type=registry,ref=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:buildcache-${{ env.PLATFORM_PAIR }}
+            ${{ inputs.cache_from_image != '' && format('type=registry,ref={0}/{1}/{2}:buildcache-{3}', env.REGISTRY, github.repository_owner, inputs.cache_from_image, env.PLATFORM_PAIR) || '' }}
           cache-to: |
             type=registry,ref=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:buildcache-${{ env.PLATFORM_PAIR }},mode=max,compression=zstd,compression-level=3
 
