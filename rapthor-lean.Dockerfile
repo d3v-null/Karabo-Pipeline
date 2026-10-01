@@ -210,6 +210,11 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache-2026.07.2,sh
     echo "SPACK_TARGET=${spack_target} <- (uname -m)=$arch"; \
     spack config add "config:install_tree:root:/opt/software"; \
     spack config add "concretizer:unify:when_possible"; \
+    # Reused binaries keep the patches they were built with, so a changed
+    # mwa-beam-support patch would be silently ignored if a +mwa py-rapthor
+    # binary is already in the buildcache. py-rapthor is a cheap pure-python
+    # build: always concretize it fresh (its deps are still reused).
+    spack config add "concretizer:reuse:exclude:[py-rapthor]"; \
     spack config add "config:source_cache:/opt/spack-source-cache"; \
     spack config add "config:misc_cache:/opt/spack-misc-cache"; \
     spack config add "packages:casacore:variants: +data+python"; \
@@ -282,6 +287,17 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache-2026.07.2,sh
     && \
     rm -f /opt/spack_env/spack.lock && \
     spack concretize --force && \
+    # Guard against stale reused py-rapthor binaries: the lock must reference
+    # the sha256 of the patch file currently in the recipe.
+    python3 -c "import json,hashlib,os,sys;\
+    d=json.load(open('/opt/spack_env/spack.lock'));\
+    r=[s for s in d['concrete_specs'].values() if s.get('name')=='py-rapthor'];\
+    pkgdir=next(p for p in ['/opt/karabo-spack/packages/py-rapthor','/opt/karabo-spack/packages/py_rapthor'] if os.path.isdir(p));\
+    want={hashlib.sha256(open(os.path.join(pkgdir,f),'rb').read()).hexdigest() for f in os.listdir(pkgdir) if f.startswith('mwa-beam-support')};\
+    have=set(r[0].get('parameters',{}).get('patches',[])) if r else set();\
+    mwa=bool(r[0].get('parameters',{}).get('mwa',False)) if r else False;\
+    print('py-rapthor +mwa' if mwa else 'py-rapthor ~mwa', 'patches in lock:', sorted(have));\
+    (print('ERROR: +mwa py-rapthor concretized with a stale mwa-beam-support patch; recipe has', sorted(want)) or sys.exit(1)) if (mwa and not (want & have)) else None" && \
     python3 -c "import json,sys;d=json.load(open('/opt/spack_env/spack.lock'));\
     t=['py-rapthor','py-numpy','py-scipy','py-matplotlib','py-astropy',\
        'py-casacore','casacore','py-h5py','py-pandas','py-xarray',\
@@ -423,6 +439,9 @@ RUN if [ "${RAPTHOR_MWA}" = "1" ]; then \
       test -s /opt/mwa_full_embedded_element_pattern.h5 && \
       rapthor_dir="$(python3 -c 'import rapthor, os; print(os.path.dirname(rapthor.__file__))')" && \
       grep -q coefficients_path "${rapthor_dir}/pipeline/steps/ddecal_solve.cwl" && \
+      grep -q 'usefastpredict=False' "${rapthor_dir}/pipeline/steps/ddecal_solve.cwl" && \
+      grep -q 'beammode=full' "${rapthor_dir}/pipeline/steps/ddecal_solve.cwl" && \
+      grep -q 'uvwcompression=False' "${rapthor_dir}/pipeline/steps/prepare_imaging_data.cwl" && \
       grep -q -- '-mwa-path' "${rapthor_dir}/pipeline/steps/wsclean_image_no_dde.cwl" && \
       echo "rapthor +mwa patch present, beam file installed"; \
     else \
