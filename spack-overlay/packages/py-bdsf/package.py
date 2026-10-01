@@ -27,10 +27,28 @@ class PyBdsf(PythonPackage):
         "1.13.0.20260409",
         commit="5b0bc9cd7e0c76190c0bbe8b88665c63f741b6a0",
     )
+    # Same upstream commit as 1.13.0.20260409 but with the fork-context backport
+    # below. A distinct version is needed because, with concretizer reuse,
+    # Spack happily reuses a buildcache binary of an identical spec and never
+    # re-checks the recipe's patch list; rapthor's "@1.13.0.20260409" pin is
+    # satisfied by this version (Spack prefix semantics).
+    version(
+        "1.13.0.20260409.1",
+        commit="5b0bc9cd7e0c76190c0bbe8b88665c63f741b6a0",
+    )
 
     patch(
         "drop-python2-terminal-size-backport.patch",
-        when="@1.13.0.20260409",
+        when="@1.13.0.20260409:1.13.0.20260409.1",
+    )
+    # Backport of upstream 1b6e0a04 ("Use fork-style multiprocessing context",
+    # 2026-06-12): 1.13.0.20260409 calls multiprocessing.set_start_method('fork')
+    # at import time, which raises "context has already been set" whenever
+    # anything (dask, karabo, pytest plugins) imported bdsf after fixing the
+    # start method. Uses an explicit fork context instead.
+    patch(
+        "fork-multiprocessing-context.patch",
+        when="@1.13.0.20260409:1.13.0.20260409.1",
     )
     version(
         "1.12.0",

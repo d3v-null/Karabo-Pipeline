@@ -167,7 +167,7 @@ ARG SKLEARN_VERSION=1.5.2
 ARG TQDM_VERSION=4.66.3
 ARG PYUVDATA_VERSION=3.2.0
 # pyuvdata 3.2.0 supports numpy 2 + has MWA beam fix; previous: 2.4.2
-ARG BDSF_VERSION=1.13.0.20260409
+ARG BDSF_VERSION=1.13.0.20260409.1
 # 1.13.0.20260409 is the git commit required by py-rapthor@2.1.20260409:2.1.20260709;
 # pinning it avoids having two py-bdsf versions in the environment view
 ARG DASK_VERSION=2024.8.0
@@ -705,11 +705,13 @@ RUN python -c "import ska_sdp_func_python" || exit 1 && \
 import importlib, os, sys
 
 checks = [
+    # bdsf first: PyBDSF >= 1.13.0.20260409 sets the multiprocessing start method on
+    # import and raises 'context has already been set' if another import got there first
+    ('bdsf','1.10'),
     # ARatmospy uses np.float_ removed in NumPy 2; skip until upstream fixes it
     # ('ARatmospy','1.0'),
     ('astropy','5.1'),
     ('astropy_healpix','1.0'),
-    ('bdsf','1.10'),
     ('dask_mpi','0.0'),
     ('dask','2022.10'),
     ('distributed','2022.10'),
