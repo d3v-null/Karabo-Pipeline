@@ -26,6 +26,11 @@ class Everybeam(CMakePackage):
     # so expose the equivalent ITRF-direction API for the integration probe.
     patch("enable-mwa-python-bindings.patch", when="@0.8.3")
     patch("install-python-metadata.patch", when="@0.8.3 +python")
+    # The MWA ITRF response held Dp3's predict mutex for the whole beam
+    # evaluation and recomputed the identical tile beam for every station, and
+    # the spherical-wave modes were cached for one frequency only. Multithreaded
+    # predicts with the MWA beam ran on ~1.5 cores, mostly in futex system time.
+    patch("mwa-beam-thread-scaling.patch", when="@0.8.3")
 
     variant("python", default=True, description="Enable Python support")
 

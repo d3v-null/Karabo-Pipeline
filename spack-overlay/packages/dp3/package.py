@@ -48,6 +48,12 @@ class Dp3(CMakePackage, CudaPackage):
         when="@6.6:+cuda",
     )
 
+    # Source-parallel predict allocated a full model cube per thread for every
+    # time step (~200 MB each for MWA) and summed them one thread at a time
+    # under a single mutex. With 64 threads that is mostly kernel time and
+    # lock wait; pool the buffers and reduce in parallel over baselines.
+    patch("onepredict-parallel-reduction.patch", when="@6.6.20260819")
+
     variant("python", default=True, description="Enable Python support")
     variant("idg", default=False, description="Enable IDG support")
     # Release 6.6 defaults USE_FAST_PREDICT=OFF; later snapshots default ON.
