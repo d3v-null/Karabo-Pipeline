@@ -20,14 +20,23 @@ class Hyperdrive(Package, ROCmPackage, CudaPackage):
 
     # Versions
     version("main", branch="main")
+    # bmetrics branch tip (2026-10-17): 0.8.1 + bmetrics subcommand.
+    version("0.8.1.20261017", commit="a75deeb73dd717dcb6bcaf6e0c774e2a4f6521f9")
     version("0.7.0", tag="v0.7.0")
 
     # Variants
     variant("cuda", default=False, description="Enable CUDA support for GPU acceleration")
     variant("hip", default=False, description="Enable HIP support for AMD GPU acceleration")
+    variant(
+        "bmetrics",
+        default=True,
+        when="@0.8.1.20261017",
+        description="Build the bmetrics subcommand (links aoflagger)",
+    )
 
     # Build dependencies
     depends_on("rust@1.64:", type="build")
+    depends_on("rust@1.85:", type="build", when="@0.8:")
     depends_on("pkgconfig", type="build")
 
     # Fontconfig and its dependencies for yeslogic-fontconfig-sys
@@ -42,6 +51,8 @@ class Hyperdrive(Package, ROCmPackage, CudaPackage):
     depends_on("hdf5", type=("build", "link", "run"))
     # hdf5~mpi is likely preferred if mpi is not supported/needed, matching hyperbeam
     depends_on("hdf5~mpi", type=("build", "link", "run"))
+
+    depends_on("aoflagger", when="+bmetrics", type=("build", "link", "run"))
 
     # GPU dependencies
     depends_on("cuda@11.0:", when="+cuda", type=("build", "link", "run"))
@@ -79,6 +90,10 @@ class Hyperdrive(Package, ROCmPackage, CudaPackage):
                 # Some packages might put .pc files in lib64 or share
                 env.prepend_path("PKG_CONFIG_PATH", join_path(self.spec[dep].prefix, "lib64", "pkgconfig"))
                 env.prepend_path("PKG_CONFIG_PATH", join_path(self.spec[dep].prefix, "share", "pkgconfig"))
+
+        if self.spec.satisfies("+bmetrics"):
+            env.set("AOFLAGGER_INCLUDE_DIR", self.spec["aoflagger"].prefix.include)
+            env.set("AOFLAGGER_LIB", self.spec["aoflagger"].libs.directories[0])
 
         # HIP support
         if self.spec.satisfies("+hip"):
@@ -159,5 +174,7 @@ class Hyperdrive(Package, ROCmPackage, CudaPackage):
             features.append("hip")
         if self.spec.satisfies("+cuda"):
             features.append("cuda")
+        if self.spec.satisfies("+bmetrics"):
+            features.append("bmetrics")
         return features
 

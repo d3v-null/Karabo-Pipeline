@@ -200,6 +200,8 @@ ARG EVERYBEAM_VERSION=0.8.3
 # The local Spack overlay provides EveryBeam 0.8.3 for DP3 6.6 MWA support.
 ARG DP3_VERSION=6.6
 # DP3 6.6 is compatible with EveryBeam 0.7.4 through 0.9.
+ARG HYPERDRIVE_VERSION=0.8.1.20261017
+# hyperdrive bmetrics branch; pinned so concretizer reuse doesn't keep a cached 0.7.0.
 ARG RAPTHOR_VERSION=2.1.20260630
 # Same rapthor as rapthor-lean/rapthor-jupyter/marimo. Built +mwa: the overlay's
 # MWA beam support patch (DP3/WSClean pointed at /opt/mwa_full_embedded_element_pattern.h5,
@@ -320,7 +322,7 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     fi; \
     OSKAR_SPEC="oskar@${OSKAR_VERSION}+python~openmp${CUDA_SUFFIX}"; \
     HYPERBEAM_SPEC="hyperbeam+python${CUDA_SUFFIX}"; \
-    HYPERDRIVE_SPEC="hyperdrive${CUDA_SUFFIX}"; \
+    HYPERDRIVE_SPEC="hyperdrive@${HYPERDRIVE_VERSION}${CUDA_SUFFIX}"; \
     spack add \
     'python@'$PYTHON_VERSION \
     'py-pip' \
