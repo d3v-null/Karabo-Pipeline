@@ -359,8 +359,8 @@ jobs:
             for p in /opt/conda /usr/share/texlive /usr/bin/pandoc /opt/spack; do
               if [ -e "$p" ]; then echo "regression: $p is back in the image" >&2; exit 1; fi
             done
-            # /opt/view must be a symlink into /opt/._view, not a second copy.
-            test -L /opt/view || { echo "regression: /opt/view is not a symlink (view duplicated)" >&2; exit 1; }
+            # Spack 1.2 views are a real dir; a leftover /opt/._view store would mean it ships twice.
+            test -d /opt/view/bin && ! test -e /opt/._view || { echo "regression: /opt/view missing or /opt/._view also shipped" >&2; exit 1; }
             for m in marimo jupyterlab notebook jupyterhub; do
               if python3 -c "import $m" 2>/dev/null; then
                 echo "regression: $m is installed in the lean image" >&2; exit 1

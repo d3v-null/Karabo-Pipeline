@@ -254,7 +254,7 @@ jobs:
           docker run --rm "${IMAGE_REF}" marimo --version
           docker run --rm "${IMAGE_REF}" python -c "import jupyterhub, marimo; print('Marimo and JupyterHub imports successful')"
           docker run --rm "${IMAGE_REF}" python -c "import numpy; assert numpy.__version__.startswith('2.'), numpy.__version__; print('numpy', numpy.__version__)"
-          docker run --rm "${IMAGE_REF}" python -c "import scipy; assert scipy.__version__.startswith('1.14'), scipy.__version__; print('scipy', scipy.__version__)"
+          docker run --rm "${IMAGE_REF}" python -c "import scipy; assert scipy.__version__.startswith('1.17'), scipy.__version__; print('scipy', scipy.__version__)"
           docker run --rm "${IMAGE_REF}" python -c "import scipy.integrate as si; assert hasattr(si, 'trapz'), 'trapz shim missing (healpy/pspec)'"
           docker run --rm "${IMAGE_REF}" python -c "import healpy; print('healpy', healpy.__version__)"
           docker run --rm "${IMAGE_REF}" python -c "import ps_eor; from ps_eor import ml_gpr, datacube, psutil, pspec; print('ps_eor+ml_gpr+pspec OK', ps_eor.__version__)"
