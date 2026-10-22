@@ -453,13 +453,35 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache-2026.10.3,sh
     # profiler, compute-sanitizer). Together these accounted for several
     # GB in the final image without being used by anything at runtime.
     find /opt/software -name '*.a' -delete && \
+    # View first: it must be generated while every prefix is still present.
+    spack env view regenerate && \
     if [ -n "${CUDA_ARCH}" ]; then \
         CUDA_ROOT=$(spack location -i cuda) && \
         rm -rf "${CUDA_ROOT}"/nsight-compute-* "${CUDA_ROOT}"/nsight-systems-* \
                "${CUDA_ROOT}"/libnvvp "${CUDA_ROOT}"/extras \
-               "${CUDA_ROOT}"/nsightee_plugins "${CUDA_ROOT}"/compute-sanitizer; \
+               "${CUDA_ROOT}"/nsightee_plugins "${CUDA_ROOT}"/compute-sanitizer \
+               "${CUDA_ROOT}"/bin "${CUDA_ROOT}"/gds* "${CUDA_ROOT}"/src "${CUDA_ROOT}"/tools \
+               "${CUDA_ROOT}"/targets/*/include && \
+        # Runtime libs: only cufft/cudart/nvrtc/nvToolsExt are linked by anything
+        # here (ldd over /opt/software); nvrtc dlopens its builtins, numba.cuda
+        # uses nvvm/. cuBLAS(Lt)/cuSPARSE/cuSOLVER/NPP/... are ~1.4 GB unused.
+        find "${CUDA_ROOT}"/targets/*/lib -maxdepth 1 \( -type f -o -type l \) \
+            ! -name 'libcudart.so*' ! -name 'libcufft.so*' ! -name 'libcufftw.so*' \
+            ! -name 'libnvrtc*' ! -name 'libnvToolsExt.so*' ! -name 'libnvJitLink.so*' -delete; \
     fi && \
-    spack env view regenerate && \
+    # Build/link-only prefixes. llvm (4.2 GB) is linked statically into
+    # py-llvmlite, numba JITs fine without it. cmake is a build dep; font-util is
+    # X11 bitmap fonts (matplotlib ships its own).
+    S=$(echo /opt/software/linux-*) && \
+    rm -rf $S/llvm-* $S/cmake-* $S/font-util-* && \
+    # Build metadata inside every prefix (keeping Python.h for pip builds), and
+    # CPython's own test suite.
+    find /opt/software -mindepth 2 -maxdepth 3 -type d \
+        \( -name include -o -name aclocal -o -name man -o -name doc -o -name info \) \
+        ! -path '*/python-[0-9]*/include' -prune -exec rm -rf {} + && \
+    rm -rf $S/python-*/lib/python3.*/test && \
+    # e.g. cuda/include -> targets/*/include; fix-permissions fails on dangling links.
+    find /opt/software -xtype l -delete && \
     # Drop view links into pruned dirs (e.g. CUDA's nsight/libnvvp); fix-permissions fails on them.
     find /opt/view -xtype l -delete && \
     if [ -n "${SPACK_MIRROR_OCI}" ] && spack mirror list | awk '{print $1}' | grep -qx 'oci-push'; then \
