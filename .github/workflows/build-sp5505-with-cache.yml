@@ -15,7 +15,7 @@ on:
       repo_test_filter:
         description: "Pytest -k filter for repository tests inside image"
         required: false
-        default: "not (test_suppress_rascil_warning or test_source_detection_plot or test_simulation_noise_meerkat)"
+        default: "not (test_suppress_rascil_warning or test_simulation_noise_meerkat)"
       skip_tests:
         description: "Skip tests during build (1=yes, 0=no)"
         required: false
@@ -54,7 +54,7 @@ env:
   CUDA_VERSION: ${{ inputs.cuda_version || '12.2.2' }}
   PIP_EXTRAS: ${{ inputs.pip_extras || 'psrecord==1.4 click aoquality losoto kneed seaborn nest-asyncio==1.6.0' }}
   PIP_GIT_EXTRAS: ${{ inputs.pip_git_extras || 'git+https://github.com/d3v-null/SSINS.git@eavils-copilot git+https://github.com/d3v-null/mwa_qa.git@dev git+https://github.com/tjgalvin/fits_warp.git' }}
-  REPO_TEST_FILTER: ${{ inputs.repo_test_filter || 'not (test_suppress_rascil_warning or test_source_detection_plot or test_simulation_noise_meerkat)' }}
+  REPO_TEST_FILTER: ${{ inputs.repo_test_filter || 'not (test_suppress_rascil_warning or test_simulation_noise_meerkat)' }}
 
 jobs:
   build-cpu-pretest:

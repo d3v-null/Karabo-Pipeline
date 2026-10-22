@@ -860,9 +860,8 @@ ENV SKIP_TESTS=${SKIP_TESTS}
 RUN if [ "${SKIP_TESTS:-0}" = "1" ]; then exit 0; fi; \
     export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1; \
     cd /opt/Karabo-Pipeline && \
-    # known failing tests
-    pytest -x -k "not test_source_detection_plot and not test_simulation_noise_meerkat" && \
-    (pytest -x -k test_source_detection_plot || true) && \
+    # test_simulation_noise_meerkat needs RASCIL, which the image no longer ships.
+    pytest -x -k "not test_simulation_noise_meerkat" && \
     # Best-effort cleanup (e.g. root-owned OpenMPI session dirs in /tmp), braced so
     # it can't mask a pytest failure the way a trailing bare `|| true` did.
     { { rm -rf /home/${NB_USER}/.astropy/cache \

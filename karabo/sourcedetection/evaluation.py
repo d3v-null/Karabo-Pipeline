@@ -221,7 +221,10 @@ class SourceDetectionEvaluation:
             )
             assignments = np.vstack([assignments, missing_gts.T])
 
-        return cast(NDArray[np.float64], assignments[assignments[:, 0].argsort()])
+        # Sort by ground truth, then prediction: argsort's default quicksort isn't
+        # stable, so the order of unmatched (-1) rows varied with the numpy version.
+        order = np.lexsort((assignments[:, 1], assignments[:, 0]))
+        return cast(NDArray[np.float64], assignments[order])
 
     @staticmethod
     def calculate_evaluation_measures(
