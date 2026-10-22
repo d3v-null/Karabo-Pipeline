@@ -28,6 +28,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && apt-get --no-install-recommends install -y \
+    python3-yaml \
     autoconf \
     automake \
     bison \
@@ -55,25 +56,33 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     time \
     zstd
 
+# Keep the base image's conda off PATH while building: a conda python of the
+# same minor version gets picked up by spack's python build (libpython clash),
+# and spack 1.2 needs os.O_PATH, which conda's python lacks.
+ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 ENV SPACK_ROOT=/opt/spack \
     SPACK_DISABLE_LOCAL_CONFIG=1 \
+    SPACK_PYTHON=/usr/bin/python3 \
     CARGO_HOME=/opt/rust/cargo \
     RUSTUP_HOME=/opt/rust/rustup \
     PATH=/opt/rust/cargo/bin:${PATH}
-RUN git clone --depth=1 --single-branch --branch=v1.1.1 https://github.com/spack/spack.git ${SPACK_ROOT} && \
+RUN git clone --depth=1 --single-branch --branch=v1.2.2 https://github.com/spack/spack.git ${SPACK_ROOT} && \
     cd ${SPACK_ROOT} && \
     rm -rf .git && \
     find ${SPACK_ROOT}/lib/spack/docs -xtype l -delete || true && \
     . share/spack/setup-env.sh && \
+    # Pin the builtin package repo to the tag ska-sdp-spack 2026.10.3 uses.
+    spack repo set --scope site --destination /opt/spack-packages builtin && \
+    spack repo update --scope site --tag v2026.06.0 builtin && \
     spack env create --dir /opt/spack_env && \
-    fix-permissions ${SPACK_ROOT} /opt/spack_env
+    fix-permissions ${SPACK_ROOT} /opt/spack-packages /opt/spack_env
 
 # Prebuilt Rust via rustup (matches rapthor-jupyter). Without this, Spack
-# builds rust@1.86 from source for hours. Pin 1.86.0 to match the concretized
+# builds rust from source for hours. Pin 1.93.0 (py-ast-serialize, via mypy 2, needs it) to match the concretized
 # SWF-8 graph so `spack external find rust` satisfies the dependency.
 RUN set -o pipefail && \
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
-    sh -s -- -y --profile minimal --default-toolchain 1.86.0 --no-modify-path && \
+    sh -s -- -y --profile minimal --default-toolchain 1.93.0 --no-modify-path && \
     rustc --version && cargo --version
 
 RUN echo ". ${SPACK_ROOT}/share/spack/setup-env.sh 2>/dev/null || true" > /etc/profile.d/spack.sh && \
@@ -110,7 +119,7 @@ RUN spack compiler find && \
 # generation. Let spack build bzip2 from source like everything else.
 
 # SKA SDP Spack repo (healpy, reproject, tables, …) + Karabo overlay (ps_eor stack)
-RUN git clone --depth=1 --single-branch --branch=2026.07.2 https://gitlab.com/ska-telescope/sdp/ska-sdp-spack.git /opt/ska-sdp-spack && \
+RUN git clone --depth=1 --single-branch --branch=2026.10.3 https://gitlab.com/ska-telescope/sdp/ska-sdp-spack.git /opt/ska-sdp-spack && \
     rm -rf /opt/ska-sdp-spack/.git && \
     spack repo add /opt/ska-sdp-spack
 COPY --link spack-overlay /opt/karabo-spack
@@ -119,7 +128,7 @@ COPY --link spack-overlay /opt/karabo-spack
 RUN set -o pipefail; \
     for package in /opt/karabo-spack/packages/*; do \
         case "$(basename "${package}")" in \
-            py-ps-eor|py-gpy|py-fast-histogram|py-dynesty|py-ultranest|py-libpipe|py-asyncssh|py-pyfftw|py-healpy|py-pyerfa) ;; \
+            py-ps-eor|py-gpy|py-fast-histogram|py-dynesty|py-ultranest|py-libpipe|py-asyncssh|py-pyfftw|py-healpy|py-astropy-healpix|py-reproject) ;; \
             *) rm -rf "${package}" ;; \
         esac; \
     done && \
@@ -133,14 +142,14 @@ RUN set -o pipefail; \
 # Versions below researched directly against spack-packages
 # (github.com/spack/spack-packages @ releases/v2025.11, matching spack v1.1.1's
 # pinned builtin repo) rather than guessed:
-ARG NUMPY_VERSION=2.2.0
-ARG SCIPY_VERSION=1.14.1
-ARG MATPLOTLIB_VERSION=3.9.2
+ARG NUMPY_VERSION=2.3.5
+ARG SCIPY_VERSION=1.17.1
+ARG MATPLOTLIB_VERSION=3.9.4
 # Astropy 7 + cfitsio 4 (healpy 1.16); Astropy 6 forces cfitsio@:3.
-ARG ASTROPY_VERSION=7.0.1
-ARG PANDAS_VERSION=2.2.3
-ARG H5PY_VERSION=3.12.1
-ARG HDF5_VERSION=1.14.3
+ARG ASTROPY_VERSION=7.1.1
+ARG PANDAS_VERSION=3.0.3
+ARG H5PY_VERSION=3.16.0
+ARG HDF5_VERSION=1.14.6
 ARG REPROJECT_VERSION=0.14.1
 ARG HEALPY_VERSION=1.16.6
 # astropy-healpix@:1.0.2 hard-caps numpy@:1 (py-numpy@2: only when @1.0.3:).
@@ -149,7 +158,7 @@ ARG ASTROPY_HEALPIX_VERSION=1.0.3
 ARG PYERFA_VERSION=2.0.1.5
 # py-tables@3.10: requires numexpr@2.10.2: — needs to move together with
 # TABLES_VERSION below.
-ARG NUMEXPR_VERSION=2.10.2
+ARG NUMEXPR_VERSION=2.14.1
 # py-tables@:3.9 hard-caps numpy@:1 (py-numpy@1.25: only when @3.10:).
 # karabo overlay's py-pyfftw@0.13.1 caps its own numpy dep <2.0 (see
 # spack-overlay/packages/py-pyfftw/package.py) and needs Cython<3.0; @0.14.0
@@ -158,7 +167,7 @@ ARG TABLES_VERSION=3.10.2
 ARG PYFFTW_VERSION=0.14.0
 ARG PS_EOR_VERSION=1.0
 ARG GPY_VERSION=1.13.2
-ARG SKLEARN_VERSION=1.5.2
+ARG SKLEARN_VERSION=1.9.0
 
 ARG SPACK_TARGET=""
 ARG SPACK_BUILDCACHE_LOCAL=""
@@ -202,7 +211,7 @@ ARG SPACK_MIRROR_OCI=""
 # needs yaml; it's the only step here that still needs conda's python) and
 # by making that step abort the build on failure instead of continuing
 # silently.
-RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache-swf8-2026.07.2,sharing=locked \
+RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache-swf8-2026.10.3,sharing=locked \
     --mount=type=cache,target=/opt/spack-source-cache,id=spack-source-cache,sharing=locked \
     --mount=type=cache,target=/opt/spack-misc-cache,id=spack-misc-cache,sharing=locked \
     --mount=type=secret,id=spack_oci_username,required=false \
@@ -222,6 +231,11 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache-swf8-2026.07
     fi; \
     echo "SPACK_TARGET=${spack_target} <- (uname -m)=$arch"; \
     spack config add "config:install_tree:root:/opt/software"; \
+    # The new installer hands builds a fifo jobserver that system make 4.3
+    # (called by e.g. py-healpy's setup.py) rejects.
+    spack config add "config:installer:old"; \
+    # These overlays fix version metadata (git builds lack tags); a cached ska-sdp-spack build would still satisfy them.
+    spack config add "concretizer:reuse:exclude:[py-rapthor,py-casacore,py-bdsf,py-photutils,py-lsmtool,py-astropy-healpix]"; \
     spack config add "concretizer:unify:when_possible"; \
     spack config add "config:source_cache:/opt/spack-source-cache"; \
     spack config add "config:misc_cache:/opt/spack-misc-cache"; \
@@ -251,7 +265,7 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache-swf8-2026.07
         ('cfitsio','@4.5.0'),\
         ('zlib','@1.2:'),\
         ('hdf5','@${HDF5_VERSION}+hl~mpi+threadsafe')]];\
-    c['spack']['view']={'default':{'root':'/opt/view'}};\
+    c['spack']['view']={'default':{'root':'/opt/view','link_dirs':False}};\
     f=open(p,'w');yaml.dump(c,f,default_flow_style=False);f.close()" \
     || { echo "FATAL: version-pin writer failed (see above)"; exit 1; }; \
     if [ "${SPACK_BUILDCACHE_LOCAL:-0}" != "0" ] && [ -n "${SPACK_BUILDCACHE_LOCAL:-}" ]; then \
@@ -269,7 +283,7 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache-swf8-2026.07
             spack mirror add --unsigned oci-cache "${SPACK_MIRROR_OCI}"; \
         fi; \
     fi; \
-    spack mirror add v1.1.1 https://binaries.spack.io/v1.1.1; \
+    spack mirror add v1.2.2 https://binaries.spack.io/v1.2.2; \
     spack buildcache keys --install --trust || true; \
     spack add \
     'python@'$PYTHON_VERSION \
@@ -288,6 +302,8 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache-swf8-2026.07
     spack gc -y && \
     find /opt/software -name '*.a' -delete && \
     spack env view regenerate && \
+    # Drop view links into pruned dirs (e.g. CUDA's nsight/libnvvp); fix-permissions fails on them.
+    find /opt/view -xtype l -delete && \
     # Torch/GPyTorch/Pyro via pip wheels: Spack py-torch is a multi-hour
     # source build, and gpytorch/pyro-ppl aren't in the ska-sdp/karabo spack
     # repos at all. ps_eor@1.0's ml-gpr backend (~torch variant) needs all
@@ -320,14 +336,14 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 
 COPY --from=builder /opt/software /opt/software
 COPY --from=builder /opt/view /opt/view
-COPY --from=builder /opt/._view /opt/._view
 COPY --from=builder /opt/spack_env /opt/spack_env
 COPY --from=builder /opt/spack /opt/spack
 COPY --from=builder /opt/ska-sdp-spack /opt/ska-sdp-spack
 COPY --from=builder /opt/karabo-spack /opt/karabo-spack
 
 ENV SPACK_ROOT=/opt/spack \
-    SPACK_DISABLE_LOCAL_CONFIG=1
+    SPACK_DISABLE_LOCAL_CONFIG=1 \
+    SPACK_PYTHON=/usr/bin/python3
 
 RUN echo ". ${SPACK_ROOT}/share/spack/setup-env.sh 2>/dev/null || true" > /etc/profile.d/spack.sh && \
     echo "spack env activate -p /opt/spack_env 2>/dev/null || true" >> /etc/profile.d/spack.sh
@@ -383,7 +399,7 @@ print("wrote", path)
 PY
 
 RUN python -c "import numpy; assert numpy.__version__.startswith('2.'), numpy.__version__" && \
-    python -c "import scipy; assert scipy.__version__.startswith('1.14'), scipy.__version__" && \
+    python -c "import scipy; assert scipy.__version__.startswith('1.17'), scipy.__version__" && \
     python -c "import scipy.integrate as si; assert hasattr(si, 'trapz'), 'trapz shim missing'" && \
     python -c "import healpy; print('healpy', healpy.__version__)" && \
     python -c "import ps_eor; print('ps_eor', ps_eor.__version__)" && \

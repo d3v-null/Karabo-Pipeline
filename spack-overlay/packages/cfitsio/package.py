@@ -1,5 +1,4 @@
-# https://gitlab.com/ska-telescope/sdp/ska-sdp-spack/-/blob/main/packages/cfitsio/package.py?ref_type=heads
-
+# ska-sdp-spack 2026.10.3 recipe + zlib-api dependency.
 # Adapted from Spack package for cfitsio in order to add a variant for utils
 # Installing utils is required for the rapthor pipeline since it depends on fpack
 # pylint: disable=line-too-long
@@ -11,7 +10,15 @@
 
 from spack_repo.builtin.build_systems.autotools import AutotoolsPackage
 
-from spack.package import depends_on, join_path, license, variant, version, which
+from spack.package import (
+    depends_on,
+    join_path,
+    license,
+    patch,
+    variant,
+    version,
+    which,
+)
 
 
 class Cfitsio(AutotoolsPackage):
@@ -23,15 +30,13 @@ class Cfitsio(AutotoolsPackage):
     url = (
         "https://heasarc.gsfc.nasa.gov/FTP/software/fitsio/c/cfitsio-3.49.tar.gz"
     )
+    git = "https://github.com/HEASARC/cfitsio.git"
+
     license("custom")
 
     version(
         "4.6.3",
-        sha256="fad44fff274fdda5ffcc0c0fff3bc3c596362722b9292fc8944db91187813600"
-    )
-    version(
-        "4.6.2",
-        sha256="66fd078cc0bea896b0d44b120d46d6805421a5361d3a5ad84d9f397b1b5de2cb"
+        sha256="fad44fff274fdda5ffcc0c0fff3bc3c596362722b9292fc8944db91187813600",
     )
     version(
         "4.5.0",
@@ -90,6 +95,11 @@ class Cfitsio(AutotoolsPackage):
         sha256="092897c6dae4dfe42d91d35a738e45e8236aa3d8f9b3ffc7f0e6545b8319c63a",
     )
 
+    # Temporary patch - cfitsio failed to create a file from WSClean
+    # on 2026-04-17. Make sure that if it happens again we have a bit
+    # more information about why.
+    patch("cfitsio-error-message.patch", when="@4.4:")
+
     # AST-1508 / SCOOP-484: Prevent parallel builds, since they sometimes fail.
     parallel = False
 
@@ -112,18 +122,8 @@ class Cfitsio(AutotoolsPackage):
 
     depends_on("curl")
     depends_on("bzip2", when="+bzip2")
-    # cfitsio requires zlib for FITS tile-compression support
+    # Not in sdp: configure needs zlib for tile compression; our builders lack system zlib headers.
     depends_on("zlib-api")
-
-    def setup_build_environment(self, env):
-        # Help configure find zlib when installed by Spack (not in default paths)
-        import os
-
-        z = self.spec["zlib-api"].prefix
-        env.append_flags("CPPFLAGS", f"-I{z.include}")
-        lib64 = str(z.lib64)
-        libdir = lib64 if os.path.isdir(lib64) else str(z.lib)
-        env.append_flags("LDFLAGS", f"-L{libdir}")
 
     def url_for_version(self, version_obj):
         if self.spec.satisfies("@3.47:"):

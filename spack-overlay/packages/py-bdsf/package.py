@@ -1,66 +1,58 @@
-# from https://gitlab.com/ska-telescope/sdp/ska-sdp-spack/-/blob/main/packages/py-bdsf/package.py
-import os
+from spack_repo.builtin.build_systems.python import PythonPackage
 
-import spack.llnl.util.tty as tty
-from spack.llnl.util.filesystem import working_dir
-
-from spack.package import *
-from spack_repo.builtin.build_systems.python import PythonPackage, PythonPipBuilder
+from spack.package import (
+    depends_on,
+    filter_file,
+    license,
+    maintainers,
+    variant,
+    version,
+    which,
+)
 
 
 class PyBdsf(PythonPackage):
-    """PyBDSF: Blob Detection and Source Finder for radio interferometric images."""
+    """Blob Detection and Source Finder"""
 
-    homepage = "https://github.com/lofar-astron/PyBDSF"
-    git = "https://github.com/lofar-astron/PyBDSF.git"
+    homepage = "https://pybdsf.readthedocs.io"
+    git = "https://github.com/lofar-astron/PyBDSF"
     pypi = "bdsf/bdsf-1.0.0.tar.gz"
 
+    maintainers("mnijhuis-tos")
+    license("GPLv3", checked_by="mnijhuis-tos")
+
+    # Since bdsf determines its version from the .git tree (using
+    # setuptools_scm), disable caching.
+    # Otherwise, Spack omits the .git tree from cached sources.
     version(
-        "1.13.0.post2",
-        sha256="2a91647fcdb1f6574958312d85decd4529a10e710926f11300a2388f4c9e25cd",
+        "1.13.0.20250915",
+        commit="3d705ee77732592fc8ffe972582059a1a1dfbb28",
+        no_cache=True,
     )
+
     version(
         "1.13.0.20251010",
         commit="f528a63ebb3e1b49dccf296dc339e62ef61a0a4e",
+        no_cache=True,
     )
+
     version(
         "1.13.0.20260409",
         commit="5b0bc9cd7e0c76190c0bbe8b88665c63f741b6a0",
-    )
-    # Same upstream commit as 1.13.0.20260409 but with the fork-context backport
-    # below. A distinct version is needed because, with concretizer reuse,
-    # Spack happily reuses a buildcache binary of an identical spec and never
-    # re-checks the recipe's patch list; rapthor's "@1.13.0.20260409" pin is
-    # satisfied by this version (Spack prefix semantics).
-    version(
-        "1.13.0.20260409.1",
-        commit="5b0bc9cd7e0c76190c0bbe8b88665c63f741b6a0",
+        no_cache=True,
     )
 
-    patch(
-        "drop-python2-terminal-size-backport.patch",
-        when="@1.13.0.20260409:1.13.0.20260409.1",
-    )
-    # Backport of upstream 1b6e0a04 ("Use fork-style multiprocessing context",
-    # 2026-06-12): 1.13.0.20260409 calls multiprocessing.set_start_method('fork')
-    # at import time, which raises "context has already been set" whenever
-    # anything (dask, karabo, pytest plugins) imported bdsf after fixing the
-    # start method. Uses an explicit fork context instead.
-    patch(
-        "fork-multiprocessing-context.patch",
-        when="@1.13.0.20260409:1.13.0.20260409.1",
-    )
     version(
-        "1.12.0",
-        sha256="1ec301d7f98dd9dcc51245a793b63fa6a341f6378fea45907e06c6a453b6940a",
+        "1.14.1",
+        commit="1b6e0a04ba6327bc1ce3f576928fe58b81d8c1cc",
+        tag="v1.14.1",
+        no_cache=True,
     )
+
     version(
-        "1.11.0",
-        sha256="975a58a5707456959ffff166bd20d0adeae7932262e31a6571c403cf36ab540f",
-    )
-    version(
-        "1.10.2",
-        sha256="eadde1f083647ebc611633f2b671f899f3baf96918fefc8c48df22eccc8d001b",
+        "1.14.1.20260723",
+        commit="754be462b9ca883917e8556c7bb65b4b031fd3a1",
+        no_cache=True,
     )
 
     variant(
@@ -69,159 +61,50 @@ class PyBdsf(PythonPackage):
         description="Support reading 'rap' images using CasaCore.",
     )
 
-    # Spack 0.23 compatible backends
-    build_system("python_pip", "python_setuptools")
-
-    # Python from https://github.com/lofar-astron/PyBDSF/releases
-    depends_on('python@3.6:3.10', when='@:1.10', type=('build', 'run'))
-    depends_on('python@3.8:3.12', when='@1.11:1.12', type=('build', 'run'))
-    depends_on('python@3.9:3.13', when='@1.13:', type=('build', 'run'))
-
-    # build deps from for tag in v1.10.2 v1.11.0 v1.12.0; do git show $tag:pyptoject.toml; done
-    depends_on("py-setuptools@45:59", when="@:1.10", type="build")
-    depends_on("py-setuptools@61:", when="@1.11:", type="build")
-    # Avoid too-new setuptools breaking legacy builds; 70+ is fine for 1.12.0
-    depends_on("py-setuptools@:70", when="@1.12.0:1.12", type="build")
-    # 1.13+ pyproject.toml: setuptools (no upper cap), setuptools<65 for py<3.12
-    depends_on("py-setuptools", when="@1.13:", type="build")
-    depends_on("meson", when="@1.13:", type="build")
-
-    # always
-    depends_on("py-wheel", type="build")
-
-    # PEP 517 builder and build tooling added from 1.11.0
-    depends_on("py-build", when="@1.11:", type="build")
-    depends_on("py-scikit-build@0.13:", when="@1.11:", type="build")
-    # Spack may have an external cmake that is too old; allow alternatives
-    depends_on("cmake@3.18:", when="@1.11:", type="build")
+    depends_on("python@3.8:", type="build")
+    depends_on("py-setuptools", type="build")
+    depends_on("py-setuptools@:70", when="^python@:3.11", type="build")
+    depends_on("py-setuptools-scm", type="build")
+    depends_on("py-scikit-build@0.13:", type="build")
+    depends_on("cmake@3.18:", type="build")
     depends_on("ninja", type="build")
-    # Match upstream-style constraints: allow 6.2+ (needed for other build tooling, e.g. matplotlib 3.6)
-    depends_on("py-setuptools-scm@6.2:", when="@1.11:1.12", type="build")
-    # 1.13+ pyproject.toml uses `version_file` which requires setuptools-scm 8+
-    depends_on("py-setuptools-scm@8:", when="@1.13:", type="build")
-    # depends_on("py-packaging", type="build")
-    # depends_on("py-cython@0.29:", type="build", when="@:1.10")
+    depends_on("meson", type="build")
 
-    # Runtime deps
+    depends_on("boost+python+numpy", type=("build", "run"))
+    depends_on("py-astropy", type="run")
+    depends_on("py-scipy", type="run")
     # BDSF uses f2py from numpy at build time.
-    # numpy 2 support: bdsf builds with boost 1.88 + numpy 2 (developer confirmed)
-    depends_on("py-numpy@1.20:", type=("build", "run"))
-    depends_on("py-scipy@1.5:", type="run")
-    depends_on("py-astropy@4:", type=("build", "run"))
-    depends_on("py-matplotlib@3.3:", type="run")
+    depends_on("py-numpy@1:", type=("build", "run"))
+    depends_on("py-matplotlib", type="run")
+
+    # The pybdsf executable needs ipython.
+    depends_on("py-ipython", type="run")
+
     depends_on("py-casacore", type="run", when="+rap")
-    # C++ extension links to Boost.Python and Boost.NumPy
-    depends_on("boost+python+numpy")
-
-    import_modules = ["bdsf"]
-
-    def test_import(self):
-        python = self.spec["python"].command
-        if python:
-            python("-c", "import bdsf; print('ok') ")
 
     def patch(self):
-        # 1.12.0-specific: fix f2py path and setuptools_scm key.
-        # 1.13.0+ has native NumPy 2 support and doesn't need these.
-        if self.spec.satisfies("@:1.12"):
-            filter_file(
-                "find_package(F2PY REQUIRED)",
-                "set(F2PY_EXECUTABLE f2py)",
-                "CMakeLists.txt",
-                string=True,
-            )
+        # This fix ensures PyBDSF uses f2py from the $PATH (from numpy)
+        # instead of /usr/bin/f2py3, which may not work.
+        filter_file(
+            "find_package(F2PY REQUIRED)",
+            "set(F2PY_EXECUTABLE f2py)",
+            "CMakeLists.txt",
+            string=True,
+        )
 
-        # PyBDSF 1.12.0 uses a non-standard setuptools_scm key:
-        #
-        #   [tool.setuptools_scm]
-        #   version_file = "bdsf/_version.py"
-        #
-        # setuptools_scm 7.x does not accept `version_file` and errors during
-        # metadata generation. Translate it to the supported key `write_to`.
-        # 1.13.0+ already uses `version_file` correctly with newer setuptools_scm.
-        if self.spec.satisfies("@:1.12"):
-            filter_file(
-                'version_file = "bdsf/_version.py"',
-                'write_to = "bdsf/_version.py"',
-                "pyproject.toml",
-                string=True,
-            )
+    def test_executable(self):
+        """Test that the pybdsf executable runs."""
+        # This executable is a short Python script which runs bdsf.pybdsf.main().
+        # Running it is therefore a good smoke test.
+
+        pybdsf = which(self.prefix.bin.pybdsf)
+        # pybdsf is an interactive application. Using /dev/null as input
+        # makes it exit immediately.
+        with open("/dev/null", "r", encoding="utf-8") as dev_null:
+            pybdsf(input=dev_null)
 
     def setup_build_environment(self, env):
-        # Force pip to use Spack-provided setuptools/deps with correct constraints
-        # Critical for scikit-build to find Boost and other Spack deps
-        env.set("PIP_NO_BUILD_ISOLATION", "1")
-        # Make setuptools_scm generate a static version string when building
-        # from sdists or VCS, avoiding any need for git metadata.
-        env.set("SETUPTOOLS_SCM_PRETEND_VERSION_FOR_BDSF", self.spec.version.string)
-        env.set("SETUPTOOLS_SCM_PRETEND_VERSION", self.spec.version.string)
-
-        # Help CMake find Boost (headers and libs) and choose the correct
-        # Boost.Python/Boost.NumPy component names for the active Python
-        boost_spec = self.spec["boost"]
-
-        self.stage.keep = True
-
-        boost_include = boost_spec.headers.directories[0]
-        env.prepend_path("CPATH", boost_include)
-
-        for libdir in boost_spec.libs.directories:
-            env.prepend_path("LIBRARY_PATH", libdir)
-            env.prepend_path("LD_LIBRARY_PATH", libdir)
-
-        pyver = self.spec["python"].version.up_to(2).string.replace(".", "")
-        env.set("BOOST_PYTHON_LIB", f"boost_python{pyver}")
-        env.set("BOOST_NUMPY_LIB", f"boost_numpy{pyver}")
-
-        debug_pairs = []
-        for dep, label in (
-            ("py-setuptools", "py-setuptools"),
-            ("py-setuptools-scm", "py-setuptools-scm"),
-            ("py-scikit-build", "py-scikit-build"),
-            ("py-scikit-build-core", "py-scikit-build-core"),
-        ):
-            try:
-                debug_pairs.append(f"{label}={self.spec[dep].version.string}")
-            except KeyError:
-                # Dependency not active for this version slice
-                continue
-
-        if debug_pairs:
-            debug_info = "\n".join(debug_pairs) + "\n"
-            tty.warn("[py-bdsf] " + "; ".join(debug_pairs))
-            env.set("BDSF_DEBUG_SETUPTOOLS", debug_info)
-            try:
-                with open(join_path(self.stage.path, "bdsf-setuptools-debug.txt"), "w") as fh:
-                    fh.write(debug_info)
-            except Exception:
-                pass
-
-    def install(self, spec, prefix):
-        pip = spec["python"].command
-        pip.add_default_arg("-m", "pip")
-
-        args = PythonPipBuilder.std_args(self)
-        log_file = join_path(self.stage.path, "pip-debug.log")
-        # Always disable build isolation; we rely on Spack-provided
-        # dependencies instead of network lookups inside pip.
-        if "--no-build-isolation" not in args:
-            args.append("--no-build-isolation")
-
-        args.append(f"--prefix={prefix}")
-        args.extend(["--log", log_file])
-        args.append(".")
-
-        with working_dir(self.stage.source_path):
-            try:
-                pip(*args)
-            except ProcessError:
-                if os.path.exists(log_file):
-                    try:
-                        with open(log_file, "r") as fh:
-                            tail = fh.readlines()[-40:]
-                        tty.error("[py-bdsf] pip tail:\n" + "".join(tail))
-                    except Exception:
-                        pass
-                raise
-
-
+        # Built from a shallow git commit without tags: give setuptools-scm the real
+        # version, or pip sees 0.1.dev1 and may "upgrade" it over the spack install.
+        if str(self.version)[0].isdigit():
+            env.set("SETUPTOOLS_SCM_PRETEND_VERSION_FOR_BDSF", str(self.version))

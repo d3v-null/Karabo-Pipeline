@@ -1,8 +1,12 @@
 import os
-from spack.package import depends_on, variant, version
+
 from spack_repo.builtin.build_systems.cmake import CMakePackage
 
+from spack.package import depends_on, join_path, variant, version, which
 
+
+# Karabo overlay of ska-sdp-spack's recipe: +cuda builds against Spack's CUDA
+# (driver stubs, no GPU needed) and ~mpi ignores MPI outside Spack.
 class Wsclean(CMakePackage):
     """WSClean (w-stacking clean) is a fast generic widefield imager. It
     implements several gridding algorithms and offers fully-automated
@@ -23,21 +27,42 @@ class Wsclean(CMakePackage):
         commit="d7d89fddf472ffac05a2fa1820ec7d0027da38ee",
         submodules=True,
     )
-    version("3.6.0", tag="v3.6", submodules=True)
+    version("3.6", tag="v3.6", submodules=True)
     version(  # master branch at 2025-06-30
         "3.6.20250630",
         commit="012778d4b9ca9a5e46815f7aae95f3f469539f99",
         submodules=True,
-        preferred=True,
     )
     version(  # master branch at 2026-01-09
         "3.6.20260109",
         commit="f3071fa68c052ec452c0c6ad0ec66a16e980daad",
         submodules=True,
+    )
+    version(  # master branch at 2026-03-18
+        "3.7.20260318",
+        commit="2b1a430ca1666677f9bb6f4e997134a75465e852",
+        submodules=True,
+    )
+    version(  # master branch at 2026-04-20
+        "3.7.20260420",
+        commit="3d4bc86bd501444e15f1019ce9cc3248171937e3",
+        submodules=True,
+    )
+    version(  # master branch at 2026-04-24
+        "3.7.20260424",
+        commit="c5314d942913d1502e2518b675c5605f234cdb75",
+        submodules=True,
         preferred=True,
     )
-    version(
-        "latest", branch="master", submodules=True, no_cache=True, deprecated=True
+    version(  # master branch at 2026-08-04
+        "3.7.20260804",
+        commit="5706883aac7ae6859045c72c584efb6d6880a590",
+        submodules=True,
+    )
+    version(  # master branch at 2026-09-29
+        "3.7.20260929",
+        commit="d395485f72e91958cf8e029ec10000d8087637bf",
+        submodules=True,
     )
     version(
         "master",
@@ -52,7 +77,6 @@ class Wsclean(CMakePackage):
     # a dependency on it. When the flag is off, WSClean will still build
     # wsclean-mp if there's an MPI implementation outside the Spack tree.
     variant("mpi", default=True, description="Use MPI from Spack")
-    variant("portable", default=True, description="Disable native instruction set optimizations")
 
     depends_on("c", type="build", when="@:3.6.0")
     depends_on("cxx", type="build")
@@ -69,15 +93,16 @@ class Wsclean(CMakePackage):
     depends_on("everybeam@0.5.1", when="@3.3")
     depends_on("everybeam@0.5.3", when="@3.4")
     depends_on("everybeam@0.7.4:0.7", when="@3.5:3.6.20250630")
-    depends_on("everybeam@0.7.4:0.9", when="@3.6.20260109:")
-    depends_on("everybeam@0.7.4:", when="@latest,master")
+    depends_on("everybeam@0.7.4:0.8", when="@3.6.20260109:3.7.20260804")
+    depends_on("everybeam@0.9.0", when="@3.7.20260929")
+    depends_on("everybeam@0.9:", when="@master")
     depends_on("idg@1.0.0", when="@3.1")
     depends_on("idg@1.1.0", when="@3.2")
     depends_on("idg@1.1.0", when="@3.3")
     depends_on("idg@1.2.0:", when="@3.4:")
     depends_on("idg+cuda", when="+cuda")
-    depends_on("idg+python", when="+python")
     depends_on("cuda", when="+cuda")
+    depends_on("idg+python", when="+python")
     depends_on("boost+date_time+program_options")
     depends_on("openblas threads=pthreads")
     depends_on("gsl")
@@ -87,25 +112,23 @@ class Wsclean(CMakePackage):
     depends_on("py-pybind11", when="@3.6.20260109:")
 
     def cmake_args(self):
-        args = []
-
-        if "+cuda" in self.spec:
-            cuda_prefix = self.spec["cuda"].prefix
-            stubs_dirs = [os.path.join(cuda_prefix, "lib64", "stubs"), os.path.join(cuda_prefix, "lib", "stubs")]
-            for stub in stubs_dirs:
+        args = [
+            self.define(
+                "BLA_VENDOR", "OpenBLAS"
+            ),  # Avoid using the system BLAS/LAPACK
+            self.define("PORTABLE", True),  # let Spack determine arch build flags
+        ]
+        if self.spec.satisfies("+cuda"):
+            for sub in ("lib64", "lib"):
+                stub = join_path(self.spec["cuda"].prefix, sub, "stubs")
                 if os.path.isdir(stub):
-                    args.append(self.define("CMAKE_EXE_LINKER_FLAGS", f"-L{stub} -Wl,-rpath-link,{stub}"))
-                    args.append(self.define("CMAKE_SHARED_LINKER_FLAGS", f"-L{stub} -Wl,-rpath-link,{stub}"))
+                    flags = f"-L{stub} -Wl,-rpath-link,{stub}"
+                    args.append(self.define("CMAKE_EXE_LINKER_FLAGS", flags))
+                    args.append(self.define("CMAKE_SHARED_LINKER_FLAGS", flags))
                     break
-
-        # Disable MPI when ~mpi variant is used to prevent CMake from finding
-        # stale system MPI configurations
-        if "~mpi" in self.spec:
-            args.append(self.define("CMAKE_DISABLE_FIND_PACKAGE_MPI", "ON"))
-
-        if "+portable" in self.spec:
-            args.append(self.define("PORTABLE", "ON"))
-
+        if self.spec.satisfies("~mpi"):
+            # Without this, CMake picks up a stale system MPI.
+            args.append(self.define("CMAKE_DISABLE_FIND_PACKAGE_MPI", True))
         return args
 
     def setup_build_environment(self, env):
@@ -113,3 +136,13 @@ class Wsclean(CMakePackage):
 
     def setup_run_environment(self, env):
         env.set("OPENBLAS_NUM_THREADS", "1")
+
+    def test_executables(self):
+        """Ensure the executables run."""
+        chgcentre = which(self.prefix.bin.chgcentre)
+        wsclean = which(self.prefix.bin.wsclean)
+        chgcentre()
+        wsclean("--version")
+        # ~mpi disables MPI discovery, so wsclean-mp is not built.
+        if self.spec.satisfies("+mpi"):
+            which(getattr(self.prefix.bin, "wsclean-mp"))("--version")

@@ -26,12 +26,8 @@
 # └──────────────────────────────────────────────────────────────────────────┘
 # Result: 1721 MB on disk / 521 MB compressed — 3.3x / 2.9x smaller.
 #
-# View duplication. In the builder /opt/view is a *symlink* into /opt/._view/<hash>.
-# rapthor-jupyter.Dockerfile does `COPY --from=builder /opt/view /opt/view` AND
-# `COPY --from=builder /opt/._view /opt/._view`; the first dereferences the
-# symlink, so the whole view is materialised twice. Console-script shebangs
-# point at /opt/._view/<hash>/bin/python3, so /opt/._view is the copy that must
-# survive — here we copy only that and recreate /opt/view as a symlink.
+# Spack 1.2 views are a real directory (no /opt/._view/<hash> store), so
+# /opt/view is copied once as-is.
 #
 # The Spack environment spec is deliberately IDENTICAL to the CPU-only
 # rapthor-jupyter build, so every package is a binary hit against the shared
@@ -63,6 +59,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && apt-get --no-install-recommends install -y \
+    python3-yaml \
     autoconf \
     automake \
     bison \
@@ -94,25 +91,33 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     zstd
 
 # Install Spack and detect compilers
+# Keep the base image's conda off PATH while building: a conda python of the
+# same minor version gets picked up by spack's python build (libpython clash),
+# and spack 1.2 needs os.O_PATH, which conda's python lacks.
+ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 ENV SPACK_ROOT=/opt/spack \
     SPACK_DISABLE_LOCAL_CONFIG=1 \
+    SPACK_PYTHON=/usr/bin/python3 \
     CARGO_HOME=/opt/rust/cargo \
     RUSTUP_HOME=/opt/rust/rustup \
     PATH=/opt/rust/cargo/bin:${PATH}
-RUN git clone --depth=1 --single-branch --branch=v1.1.1 https://github.com/spack/spack.git ${SPACK_ROOT} && \
+RUN git clone --depth=1 --single-branch --branch=v1.2.2 https://github.com/spack/spack.git ${SPACK_ROOT} && \
     cd ${SPACK_ROOT} && \
     rm -rf .git && \
     find ${SPACK_ROOT}/lib/spack/docs -xtype l -delete || true && \
     . share/spack/setup-env.sh && \
+    # Pin the builtin package repo to the tag ska-sdp-spack 2026.10.3 uses.
+    spack repo set --scope site --destination /opt/spack-packages builtin && \
+    spack repo update --scope site --tag v2026.06.0 builtin && \
     spack env create --dir /opt/spack_env && \
-    fix-permissions ${SPACK_ROOT} /opt/spack_env
+    fix-permissions ${SPACK_ROOT} /opt/spack-packages /opt/spack_env
 
 # py-cdshealpix's locked Cargo dependencies require Rust >=1.81.  Install the
 # prebuilt toolchain once in this cacheable layer; Spack discovers it as an
 # external package, so it is never rebuilt from source.
 RUN set -o pipefail && \
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
-    sh -s -- -y --profile minimal --default-toolchain 1.81.0 --no-modify-path && \
+    sh -s -- -y --profile minimal --default-toolchain 1.93.0 --no-modify-path && \
     rustc --version && cargo --version
 
 RUN echo ". ${SPACK_ROOT}/share/spack/setup-env.sh 2>/dev/null || true" > /etc/profile.d/spack.sh && \
@@ -137,41 +142,40 @@ RUN spack compiler find && \
     rust
 
 # Add SKA SDP Spack repo and Karabo overlay for rapthor
-RUN git clone --depth=1 --single-branch --branch=2026.07.2 https://gitlab.com/ska-telescope/sdp/ska-sdp-spack.git /opt/ska-sdp-spack && \
+RUN git clone --depth=1 --single-branch --branch=2026.10.3 https://gitlab.com/ska-telescope/sdp/ska-sdp-spack.git /opt/ska-sdp-spack && \
     rm -rf /opt/ska-sdp-spack/.git && \
     spack repo add /opt/ska-sdp-spack
 COPY --link spack-overlay /opt/karabo-spack
 RUN test -f /opt/karabo-spack/packages/py-toil/kubernetes-batch-system.patch && \
-    test -f /opt/karabo-spack/packages/py-cwltool/package.py && \
-    test -f /opt/karabo-spack/packages/py-ska-sdp-ical/package.py && \
     test -f /opt/karabo-spack/packages/py-rapthor/kubernetes-batch-system.patch && \
     test -f /opt/karabo-spack/packages/py-rapthor/toil-runtime-options.patch && \
-    test -f /opt/karabo-spack/packages/py-rapthor/mwa-beam-support-20260630.patch && \
+    test -f /opt/karabo-spack/packages/py-rapthor/mwa-beam-support-20260917.patch && \
     test -f /opt/karabo-spack/packages/py-lsmtool/rapthor-facet-robustness.patch && \
     test -f /opt/karabo-spack/packages/dp3/cuda-solverbase-api.patch && \
     spack repo add /opt/karabo-spack
 
 # Version pins for numpy 2 compatibility.
 # These MUST stay in lockstep with rapthor-jupyter.Dockerfile — see the header.
-ARG NUMPY_VERSION=2.2.0
+ARG NUMPY_VERSION=2.3.5
 ARG CFITSIO_VERSION=4.6.3
-ARG PANDAS_VERSION=2.2.3
-ARG XARRAY_VERSION=2024.10.0
-ARG H5PY_VERSION=3.12.1
-ARG HDF5_VERSION=1.14.3
-ARG SCIPY_VERSION=1.14.1
-ARG MATPLOTLIB_VERSION=3.9.2
-ARG ASTROPY_VERSION=6.1.0
-ARG CASACORE_VERSION=3.7.1
+ARG PANDAS_VERSION=3.0.3
+ARG XARRAY_VERSION=2026.2.0
+ARG H5PY_VERSION=3.16.0
+ARG HDF5_VERSION=1.14.6
+ARG SCIPY_VERSION=1.17.1
+ARG MATPLOTLIB_VERSION=3.9.4
+ARG ASTROPY_VERSION=7.1.1
+ARG CASACORE_VERSION=3.8.1
+ARG PY_CASACORE_VERSION=3.7.1
 ARG BOOST_VERSION=1.88.0
 ARG REPROJECT_VERSION=0.14.1
-ARG BDSF_VERSION=1.13.0.20260409.1
-ARG AOFLAGGER_VERSION=3.4.0
-ARG WSCLEAN_VERSION=3.6.20260109
-ARG EVERYBEAM_VERSION=0.8.3
-# 6.6.20260819 = DP3 f4403bae (v6.6-130); +fastpredict on x86, ~fastpredict on ARM.
-ARG DP3_VERSION=6.6.20260819
-ARG RAPTHOR_VERSION=2.1.20260630
+ARG BDSF_VERSION=1.14.1.20260723
+ARG AOFLAGGER_VERSION=3.6.0.dev1
+ARG WSCLEAN_VERSION=3.7.20260929
+ARG EVERYBEAM_VERSION=0.9.0
+# +fast_predict on x86, ~fast_predict on ARM (untested there).
+ARG DP3_VERSION=6.6.0.20260923
+ARG RAPTHOR_VERSION=2.1.20260917
 # RAPTHOR_MWA=1 builds the py-rapthor +mwa variant (MWA beam support patch) and
 # ships the MWA full-embedded-element beam under /opt; 0 gives the plain LOFAR
 # image. The two flavours are published as rapthor-lean and rapthor-mwa.
@@ -184,9 +188,9 @@ ARG SPACK_MIRROR_OCI=""
 # CPU-only: no CUDA branches at all. With CUDA_ARCH empty the rapthor-jupyter
 # build concretises to exactly this spec, which is what keeps the shared
 # buildcache warm for both images.
-RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache-2026.07.2,sharing=locked \
+RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache-2026.10.3,sharing=locked \
     --mount=type=cache,target=/opt/spack-source-cache,id=spack-source-cache,sharing=locked \
-    --mount=type=cache,target=/opt/spack-misc-cache,id=spack-misc-cache-dp3-f4403bae,sharing=locked \
+    --mount=type=cache,target=/opt/spack-misc-cache,id=spack-misc-cache-dp3-20260923,sharing=locked \
     --mount=type=secret,id=spack_oci_username,required=false \
     --mount=type=secret,id=spack_oci_password,required=false \
     mkdir -p /opt/{software,view,buildcache,spack-source-cache,spack-misc-cache}; \
@@ -209,12 +213,16 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache-2026.07.2,sh
     fi; \
     echo "SPACK_TARGET=${spack_target} <- (uname -m)=$arch"; \
     spack config add "config:install_tree:root:/opt/software"; \
+    # The new installer hands builds a fifo jobserver that system make 4.3
+    # (called by e.g. py-healpy's setup.py) rejects.
+    spack config add "config:installer:old"; \
     spack config add "concretizer:unify:when_possible"; \
     # Reused binaries keep the patches they were built with, so a changed
     # mwa-beam-support patch would be silently ignored if a +mwa py-rapthor
     # binary is already in the buildcache. py-rapthor is a cheap pure-python
     # build: always concretize it fresh (its deps are still reused).
-    spack config add "concretizer:reuse:exclude:[py-rapthor]"; \
+    # These overlays fix version metadata (git builds lack tags); a cached ska-sdp-spack build would still satisfy them.
+    spack config add "concretizer:reuse:exclude:[py-rapthor,py-casacore,py-bdsf,py-photutils,py-lsmtool,py-astropy-healpix]"; \
     spack config add "config:source_cache:/opt/spack-source-cache"; \
     spack config add "config:misc_cache:/opt/spack-misc-cache"; \
     spack config add "packages:casacore:variants: +data+python"; \
@@ -224,9 +232,9 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache-2026.07.2,sh
     # keeps LLVM out of the install tree / runtime image.
     # FastPredict is x86-oriented (immintrin.h / xsimd neon). Keep it off on ARM.
     if [ "$arch" = "aarch64" ] || [ "$arch" = "arm64" ]; then \
-        FP_VARIANT="~fastpredict"; \
+        FP_VARIANT="~fast_predict"; \
     else \
-        FP_VARIANT="+fastpredict"; \
+        FP_VARIANT="+fast_predict"; \
     fi; \
     DP3_REQUIRE="@${DP3_VERSION}+idg~cuda${FP_VARIANT}"; \
     IDG_REQUIRE="~cuda"; \
@@ -242,23 +250,23 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache-2026.07.2,sh
         ('py-xarray','@${XARRAY_VERSION}'),\
         ('py-bdsf','@${BDSF_VERSION}'),\
         ('py-reproject','@${REPROJECT_VERSION}'),\
-        ('py-tables','@3.9.2'),\
+        ('py-tables','@3.10.2'),\
         ('py-numexpr','@2.10.2:'),\
         ('py-losoto','@2.6:'),\
         ('py-lsmtool','@1.6.2:'),\
         ('py-astropy','@${ASTROPY_VERSION}'),\
-        ('rust','@1.81.0:'),\
+        ('rust','@1.93.0:'),\
         ('dp3',sys.argv[1]),\
         ('idg',sys.argv[2]),\
         ('everybeam','@${EVERYBEAM_VERSION}+python'),\
         ('aoflagger','@${AOFLAGGER_VERSION}'),\
         ('casacore','@${CASACORE_VERSION}+python+data+dysco~hdf5~mpi~openmp'),\
-        ('py-casacore','@${CASACORE_VERSION}'),\
+        ('py-casacore','@${PY_CASACORE_VERSION}'),\
         ('cfitsio','@${CFITSIO_VERSION}+bzip2+fortran+utils'),\
         ('hdf5','@${HDF5_VERSION}+hl~mpi+threadsafe'),\
         ('boost','@${BOOST_VERSION}+test+python+numpy'),\
         ('wsclean',sys.argv[3])]];\
-    c['spack']['view']={'default':{'root':'/opt/view'}};\
+    c['spack']['view']={'default':{'root':'/opt/view','link_dirs':False}};\
     f=open(p,'w');yaml.dump(c,f,default_flow_style=False);f.close()" \
       "${DP3_REQUIRE}" "${IDG_REQUIRE}" "${WSCLEAN_REQUIRE}"; \
     if [ "${SPACK_BUILDCACHE_LOCAL:-0}" != "0" ] && [ -n "${SPACK_BUILDCACHE_LOCAL:-}" ]; then \
@@ -276,14 +284,16 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache-2026.07.2,sh
             spack mirror add --unsigned oci-cache "${SPACK_MIRROR_OCI}"; \
         fi; \
     fi; \
-    spack mirror add v1.1.1 https://binaries.spack.io/v1.1.1; \
+    spack mirror add v1.2.2 https://binaries.spack.io/v1.2.2; \
     spack buildcache keys --install --trust || true; \
     spack add \
     'python@'$PYTHON_VERSION \
     'py-pip' \
     "karabo.py-rapthor@${RAPTHOR_VERSION}${RAPTHOR_MWA_VARIANT}" \
     'py-ska-sdp-benchmark-monitor@0.1.0' \
-    'py-ska-sdp-ical@main' \
+    'py-ska-sdp-ical@1.0.0' \
+    # h5py was only transitive before; the import checks below need it.
+    'py-h5py@'$H5PY_VERSION \
     && \
     rm -f /opt/spack_env/spack.lock && \
     spack concretize --force && \
@@ -319,6 +329,8 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache-2026.07.2,sh
     # linked). Never ship the ~12GB prefix even if concretize misses it.
     rm -rf /opt/software/*/llvm-* && \
     spack env view regenerate && \
+    # Drop view links into pruned dirs (e.g. CUDA's nsight/libnvvp); fix-permissions fails on them.
+    find /opt/view -xtype l -delete && \
     fix-permissions /opt/view /opt/spack_env /opt/software
 
 # ----------- Prune: strip everything the pipeline never opens at runtime -----
@@ -368,10 +380,10 @@ RUN set -euo pipefail; \
         rm -rf $S/$p-*/share; \
     done; \
     # Drop view symlinks left dangling by the deletions above.
-    find /opt/._view -xtype l -delete; \
-    find /opt/._view -type d -empty -delete || true; \
-    chmod -R a+rX /opt/software /opt/._view; \
-    du -sh /opt/software /opt/._view
+    find /opt/view -xtype l -delete; \
+    find /opt/view -type d -empty -delete || true; \
+    chmod -R a+rX /opt/software /opt/view; \
+    du -sh /opt/software /opt/view
 
 # ----------- Runtime image -----------
 # Plain Ubuntu 22.04: same glibc 2.35 as the builder base, minus conda,
@@ -412,13 +424,9 @@ RUN perf_bin="" && \
     getcap "${perf_bin}"
 
 COPY --from=builder /opt/software /opt/software
-# Only the real view store. /opt/view is recreated as a symlink below rather
-# than COPYed, which would dereference it and duplicate ~500MB.
-COPY --from=builder /opt/._view /opt/._view
+COPY --from=builder /opt/view /opt/view
 
-RUN view_store="$(echo /opt/._view/*)" && \
-    test -d "${view_store}/bin" && \
-    ln -s "${view_store}" /opt/view && \
+RUN test -d /opt/view/bin && \
     printf '%s\n' /opt/view/lib /opt/view/lib64 > /etc/ld.so.conf.d/spack-view.conf && \
     ldconfig
 
@@ -521,19 +529,43 @@ RUN install -d -m 0755 /opt/xdg/config/astropy /opt/xdg/cache/astropy/iers && \
 # version this image ships rather than drifting into a 404 on the next bump.
 # This is the one step here that needs the *builder* to have network.
 RUN python3 - <<'PY'
+import io
+import json
 import shutil
 import urllib.request
+import zipfile
 
 from astropy.utils.data import import_file_to_cache, is_url_in_cache
-from astropy.utils.iers import IERS_A, IERS_A_URL, IERS_LEAP_SECOND_URL, LeapSeconds
+from astropy.utils.iers import (
+    IERS_A, IERS_A_URL, IERS_A_URL_MIRROR, IERS_LEAP_SECOND_URL, LeapSeconds,
+)
 
 IERS_DIR = "/opt/xdg/cache/astropy/iers"
 eop, leap = f"{IERS_DIR}/finals2000A.all", f"{IERS_DIR}/Leap_Second.dat"
 
-for url, dest in ((IERS_A_URL, eop), (IERS_LEAP_SECOND_URL, leap)):
-    print(f"fetching {url} -> {dest}", flush=True)
-    with urllib.request.urlopen(url, timeout=60) as response, open(dest, "wb") as out:
-        shutil.copyfileobj(response, out)
+
+def from_iers_data_wheel(name):
+    # Last resort: the weekly astropy-iers-data release on PyPI ships both files.
+    # datacenter.iers.org's firewall rejects some cloud hosts, and USNO has outages.
+    meta = json.load(urllib.request.urlopen("https://pypi.org/pypi/astropy-iers-data/json", timeout=60))
+    whl = next(f["url"] for f in meta["urls"] if f["filename"].endswith(".whl"))
+    print(f"falling back to {whl}", flush=True)
+    with zipfile.ZipFile(io.BytesIO(urllib.request.urlopen(whl, timeout=120).read())) as z:
+        return z.read(f"astropy_iers_data/data/{name}")
+
+
+for urls, dest in (((IERS_A_URL, IERS_A_URL_MIRROR), eop), ((IERS_LEAP_SECOND_URL,), leap)):
+    for url in urls:
+        print(f"fetching {url} -> {dest}", flush=True)
+        try:
+            with urllib.request.urlopen(url, timeout=60) as response, open(dest, "wb") as out:
+                shutil.copyfileobj(response, out)
+            break
+        except OSError as e:
+            print(f"  failed: {e}", flush=True)
+    else:
+        with open(dest, "wb") as out:
+            out.write(from_iers_data_wheel(dest.rsplit("/", 1)[1]))
 
 # Parse before trusting: a captive portal or an error page would otherwise be
 # cached as gospel and only surface mid-pipeline.
@@ -618,8 +650,8 @@ RUN for m in numpy scipy pandas casacore.tables kubernetes toil cwltool \
     benchmon-run --help >/dev/null && \
     benchmon-visu --help >/dev/null && \
     command -v benchmon-start benchmon-stop dool perf lspci && \
-    python3 -c "import inspect, lsmtool.facet, toil; from toil.batchSystems import kubernetes as k8s; from rapthor.lib import cwlrunner, operation, parset; checks={'extra-hostpath': 'TOIL_KUBERNETES_EXTRA_HOSTPATH' in inspect.getsource(k8s), 'security-context-loader': 'open(file).read()' in inspect.getsource(k8s), 'skip-image-check': 'TOIL_SKIP_IMAGE_CHECK' in inspect.getsource(toil), 'batch-system-validator': 'kubernetes' in inspect.getsource(parset), 'kubernetes-options': '_add_kubernetes_options' in inspect.getsource(cwlrunner), 'max-cores': 'TOIL_MAX_CORES' in inspect.getsource(cwlrunner), 'workdir': 'TOIL_WORKDIR' in inspect.getsource(cwlrunner), 'single-machine-parallelism': '\"single_machine\", \"kubernetes\"' in inspect.getsource(operation), 'voronoi-fallback': 'voronoi fallback facet centers at bbox middle' in inspect.getsource(lsmtool.facet.voronoi), 'facet-reference-point': 'representative_point' in inspect.getsource(lsmtool.facet.Facet)}; print('Patch checks:', checks); assert all(checks.values()), [name for name, applied in checks.items() if not applied]" && \
-    python3 -c "import json,platform; from pathlib import Path; p=Path('/opt/view/bin/DP3').resolve().parents[1]/'.spack'/'spec.json'; nodes=json.loads(p.read_text()).get('spec',{}).get('nodes',[]); dp3=next(n for n in nodes if n.get('name')=='dp3'); fp=dp3.get('parameters',{}).get('fastpredict'); arm=platform.machine() in ('aarch64','arm64'); assert fp is (not arm), (fp, platform.machine()); print('DP3 FastPredict', 'disabled on ARM' if arm else 'enabled')"
+    python3 -c "import inspect, lsmtool.facet, toil; from toil.batchSystems import kubernetes as k8s; from rapthor.lib import cwlrunner, operation, parset; checks={'extra-hostpath': 'TOIL_KUBERNETES_EXTRA_HOSTPATH' in inspect.getsource(k8s), 'security-context-loader': 'open(file).read()' in inspect.getsource(k8s), 'skip-image-check': 'TOIL_SKIP_IMAGE_CHECK' in inspect.getsource(toil), 'batch-system-validator': 'kubernetes' in inspect.getsource(parset), 'kubernetes-options': '_add_kubernetes_options' in inspect.getsource(cwlrunner), 'max-cores': 'TOIL_MAX_CORES' in inspect.getsource(cwlrunner), 'workdir': 'TOIL_WORKDIR' in inspect.getsource(cwlrunner), 'single-machine-parallelism': '\"single_machine\", \"kubernetes\"' in inspect.getsource(operation), 'voronoi-fallback': 'voronoi fallback facet centers at bbox middle' in inspect.getsource(lsmtool.facet.voronoi)}; print('Patch checks:', checks); assert all(checks.values()), [name for name, applied in checks.items() if not applied]" && \
+    python3 -c "import json,platform; from pathlib import Path; p=Path('/opt/view/bin/DP3').resolve().parents[1]/'.spack'/'spec.json'; nodes=json.loads(p.read_text()).get('spec',{}).get('nodes',[]); dp3=next(n for n in nodes if n.get('name')=='dp3'); fp=dp3.get('parameters',{}).get('fast_predict'); arm=platform.machine() in ('aarch64','arm64'); assert fp is (not arm), (fp, platform.machine()); print('DP3 FastPredict', 'disabled on ARM' if arm else 'enabled')"
 
 # Tiny 3-antenna MS + 1 Jy point source; FastPredict must run and write vis.
 # Skipped on ARM: FastPredict is not compiled there.

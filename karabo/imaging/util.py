@@ -7,7 +7,7 @@ import numpy as np
 from astropy.modeling import fitting, models
 from astropy.wcs import WCS
 from numpy.typing import NDArray
-from scipy.optimize import minpack
+from scipy.optimize._minpack import error as MinpackError  # public alias was removed
 from ska_sdp_datamodels.image.image_model import Image as SkaSdpImage
 
 try:
@@ -170,7 +170,7 @@ def guess_beam_parameters(img: Image) -> BeamType:
                 fit.y_stddev.value,
                 fit.theta.value,
             )
-    except minpack.error:
+    except MinpackError:
         warnings.warn("guess_beam_parameters: minpack error, using 1 pixel stddev")
         beam_pixels = (1.0, 1.0, 0.0)
     except ValueError:

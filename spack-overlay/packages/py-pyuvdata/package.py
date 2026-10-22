@@ -109,7 +109,7 @@ class PyPyuvdata(PythonPackage):
     #     depends_on("py-novas-de405@3.1:", type=("build", "run"))
 
     with when("+casa"):
-        depends_on("py-casacore@3.5.0:3.7.1", type=("build", "run"))
+        depends_on("py-casacore@3.5.0:", type=("build", "run"))
 
     # Basic import test
     import_modules = ["pyuvdata"]

@@ -1,0 +1,51 @@
+diff --git a/drvrfile.c b/drvrfile.c
+index ce4c793..6393e76 100644
+--- a/drvrfile.c
++++ b/drvrfile.c
+@@ -6,6 +6,7 @@
+ 
+ #include <string.h>
+ #include <stdlib.h>
++#include <errno.h>
+ #include "fitsio2.h"
+ #include "group.h"  /* needed for fits_get_cwd in file_create */
+ 
+@@ -508,8 +509,10 @@ printf("ABS = %s\n", absURL);
+         }
+     }
+     if (*handle == -1)
+-       return(TOO_MANY_FILES);    /* too many files opened */
+-
++    {
++        ffpmsg("could not create file: too many files opened");
++        return(TOO_MANY_FILES);    /* too many files opened */
++    }
+ #if defined(_WIN32)
+     wcscpy(mode, L"w+b");    /* create new file with read-write */
+     /* Windows
+@@ -561,6 +564,7 @@ printf("ABS = %s\n", absURL);
+     diskfile = _wfopen(wideFilename, L"r");  /* does file already exist? */
+     if (diskfile)
+     {
++        ffpmsg("could not create file: it already exists");
+         fclose(diskfile);         /* close file and exit with error */
+         free(wideFilename);
+         return(FILE_NOT_CREATED); 
+@@ -569,6 +573,7 @@ printf("ABS = %s\n", absURL);
+     diskfile = fopen(filename, "r"); /* does file already exist? */
+     if (diskfile)
+     {
++        ffpmsg("could not create file: it already exists");
+         fclose(diskfile);         /* close file and exit with error */
+         return(FILE_NOT_CREATED); 
+     }
+@@ -587,7 +592,8 @@ printf("ABS = %s\n", absURL);
+ 
+     if (!(diskfile))           /* couldn't create file */
+     {
+-            return(FILE_NOT_CREATED); 
++        printf("could not create file: it already exists (errno=%d)", errno);
++	return(FILE_NOT_CREATED);
+     }
+ 
+     handleTable[ii].fileptr = diskfile;

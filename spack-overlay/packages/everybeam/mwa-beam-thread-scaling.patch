@@ -1,8 +1,8 @@
 diff --git a/cpp/mwabeam/beam2016implementation.cc b/cpp/mwabeam/beam2016implementation.cc
-index 5882527..721591b 100644
+index bc2ca77..7827619 100644
 --- a/cpp/mwabeam/beam2016implementation.cc
 +++ b/cpp/mwabeam/beam2016implementation.cc
-@@ -62,10 +62,7 @@ int Beam2016Implementation::find_closest_freq(int freq_hz) const {
+@@ -65,11 +65,7 @@ int Beam2016Implementation::find_closest_freq(int freq_hz) const {
  Beam2016Implementation::Beam2016Implementation(const double* delays,
                                                 const double* amps,
                                                 const std::string& searchPath)
@@ -10,11 +10,12 @@ index 5882527..721591b 100644
 -      _calcModesLastDelays(),
 -      _calcModesLastAmps(),
 -      _h5File(),
-+    : _h5File(),
-       _searchPath(searchPath),
-       _factorial(100) {
+-      _searchPath(searchPath) {
++    : _h5File(), _searchPath(searchPath) {
    if (delays == nullptr)
-@@ -166,24 +163,29 @@ void Beam2016Implementation::CalcJones(aocommon::MC2x2* result, double az_deg,
+     std::fill(_delays, _delays + N_ANT_COUNT, 0.0);
+   else
+@@ -168,24 +164,29 @@ void Beam2016Implementation::CalcJones(aocommon::MC2x2* result, double az_deg,
        *result = previous_jones;
      } else {
        previous_frequency = freq_hz;
@@ -56,7 +57,7 @@ index 5882527..721591b 100644
          }
  
          *result = aocommon::MC2x2(
-@@ -309,51 +311,30 @@ void Beam2016Implementation::CalcSigmas(double phi, double theta,
+@@ -312,51 +313,30 @@ void Beam2016Implementation::CalcSigmas(double phi, double theta,
  //--------------------------------------------------------------------
  // Calculation of spherical harmonics coefficients (eq. 3-6 in the Sokolowski et
  // al 2016 paper)  --------------------------------
@@ -130,7 +131,7 @@ index 5882527..721591b 100644
  
  // function calculating all coefficients Q1, Q2, N, M and derived MabsM, Nmax
 diff --git a/cpp/mwabeam/beam2016implementation.h b/cpp/mwabeam/beam2016implementation.h
-index 1928a54..715941c 100644
+index 45949b4..ddc7082 100644
 --- a/cpp/mwabeam/beam2016implementation.h
 +++ b/cpp/mwabeam/beam2016implementation.h
 @@ -11,6 +11,7 @@
@@ -149,7 +150,7 @@ index 1928a54..715941c 100644
  #include <span>
  #include <vector>
  
-@@ -141,7 +143,11 @@ class Beam2016Implementation {
+@@ -137,7 +139,11 @@ class Beam2016Implementation {
                    // relaculations
      std::vector<double>
          Cmn;  // coefficient under sumation in equation 3 for X pol.
@@ -162,7 +163,7 @@ index 1928a54..715941c 100644
  
    // Calculation of Jones matrix for a single pointing direction (internal
    // function): INPUT : (az_rad,za_rad) - azimuth and zenith in [radians]
-@@ -168,27 +174,33 @@ class Beam2016Implementation {
+@@ -164,27 +170,33 @@ class Beam2016Implementation {
    std::complex<double> JPower(size_t i) const { return _jPowerTable[i % 4]; }
    std::complex<double> _jPowerTable[4];
  
@@ -309,62 +310,15 @@ index 16b439e..5809d76 100644
     * @brief Compute MWA array response in given zenith/azimuth direction
     *
 diff --git a/cpp/pointresponse/mwapoint.cc b/cpp/pointresponse/mwapoint.cc
-index 9cdaf2b..7e1face 100644
+index 8be63c3..f2b8ca5 100644
 --- a/cpp/pointresponse/mwapoint.cc
 +++ b/cpp/pointresponse/mwapoint.cc
-@@ -3,6 +3,8 @@
- 
- #include "mwapoint.h"
- 
-+#include <algorithm>
-+
- #include <aocommon/matrix2x2.h>
- 
- #include <casacore/measures/Measures/MCPosition.h>
-@@ -17,6 +19,20 @@ namespace pointresponse {
+@@ -17,21 +17,10 @@ namespace pointresponse {
  void MWAPoint::Response(BeamMode /* beam_mode */, std::complex<float>* buffer,
                          double ra, double dec, double freq,
                          size_t /* station_idx */, size_t /* field_id */) {
-+  double zenith_angle, azimuth;
-+  {
-+    std::lock_guard lock(mutex_);
-+    Prepare();
-+    TileBeam2016::ZenithAzimuth(ra, dec, j2000_ref_, j2000_to_hadecref_,
-+                                j2000_to_azelgeoref_, arr_latitude_,
-+                                zenith_angle, azimuth);
-+  }
-+  aocommon::MC2x2 gains;
-+  tile_beam_->ArrayResponse(zenith_angle, azimuth, std::span(&freq, 1), &gains);
-+  gains.AssignTo(buffer);
-+}
-+
-+void MWAPoint::Prepare() {
-   const telescope::MWA& mwatelescope =
-       static_cast<const telescope::MWA&>(GetTelescope());
- 
-@@ -34,37 +50,21 @@ void MWAPoint::Response(BeamMode /* beam_mode */, std::complex<float>* buffer,
-                        mwatelescope.GetOptions().frequency_interpolation,
-                        mwatelescope.GetOptions().coeff_path);
-   }
--
--  aocommon::MC2x2 gains;
--  tile_beam_->ArrayResponse(ra, dec, j2000_ref_, j2000_to_hadecref_,
--                            j2000_to_azelgeoref_, arr_latitude_, freq, gains);
--  gains.AssignTo(buffer);
- }
- 
- void MWAPoint::ResponseDouble(BeamMode beam_mode,
-                               aocommon::MC2x2* response_matrices, double ra,
-                               double dec, std::span<const double> frequencies,
-                               size_t station_id, size_t field_id) {
 -  const telescope::MWA& mwatelescope =
 -      static_cast<const telescope::MWA&>(GetTelescope());
--
--  // Only compute J2000 vectors if time was updated
--  if (HasTimeUpdate()) {
--    SetJ200Vectors();
--    ClearTimeUpdate();
--  }
 -
 -  if (!tile_beam_) {
 -    if (mwatelescope.GetOptions().coeff_path.empty()) {
@@ -373,29 +327,62 @@ index 9cdaf2b..7e1face 100644
 -    tile_beam_.emplace(mwatelescope.GetDelays().data(),
 -                       mwatelescope.GetOptions().frequency_interpolation,
 -                       mwatelescope.GetOptions().coeff_path);
-+  double zenith_angle, azimuth;
-+  {
-+    std::lock_guard lock(mutex_);
-+    Prepare();
-+    TileBeam2016::ZenithAzimuth(ra, dec, j2000_ref_, j2000_to_hadecref_,
-+                                j2000_to_azelgeoref_, arr_latitude_,
-+                                zenith_angle, azimuth);
-   }
+-  }
 -
++  double zenith_angle, azimuth;
++  ZenithAzimuth(ra, dec, zenith_angle, azimuth);
+   aocommon::MC2x2 gains;
 -  tile_beam_->ArrayResponse(ra, dec, j2000_ref_, j2000_to_hadecref_,
--                            j2000_to_azelgeoref_, arr_latitude_, frequencies,
-+  tile_beam_->ArrayResponse(zenith_angle, azimuth, frequencies,
-                             response_matrices);
+-                            j2000_to_azelgeoref_, arr_latitude_, freq, gains);
++  tile_beam_->ArrayResponse(zenith_angle, azimuth, std::span(&freq, 1), &gains);
+   gains.AssignTo(buffer);
  }
  
-@@ -97,25 +97,63 @@ void MWAPoint::Response(aocommon::MC2x2* result, BeamMode beam_mode,
+@@ -39,21 +28,27 @@ void MWAPoint::ResponseDouble(BeamMode beam_mode,
+                               aocommon::MC2x2* response_matrices, double ra,
+                               double dec, std::span<const double> frequencies,
+                               size_t station_id, size_t field_id) {
+-  const telescope::MWA& mwatelescope =
+-      static_cast<const telescope::MWA&>(GetTelescope());
++  double zenith_angle, azimuth;
++  ZenithAzimuth(ra, dec, zenith_angle, azimuth);
++  tile_beam_->ArrayResponse(zenith_angle, azimuth, frequencies,
++                            response_matrices);
++}
+ 
++TileBeam2016& MWAPoint::TileBeam() {
+   if (!tile_beam_) {
+-    if (mwatelescope.GetOptions().coeff_path.empty()) {
+-      throw std::runtime_error("Missing path for MWA coefficients h5 file");
+-    }
+-    tile_beam_.emplace(mwatelescope.GetDelays().data(),
+-                       mwatelescope.GetOptions().frequency_interpolation,
+-                       mwatelescope.GetOptions().coeff_path);
++    tile_beam_ =
++        static_cast<const telescope::MWA&>(GetTelescope()).GetTileBeam();
+   }
++  return *tile_beam_;
++}
+ 
+-  tile_beam_->ArrayResponse(ra, dec, j2000_ref_, j2000_to_hadecref_,
+-                            j2000_to_azelgeoref_, arr_latitude_, frequencies,
+-                            response_matrices);
++void MWAPoint::ZenithAzimuth(double ra, double dec, double& zenith_angle,
++                             double& azimuth) {
++  std::lock_guard lock(mutex_);
++  TileBeam();
++  TileBeam2016::ZenithAzimuth(ra, dec, j2000_ref_, j2000_to_hadecref_,
++                              j2000_to_azelgeoref_, arr_latitude_,
++                              zenith_angle, azimuth);
+ }
+ 
+ void MWAPoint::Response(BeamMode beam_mode, aocommon::MC2x2F* response_matrices,
+@@ -83,23 +78,28 @@ void MWAPoint::Response(aocommon::MC2x2* result, BeamMode beam_mode,
+                         const vector3r_t& itrf_direction) {
    // This is a simple implementation of the ITRF MWA response function in order
    // to get Dp3 to work with the MWA beam. It is quite slow because it does a
-   // itrf->j2000->hadec.
--  std::unique_lock<std::mutex> lock;
--  if (mutex) lock = std::unique_lock<std::mutex>(*mutex);
--  const casacore::MEpoch time_epoch(
--      casacore::Quantity(GetIntervalMidPoint(), "s"));
+-  // itrf->j2000->hadec.
+-  const casacore::MEpoch time_epoch(casacore::Quantity(time_, "s"));
 -  const telescope::MWA& mwatelescope =
 -      static_cast<const telescope::MWA&>(GetTelescope());
 -  casacore::MeasFrame frame(mwatelescope.GetArrayPosition(), time_epoch);
@@ -411,46 +398,18 @@ index 9cdaf2b..7e1face 100644
 -
 -  ResponseDouble(beam_mode, result, j2000_dir[0], j2000_dir[1], freqs,
 -                 station_idx, 0);
-+  //
-+  // All tiles share one beam, so a response that was already calculated for
-+  // this direction (by another station) is reused. Only the casacore
-+  // conversions, which are not thread-safe, are done while holding the
-+  // caller's mutex: the beam itself is evaluated without it, so that threads
-+  // predicting different directions do not serialise on that mutex.
-+  {
-+    std::lock_guard lock(mutex_);
-+    const double time = GetIntervalMidPoint();
-+    if (time != response_cache_time_) {
-+      response_cache_.clear();
-+      response_cache_time_ = time;
-+    }
-+    const auto iter = response_cache_.find(itrf_direction);
-+    if (iter != response_cache_.end() &&
-+        std::equal(freqs.begin(), freqs.end(),
-+                   iter->second.frequencies.begin(),
-+                   iter->second.frequencies.end())) {
-+      std::copy(iter->second.response.begin(), iter->second.response.end(),
-+                result);
-+      return;
-+    }
-+  }
-+
++  // itrf->j2000->hadec. Only the conversions hold mutex_.
 +  double zenith_angle, azimuth;
 +  {
-+    std::unique_lock<std::mutex> caller_lock;
-+    if (mutex) caller_lock = std::unique_lock<std::mutex>(*mutex);
 +    std::lock_guard lock(mutex_);
-+    Prepare();
-+    const casacore::MEpoch time_epoch(
-+        casacore::Quantity(GetIntervalMidPoint(), "s"));
++    TileBeam();
++    const casacore::MEpoch time_epoch(casacore::Quantity(time_, "s"));
 +    const telescope::MWA& mwatelescope =
 +        static_cast<const telescope::MWA&>(GetTelescope());
 +    casacore::MeasFrame frame(mwatelescope.GetArrayPosition(), time_epoch);
 +    const casacore::Vector<double> itrf_coord(
 +        {itrf_direction[0], itrf_direction[1], itrf_direction[2]});
 +    const casacore::Quantum<casacore::Vector<double>> itrf(itrf_coord, "m");
-+    const casacore::MDirection direction_itrf(itrf,
-+                                              casacore::MDirection::ITRF);
 +    casacore::MDirection::Convert measure_converter(
 +        casacore::MDirection::Ref(casacore::MDirection::ITRF, frame),
 +        casacore::MDirection::J2000);
@@ -460,70 +419,122 @@ index 9cdaf2b..7e1face 100644
 +                                j2000_to_hadecref_, j2000_to_azelgeoref_,
 +                                arr_latitude_, zenith_angle, azimuth);
 +  }
-+
 +  tile_beam_->ArrayResponse(zenith_angle, azimuth, freqs, result);
-+
-+  std::lock_guard lock(mutex_);
-+  if (response_cache_.size() >= kMaxCachedResponses) response_cache_.clear();
-+  CachedResponse& cached = response_cache_[itrf_direction];
-+  cached.frequencies.assign(freqs.begin(), freqs.end());
-+  cached.response.assign(result, result + freqs.size());
  }
  
- void MWAPoint::ResponseAllStations(BeamMode beam_mode,
-@@ -131,10 +169,6 @@ void MWAPoint::ResponseAllStations(BeamMode beam_mode,
- void MWAPoint::SetJ200Vectors() {
-   const telescope::MWA& mwatelescope =
-       static_cast<const telescope::MWA&>(GetTelescope());
--  // lock, since casacore::Direction is not thread-safe.
--  // The lock prevents different MWAPoints to calculate the
--  // the station response simultaneously
--  std::unique_lock<std::mutex> lock(mutex_);
-   casacore::MEpoch time_epoch(casacore::Quantity(GetIntervalMidPoint(), "s"));
-   casacore::MeasFrame frame(mwatelescope.GetArrayPosition(), time_epoch);
- 
+ void MWAPoint::UpdateTime(double time) {
 diff --git a/cpp/pointresponse/mwapoint.h b/cpp/pointresponse/mwapoint.h
-index 92c3165..bc11037 100644
+index b478d7d..3d94b88 100644
 --- a/cpp/pointresponse/mwapoint.h
 +++ b/cpp/pointresponse/mwapoint.h
-@@ -7,8 +7,10 @@
+@@ -7,8 +7,8 @@
  #ifndef EVERYBEAM_POINTRESPONSE_MWAPOINT_H_
  #define EVERYBEAM_POINTRESPONSE_MWAPOINT_H_
  
-+#include <map>
++#include <memory>
  #include <mutex>
- #include <optional>
-+#include <vector>
+-#include <optional>
  
  #include <casacore/measures/Measures/MCDirection.h>
  #include <casacore/measures/Measures/MDirection.h>
-@@ -64,7 +66,11 @@ class MWAPoint final : public PointResponse {
-                            std::mutex* mutex = nullptr) final;
+@@ -76,11 +76,16 @@ class MWAPoint final : public PointResponse {
  
   private:
-+  // Requires mutex_ to be held.
-   void SetJ200Vectors();
-+  // Updates the J2000 conversions and creates the tile beam when necessary.
-+  // Requires mutex_ to be held.
-+  void Prepare();
+   void UpdateTime(double time) override;
++  // Returns the shared tile beam. Requires mutex_ to be held.
++  everybeam::mwabeam::TileBeam2016& TileBeam();
++  // Converts a J2000 direction to zenith angle and azimuth. Requires mutex_.
++  void ZenithAzimuth(double ra, double dec, double& zenith_angle,
++                     double& azimuth);
    void ResponseDouble(BeamMode beam_mode, aocommon::MC2x2* response_matrix,
                        double ra, double dec, std::span<const double> freqs,
                        size_t station_id, size_t field_id);
-@@ -77,6 +83,17 @@ class MWAPoint final : public PointResponse {
+ 
+-  std::optional<everybeam::mwabeam::TileBeam2016> tile_beam_;
++  std::shared_ptr<everybeam::mwabeam::TileBeam2016> tile_beam_;
+ 
+   casacore::MDirection::Ref j2000_ref_;
+   casacore::MDirection::Convert j2000_to_hadecref_;
+@@ -88,6 +93,10 @@ class MWAPoint final : public PointResponse {
  
    double arr_latitude_;
-   std::mutex mutex_;
-+
-+  // All MWA tiles have the same beam, and Dp3 asks for it once per station for
-+  // the same direction. The ITRF Response() therefore caches the responses for
-+  // the most recent directions. Protected by mutex_.
-+  struct CachedResponse {
-+    std::vector<double> frequencies;
-+    std::vector<aocommon::MC2x2> response;
-+  };
-+  static constexpr size_t kMaxCachedResponses = 1024;
-+  std::map<vector3r_t, CachedResponse> response_cache_;
-+  double response_cache_time_ = 0.0;
+   double time_;
++  // Dp3 evaluates one point response from several threads. The casacore
++  // conversions are not thread-safe and are done under this mutex; the beam
++  // evaluation itself is not.
++  std::mutex mutex_;
  };
  }  // namespace pointresponse
  }  // namespace everybeam
+diff --git a/cpp/telescope/mwa.cc b/cpp/telescope/mwa.cc
+index 5fa6f2d..519c6de 100644
+--- a/cpp/telescope/mwa.cc
++++ b/cpp/telescope/mwa.cc
+@@ -4,6 +4,7 @@
+ #include "mwa.h"
+ #include "../griddedresponse/mwagrid.h"
+ #include "../pointresponse/mwapoint.h"
++#include "../mwabeam/tilebeam2016.h"
+ 
+ #include <casacore/tables/Tables/TableRecord.h>
+ #include <casacore/measures/TableMeasures/ArrayMeasColumn.h>
+@@ -44,3 +45,16 @@ std::unique_ptr<GriddedResponse> MWA::GetGriddedResponse(
+ std::unique_ptr<PointResponse> MWA::GetPointResponse(double time) const {
+   return std::make_unique<MWAPoint>(this, time);
+ }
++
++std::shared_ptr<everybeam::mwabeam::TileBeam2016> MWA::GetTileBeam() const {
++  std::lock_guard lock(tile_beam_mutex_);
++  if (!tile_beam_) {
++    if (GetOptions().coeff_path.empty()) {
++      throw std::runtime_error("Missing path for MWA coefficients h5 file");
++    }
++    tile_beam_ = std::make_shared<everybeam::mwabeam::TileBeam2016>(
++        delays_.data(), GetOptions().frequency_interpolation,
++        GetOptions().coeff_path);
++  }
++  return tile_beam_;
++}
+diff --git a/cpp/telescope/mwa.h b/cpp/telescope/mwa.h
+index 4335e52..c36afbb 100644
+--- a/cpp/telescope/mwa.h
++++ b/cpp/telescope/mwa.h
+@@ -8,6 +8,8 @@
+ #define EVERYBEAM_TELESCOPE_MWA_H_
+ 
+ #include <array>
++#include <memory>
++#include <mutex>
+ 
+ #include <casacore/measures/Measures/MPosition.h>
+ #include <casacore/ms/MeasurementSets/MeasurementSet.h>
+@@ -24,6 +26,10 @@ namespace pointresponse {
+ class PointResponse;
+ }  // namespace pointresponse
+ 
++namespace mwabeam {
++class TileBeam2016;
++}  // namespace mwabeam
++
+ namespace telescope {
+ 
+ // MWA is part of the public API, since DP3 does a dynamic cast to it for
+@@ -53,9 +59,18 @@ class EVERYBEAM_PUBLIC_API MWA final : public Telescope {
+   }
+   const std::array<double, 16>& GetDelays() const { return delays_; }
+ 
++  /**
++   * Tile beam shared by all point responses of this telescope, so that the
++   * coefficient file is read and the modes are calculated only once instead
++   * of for every time step. Thread-safe.
++   */
++  std::shared_ptr<mwabeam::TileBeam2016> GetTileBeam() const;
++
+  private:
+   casacore::MPosition array_position_;
+   std::array<double, 16> delays_;
++  mutable std::mutex tile_beam_mutex_;
++  mutable std::shared_ptr<mwabeam::TileBeam2016> tile_beam_;
+ };
+ 
+ }  // namespace telescope

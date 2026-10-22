@@ -28,7 +28,9 @@ class PyHealpy(PythonPackage):
     depends_on("py-build", type="build")
     depends_on("py-pyproject-hooks", type="build")
     depends_on("py-wheel", type="build")
-    depends_on("py-cython@0.29:0.29", type="build")
+    depends_on("py-cython@0.29:0.29", type="build", when="@:1.16")
+    # Cython 3 is required for Python 3.12.
+    depends_on("py-cython@0.29:", type="build", when="@1.17:")
     depends_on("py-setuptools-scm@6:", type="build")
     depends_on("py-pkgconfig", type="build")
     depends_on("pkgconfig", type="build")
@@ -55,9 +57,9 @@ class PyHealpy(PythonPackage):
     # Allow toggling MPI/OpenMP through to healpix-cxx and libsharp
     # variant("mpi", default=True, description="Enable MPI via healpix-cxx/libsharp")
     # variant("openmp", default=True, description="Enable OpenMP via healpix-cxx/libsharp")
-    # 1.10–1.12: keep NumPy-1-era stacks (e.g. SWF-8 / GPy) working. SciPy
-    # 1.14+ belongs with NumPy 2; use ~scipy or builtin healpy there.
-    depends_on("py-scipy@1.10.1:1.12", type=("build", "run"), when="+scipy")
+    # @:1.16 caps SciPy for the NumPy-1-era stacks (SWF-8 / GPy); 1.17 has no upper bound.
+    depends_on("py-scipy@1.10.1:1.12", type=("build", "run"), when="@:1.16 +scipy")
+    depends_on("py-scipy@1.10.1:", type=("build", "run"), when="@1.17: +scipy")
     depends_on("py-astropy", type=("build", "run"))
     # Optional plotting support; avoid heavy GUI stack for headless verify builds
     variant("plot", default=True, description="Enable plotting support via matplotlib")

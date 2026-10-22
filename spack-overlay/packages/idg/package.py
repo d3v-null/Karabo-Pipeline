@@ -1,11 +1,3 @@
-# Overlay for ska-sdp-spack idg: pin cudawrappers away from floating `main`.
-#
-# IDG 1.3.0 FetchContents https://github.com/nlesc-recruit/cudawrappers @ main.
-# As of 2026-07-29 that tip unconditionally wraps CUDA 12.4+ green-context /
-# CUdevResource driver APIs, so builds against cuda@12.2.2 die with:
-#   error: 'CUdevResourceDesc' was not declared in this scope
-# Pin to the 1.0.0 release (last tag before that expansion) for reproducible
-# builds that still work with CUDA 12.2.
 import os
 
 from spack_repo.builtin.build_systems.cmake import CMakePackage
@@ -21,6 +13,7 @@ from spack.package import (
 )
 
 
+# Karabo overlay of ska-sdp-spack's recipe: pins cudawrappers (see patch()).
 class Idg(CMakePackage):
     """Image Domain Gridding (IDG) is a fast method for convolutional
     resampling (gridding/degridding) of radio astronomical data (visibilities).
@@ -42,7 +35,6 @@ class Idg(CMakePackage):
         submodules=True,
         no_cache=True,
     )
-    version("latest", branch="master", submodules=True, deprecated=True)
     version("master", branch="master", submodules=True)
 
     variant("cuda", default=False, description="Enable CUDA support")
@@ -62,34 +54,22 @@ class Idg(CMakePackage):
     depends_on("py-numpy", when="+python")
 
     def patch(self):
-        # idg-lib/CMakeLists.txt (1.3.0+):
-        #   FetchContent_Declare(cudawrappers ... GIT_TAG main)
-        # Pin to a release that does not require CUDA >= 12.4.
-        cmake = os.path.join("idg-lib", "CMakeLists.txt")
+        # idg-lib FetchContents cudawrappers at floating `main`, which now
+        # requires CUDA >= 12.4 (CUdevResourceDesc). Pin the 1.0.0 release.
+        cmake = join_path("idg-lib", "CMakeLists.txt")
         if not os.path.isfile(cmake):
             return
         with open(cmake) as fh:
             text = fh.read()
-        if "nlesc-recruit/cudawrappers" not in text:
+        if "nlesc-recruit/cudawrappers" not in text or "GIT_TAG 1.0.0)" in text:
             return
         if "GIT_TAG main)" not in text:
-            if "GIT_TAG 1.0.0)" in text:
-                return
-            raise InstallError(
-                "idg overlay: cudawrappers FetchContent present but GIT_TAG is "
-                "neither main nor 1.0.0; update the pin"
-            )
-        # filter_file treats regex=True by default; escape the closing paren.
+            raise InstallError("idg: unexpected cudawrappers GIT_TAG; update the pin")
         filter_file(r"GIT_TAG main\)", "GIT_TAG 1.0.0)", cmake)
-        with open(cmake) as fh:
-            text = fh.read()
-        if "GIT_TAG 1.0.0)" not in text:
-            raise InstallError(
-                "idg overlay failed to pin cudawrappers to GIT_TAG 1.0.0"
-            )
 
     def cmake_args(self):
         args = [
+            # let Spack determine arch build flags
             self.define("PORTABLE", True),
             self.define("BUILD_LIB_CPU", True),
             self.define_from_variant("BUILD_LIB_CUDA", "cuda"),
@@ -116,6 +96,12 @@ class Idg(CMakePackage):
         """Ensure that the example executables run."""
         which(getattr(self.prefix.bin.examples.cxx, "idg-plan.x"))()
 
-        os.environ["NR_STATIONS"] = "2"
+        os.environ["NR_STATIONS"] = "2"  # Speeds up the examples
         which(getattr(self.prefix.bin.examples.cxx, "cpu-optimized.x"))()
         which(getattr(self.prefix.bin.examples.cxx, "cpu-reference.x"))()
+
+    def test_python_import(self):
+        """Ensure that the python module can be imported."""
+        if "+python" in self.spec:
+            python = self.module.python
+            python("-c", "import idg")

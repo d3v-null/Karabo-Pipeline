@@ -154,7 +154,7 @@ jobs:
           build-args: |
             SKIP_TESTS=1
             SPACK_TARGET=${{ matrix.platform == 'linux/amd64' && 'x86_64_v2' || 'aarch64' }}
-            SPACK_MIRROR_OCI=oci://${{ env.REGISTRY }}/${{ github.repository_owner }}/sp5505-spack-buildcache-cpu
+            SPACK_MIRROR_OCI=oci://${{ env.REGISTRY }}/${{ github.repository_owner }}/sp5505-spack-buildcache-cpu-2026.10.3
             CUDA_ARCH=
             CUDA_VERSION=
             PIP_EXTRAS=${{ env.PIP_EXTRAS }}
@@ -291,7 +291,7 @@ jobs:
             # Populate and consume an OCI Spack buildcache (ska-sdp-spack CI uses this approach).
             # This makes repeat CI builds much faster even when binaries.spack.io has no matches
             # for our overlay / pinned specs.
-            SPACK_MIRROR_OCI=oci://${{ env.REGISTRY }}/${{ github.repository_owner }}/sp5505-spack-buildcache
+            SPACK_MIRROR_OCI=oci://${{ env.REGISTRY }}/${{ github.repository_owner }}/sp5505-spack-buildcache-2026.10.3
             CUDA_ARCH=${{ env.CUDA_ARCH }}
             CUDA_VERSION=${{ env.CUDA_VERSION }}
             PIP_EXTRAS=${{ env.PIP_EXTRAS }}

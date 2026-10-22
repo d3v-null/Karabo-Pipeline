@@ -123,7 +123,7 @@ jobs:
           outputs: type=image,name=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
           build-args: |
             SPACK_TARGET=${{ matrix.platform == 'linux/amd64' && 'x86_64_v2' || 'aarch64' }}
-            SPACK_MIRROR_OCI=oci://${{ env.REGISTRY }}/${{ github.repository_owner }}/rapthor-jupyter-spack-buildcache
+            SPACK_MIRROR_OCI=oci://${{ env.REGISTRY }}/${{ github.repository_owner }}/rapthor-jupyter-spack-buildcache-2026.10.3
           secrets: |
             spack_oci_username=${{ github.actor }}
             spack_oci_password=${{ github.token }}

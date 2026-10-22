@@ -1,77 +1,89 @@
-from spack.package import *
 from spack_repo.builtin.build_systems.python import PythonPackage
+
+from spack.package import EnvironmentModifications, depends_on, license, maintainers, version
 
 
 class PyCasacore(PythonPackage):
-    """Python bindings for casacore."""
+    """
+    ska-sdp-spack recipe + a real version for setuptools-scm (see setup_build_environment).
+
+    Python-casacore is a set of Python bindings for casacore, a c++
+    library used in radio astronomy.
+    """
 
     homepage = "https://github.com/casacore/python-casacore"
-    git = "https://github.com/casacore/python-casacore.git"
+    url = (
+        "https://github.com/casacore/python-casacore/"
+        "archive/refs/tags/v3.6.1.tar.gz"
+    )
+    git = "https://github.com/casacore/python-casacore"
 
-    license("GPL-2.0-or-later")
+    maintainers("saliei")
 
-    version("3.5.0", tag="v3.5.0")
-    version("3.7.1", tag="v3.7.1")
-    version("3.6.1", tag="v3.6.1")
+    license("LPGL-3.0")
 
-    # Build deps
-    depends_on("python@3.8:", type=("build", "run"))
-    depends_on("py-setuptools@61:", type="build")
-    depends_on("py-wheel", type="build")
-    depends_on("py-build", type="build")
-    depends_on("py-scikit-build-core", type="build", when="@3.6.1:")
-    depends_on("py-setuptools-scm", type="build", when="@3.6.1:")
-    depends_on("py-numpy@1.22:", type=("build", "run"))
-    depends_on("py-six", type=("build", "run", "test"))
+    # Since Python-casacore extracts its version from the .git tree, disable
+    # caching. Spack omits the .git tree from cached sources.
+    version("master", branch="master", no_cache=True)
+    version(
+        "3.7.1",
+        tag="v3.7.1",
+        commit="4772a710ba7884c10a8dfb312e9fd4bae3513588",
+        no_cache=True,
+    )
+    version("3.6.1", tag="v3.6.1", no_cache=True)
+    version(
+        "3.5.2",
+        sha256="ad70c8e08893eec928b3e38c099bda8863f5aa9d099fd00694ad2b0d48eba08f",
+    )
+    version(
+        "3.5.1",
+        sha256="a577233c7311f64a8048180ee82d6946fee16e0dce2976eb516784a32d8b9133",
+    )
+    version(
+        "3.5.0",
+        sha256="47ac85d47051074d64415414212c8c2cfcb49a2037f5c3d78f71ab5b162d1e8b",
+    )
+    version(
+        "3.4.0",
+        sha256="f654781292308de70c037981f5f7f5aeb02cf980a6f1367d1c294e7b4fca42ce",
+    )
 
-    # Link against casacore with Python enabled
-    depends_on("casacore@3.5.0+python", when="@3.5.0")
-    depends_on("casacore@3.6.1+python", when="@3.6.1")
-    depends_on("casacore@3.7.0+python", when="@3.7.0")
-    depends_on("casacore@3.7.1+python", when="@3.7.1")
-    depends_on("casacore@3.8.0:+python", when="@3.8.0:")
-    # Require Boost with Python and NumPy components for bindings
-    depends_on("boost+python+numpy")
+    depends_on("c")
+    depends_on("cxx")
+    depends_on("py-scikit-build-core+pyproject", type="build")
+    depends_on("py-setuptools-scm", type="build")
+    depends_on("py-setuptools", type="build")
+    depends_on("boost+python", type="build")
+    depends_on("cfitsio", type="build")
+    depends_on("wcslib", type="build")
+    depends_on("ninja", type="build")
+    depends_on("cmake", type="build")
 
-    # Environment for build to find casacore
-    def setup_build_environment(self, env):
-        env.prepend_path("CPATH", self.spec["casacore"].prefix.include)
-        env.prepend_path("LIBRARY_PATH", join_path(self.spec["casacore"].prefix, "lib"))
-        env.prepend_path("LIBRARY_PATH", join_path(self.spec["casacore"].prefix, "lib64"))
-        env.prepend_path("LD_LIBRARY_PATH", join_path(self.spec["casacore"].prefix, "lib"))
-        env.prepend_path("LD_LIBRARY_PATH", join_path(self.spec["casacore"].prefix, "lib64"))
-        env.set("CASACORE_ROOT", self.spec["casacore"].prefix)
-        # Help locate Boost.Python/Numpy libs and headers
-        boost = self.spec["boost"].prefix
-        env.set("BOOST_ROOT", boost)
-        env.prepend_path("CPATH", join_path(boost, "include"))
-        env.prepend_path("LIBRARY_PATH", join_path(boost, "lib"))
-        env.prepend_path("LIBRARY_PATH", join_path(boost, "lib64"))
-        env.prepend_path("LD_LIBRARY_PATH", join_path(boost, "lib"))
-        env.prepend_path("LD_LIBRARY_PATH", join_path(boost, "lib64"))
-        # Match Spack Boost Python/Numpy library naming: boost_python<pyXY>, boost_numpy<pyXY>
-        pyver = self.spec["python"].version
-        majmin = f"{pyver.up_to(2).string.replace('.', '')}"
-        env.set("BOOST_PYTHON_LIB", f"boost_python{majmin}")
-        env.set("BOOST_NUMPY_LIB", f"boost_numpy{majmin}")
-        # wcslib is a dependency of casacore - make headers visible
-        wcslib = self.spec["casacore"]["wcslib"].prefix
-        env.prepend_path("CPATH", join_path(wcslib, "include"))
-        env.prepend_path("LIBRARY_PATH", join_path(wcslib, "lib"))
-        env.prepend_path("LIBRARY_PATH", join_path(wcslib, "lib64"))
-        env.prepend_path("LD_LIBRARY_PATH", join_path(wcslib, "lib"))
-        env.prepend_path("LD_LIBRARY_PATH", join_path(wcslib, "lib64"))
-        # cfitsio is also a dependency of casacore - make headers visible
-        cfitsio = self.spec["casacore"]["cfitsio"].prefix
-        env.prepend_path("CPATH", join_path(cfitsio, "include"))
-        env.prepend_path("LIBRARY_PATH", join_path(cfitsio, "lib"))
-        env.prepend_path("LIBRARY_PATH", join_path(cfitsio, "lib64"))
-        env.prepend_path("LD_LIBRARY_PATH", join_path(cfitsio, "lib"))
-        env.prepend_path("LD_LIBRARY_PATH", join_path(cfitsio, "lib64"))
+    depends_on("casacore+python", type=("build", "link"))
 
-    import_modules = ["casacore", "casacore.tables", "casacore.quanta"]
+    # Resembles the dependencies in the project's pyproject.toml file.
+    depends_on("py-six", type="run", when="@:3.6.1")
+    depends_on("py-numpy", type="run")
 
-    def test_import(self):
-        python = self.spec["python"].command
-        if python:
-            python("-c", "import casacore, casacore.tables, casacore.quanta; print('py-casacore OK') ")
+    # Disable RPATH stripping on CMake install. scikit-build-core
+    # encapsulation prevents spack to do that automatically
+    def config_settings(self, _spec, _prefix):
+        return {"cmake.define.CMAKE_INSTALL_RPATH_USE_LINK_PATH": "ON"}
+
+    def flag_handler(self, name, flags):
+        """
+        Add C++17 flag for Apple Clang, which is the default compiler on macOS.
+        """
+        if self.spec.compiler.name == "apple-clang" and self.spec[
+            "casacore"
+        ].satisfies("@3.8.0:"):
+            if name == "cxxflags":
+                flags.append("-std=c++17")
+        return (flags, None, None)
+
+    def setup_build_environment(self, env: EnvironmentModifications) -> None:
+        # Spack's shallow commit checkout has no tags, so setuptools-scm reports
+        # 0.1.dev1+g<sha> and pip later "upgrades" it to a PyPI wheel.
+        if not self.spec.satisfies("@master"):
+            env.set("SETUPTOOLS_SCM_PRETEND_VERSION_FOR_PYTHON_CASACORE", str(self.version))

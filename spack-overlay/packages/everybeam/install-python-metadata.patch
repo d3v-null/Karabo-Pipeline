@@ -1,8 +1,8 @@
 diff --git a/python/CMakeLists.txt b/python/CMakeLists.txt
-index 4aecb84..c67e763 100644
+index 1e62e07..b2f7899 100644
 --- a/python/CMakeLists.txt
 +++ b/python/CMakeLists.txt
-@@ -78,8 +78,22 @@ if(NOT DEFINED Python3_LIBRARY_DIR)
+@@ -81,8 +81,22 @@ if(NOT DEFINED Python3_LIBRARY_DIR)
    endif()
  endif()
  

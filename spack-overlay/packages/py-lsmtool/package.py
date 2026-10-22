@@ -1,16 +1,19 @@
 from spack_repo.builtin.build_systems.python import PythonPackage
 
-from spack.package import depends_on, license, maintainers, patch, variant, version, when
+from spack.package import (
+    depends_on,
+    license,
+    maintainers,
+    patch,
+    variant,
+    version,
+    when,
+)
 
 
+# Karabo overlay of ska-sdp-spack's recipe; only the patch below differs.
 class PyLsmtool(PythonPackage):
-    """LOFAR Sky model tool.
-
-    Overlay copy: shadows the ska-sdp-spack package, so it must carry every
-    version pinned by py-rapthor's dependency table (older Rapthor releases
-    require older LSMTool commits), plus the facet-robustness patch for
-    1.8.0.20260630.
-    """
+    """LOFAR Sky model tool"""
 
     homepage = "https://lsmtool.readthedocs.io"
     git = "https://git.astron.nl/RD/LSMTool"
@@ -21,6 +24,22 @@ class PyLsmtool(PythonPackage):
 
     # Since LSMTool extracts its version from the .git tree, disable
     # caching. Spack omits the .git tree from cached sources.
+    version("1.9.0", tag="v1.9.0", no_cache=True)
+    version(
+        "1.8.0.20260916",
+        commit="95bfd8e6d94948404827167df238674bffb9cd74",
+        no_cache=True,
+    )
+    version(
+        "1.8.0.20260812",
+        commit="18d7c81467d8a5912502584c0c5cc09dd0e9ee5b",
+        no_cache=True,
+    )
+    version(
+        "1.8.0.20260805",
+        commit="85b2ef4f5953e4e6b201e818c5766a2898751a6c",
+        no_cache=True,
+    )
     version(
         "1.8.0.20260630",
         commit="176ef008534bdd929e58c57b00c0a60e3445ad68",
@@ -94,4 +113,13 @@ class PyLsmtool(PythonPackage):
         depends_on("py-shapely", type="run")
         depends_on("py-sofia2", type="run", when="+sofia")
 
-    patch("rapthor-facet-robustness.patch", when="@1.8.0.20260630")
+    # Rapthor on wide (MWA) fields: repair self-intersecting facet polygons and
+    # keep one full-field facet per direction when no calibrator falls inside
+    # the tessellation box (scipy's Voronoi fails on an empty point set).
+    patch("rapthor-facet-robustness.patch", when="@1.9.0")
+
+    def setup_build_environment(self, env):
+        # Built from a shallow git commit without tags: give setuptools-scm the real
+        # version, or pip sees 0.1.dev1 and may "upgrade" it over the spack install.
+        if str(self.version)[0].isdigit():
+            env.set("SETUPTOOLS_SCM_PRETEND_VERSION_FOR_LSMTOOL", str(self.version))

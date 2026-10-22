@@ -1,10 +1,10 @@
 diff --git a/steps/OnePredict.cc b/steps/OnePredict.cc
-index 789c48bf..42b0bb4c 100644
+index d88a6a53..a608cacd 100644
 --- a/steps/OnePredict.cc
 +++ b/steps/OnePredict.cc
-@@ -69,6 +69,51 @@ using dp3::common::operator<<;
- namespace dp3 {
- namespace steps {
+@@ -67,6 +67,51 @@ using dp3::common::operator<<;
+ 
+ namespace dp3::steps {
  
 +namespace {
 +using ModelBuffer = aocommon::xt::UTensor<std::complex<double>, 3>;
@@ -54,7 +54,7 @@ index 789c48bf..42b0bb4c 100644
  OnePredict::OnePredict(const common::ParameterSet& parset,
                         const std::string& prefix,
                         const std::vector<std::string>& source_patterns) {
-@@ -545,8 +590,9 @@ bool OnePredict::process(std::unique_ptr<DPBuffer> buffer) {
+@@ -542,8 +587,9 @@ bool OnePredict::process(std::unique_ptr<DPBuffer> buffer) {
  }
  
  void OnePredict::PredictSourceRange(
@@ -63,10 +63,10 @@ index 789c48bf..42b0bb4c 100644
 +    aocommon::xt::UTensor<std::complex<double>, 3>& model_data,
 +    aocommon::xt::UTensor<std::complex<double>, 3>& patch_model_data,
 +    size_t start, size_t end, size_t thread_index,
-     everybeam::pointresponse::PointResponse* point_response) {
+     const everybeam::TimeCache* time_cache) {
    const size_t n_stations = getInfoOut().nantenna();
    const size_t n_baselines = getInfoOut().nbaselines();
-@@ -554,10 +600,8 @@ void OnePredict::PredictSourceRange(
+@@ -551,10 +597,8 @@ void OnePredict::PredictSourceRange(
    const size_t n_buffer_correlations =
        stokes_i_only_ ? 1 : getInfoOut().ncorr();
  
@@ -79,9 +79,9 @@ index 789c48bf..42b0bb4c 100644
  
    const size_t start_patch = source_list_[start].second->Index();
    if (apply_beam_) {
-@@ -618,10 +662,6 @@ void OnePredict::PredictSourceRange(
-                   point_response, thread_index, patch_model_data,
-                   stokes_i_only_);
+@@ -613,10 +657,6 @@ void OnePredict::PredictSourceRange(
+     addBeamToData(*patch, patch->Index() - start_patch, model_data, time_cache,
+                   thread_index, patch_model_data, stokes_i_only_);
    }
 -
 -  // Add this thread's data to the global buffer
@@ -109,10 +109,10 @@ index 789c48bf..42b0bb4c 100644
    loop.Run(0, source_list_.size(),
             [&](size_t start, size_t end, size_t thread_index) {
 -             PredictSourceRange(global_data, start, end, thread_index, mutex,
--                                point_response.get());
+-                                time_cache.get());
 +             PredictSourceRange(*model_buffers[thread_index],
 +                                *patch_buffers[thread_index], start, end,
-+                                thread_index, point_response.get());
++                                thread_index, time_cache.get());
             });
  
 +  // Sum the per-thread buffers. Each thread sums all buffers for its own range
@@ -135,23 +135,23 @@ index 789c48bf..42b0bb4c 100644
  }
  
 diff --git a/steps/OnePredict.h b/steps/OnePredict.h
-index 76e64c39..1a610a5d 100644
+index f0b1eae7..d5bf6130 100644
 --- a/steps/OnePredict.h
 +++ b/steps/OnePredict.h
-@@ -149,11 +149,14 @@ class OnePredict : public ModelDataStep {
+@@ -148,11 +148,14 @@ class OnePredict : public ModelDataStep {
    void PredictWithSourceParallelization(base::DPBuffer::DataType& destination,
                                          double time);
  
 +  /// Predicts sources [start, end) into @p model_data, using
 +  /// @p patch_model_data as scratch space when the beam is applied.
-   /// @param point_response Point response for computing beam responses. It is
-   /// null if the beam response should not be updated.
+   /// @param time_cache cached time / point response for computing beam
+   /// responses. It is null if the beam response should not be updated.
    void PredictSourceRange(
 -      aocommon::xt::UTensor<std::complex<double>, 3>& result, size_t start,
 -      size_t end, size_t thread_index, std::mutex& mutex,
 +      aocommon::xt::UTensor<std::complex<double>, 3>& model_data,
 +      aocommon::xt::UTensor<std::complex<double>, 3>& patch_model_data,
 +      size_t start, size_t end, size_t thread_index,
-       everybeam::pointresponse::PointResponse* point_response);
+       const everybeam::TimeCache* time_cache);
  
    /// Assigns @p buffer to @p destination. If @c stokes_i_only_ is set,

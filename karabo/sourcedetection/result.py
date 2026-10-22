@@ -170,8 +170,9 @@ class SourceDetectionResult(ISourceDetectionResult):
         beam_ = (beam["bmaj"], beam["bmin"], beam["bpa"])
         quiet = not verbose
         try:
+            # positional: bdsf 1.14 renamed the parameter from `input` to `finput`
             detection = bdsf.process_image(
-                input=image.path,
+                image.path,
                 beam=beam_,
                 quiet=quiet,
                 format="csv",
@@ -401,8 +402,9 @@ class PyBDSFSourceDetectionResultList(ISourceDetectionResult):
             is accessed and not beforehand.
         min_pixel_distance_between_sources (int):
             The minimum number of pixels that must separate sources to be considered
-            distinct. Defaults to 5. This attribute can be modified before calling
-            any function that relies on it to adjust the minimum distance criterion.
+            distinct. Defaults to 10: PyBDSF >= 1.14 fits sources truncated at a cut
+            edge several pixels off their true position. This attribute can be
+            modified before calling any function that relies on it.
         verbose (bool):
             If True, prints verbose output. Defaults to False.
 
@@ -422,7 +424,7 @@ class PyBDSFSourceDetectionResultList(ISourceDetectionResult):
         self,
         bdsf_detection: Optional[List[PyBDSFSourceDetectionResult]] = None,
     ) -> None:
-        self.min_pixel_distance_between_sources = 5
+        self.min_pixel_distance_between_sources = 10
         self.verbose = False
         self.bdsf_detection = bdsf_detection
 
@@ -613,6 +615,15 @@ class PyBDSFSourceDetectionResultList(ISourceDetectionResult):
                 print("No sources were merged.")
         return combined_positions
 
+    @staticmethod
+    def __distance_to_cut_edge(
+        xy: NDArray[np.float64], image: Image
+    ) -> NDArray[np.float64]:
+        nx, ny = image.header["NAXIS1"], image.header["NAXIS2"]
+        return np.min(
+            [xy[:, 0], xy[:, 1], nx - 1 - xy[:, 0], ny - 1 - xy[:, 1]], axis=0
+        )
+
     def __drop_cast_sources(
         self,
         detected_sources: NDArray[np.float64],
@@ -693,8 +704,9 @@ class PyBDSFSourceDetectionResultList(ISourceDetectionResult):
 
         This method calculates the pixel positions of sources in a mosaic image
         and identifies sources that are closer than a specified minimum pixel
-        distance. It decides which sources to drop based on their total flux,
-        preferring sources with higher total flux.
+        distance. Of two overlapping sources it keeps the one found further from
+        the edge of its cut (a source cut by an edge is fitted truncated and
+        off-centre), falling back to the higher total flux.
 
         Returns
         -------
@@ -727,6 +739,13 @@ class PyBDSFSourceDetectionResultList(ISourceDetectionResult):
             ],
             axis=0,
         )
+        edge_dists = np.concatenate(
+            [
+                self.__distance_to_cut_edge(xy, result.get_source_image())
+                for xy, result in zip(xy_poss, self.bdsf_detection)
+            ],
+            axis=0,
+        )
         # Check if some sources overlap
         to_drop: List[int] = []
         for i in range(len(combined_positions)):
@@ -740,7 +759,9 @@ class PyBDSFSourceDetectionResultList(ISourceDetectionResult):
                             f"Source {i} and {j} are being merged "
                             f"because distance between them is {dist}."
                         )
-                    if total_fluxes[i] > total_fluxes[j]:
+                    if not np.isclose(edge_dists[i], edge_dists[j]):
+                        to_drop.append(j if edge_dists[i] > edge_dists[j] else i)
+                    elif total_fluxes[i] > total_fluxes[j]:
                         to_drop.append(j)
                     else:
                         to_drop.append(i)

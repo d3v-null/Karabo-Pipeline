@@ -1,0 +1,18 @@
+diff --git a/ddecal/SolverFactory.cc b/ddecal/SolverFactory.cc
+index bd21aa79..d5377aa9 100644
+--- a/ddecal/SolverFactory.cc
++++ b/ddecal/SolverFactory.cc
+@@ -89,9 +89,12 @@ std::unique_ptr<SolverBase> CreateDiagonalSolver(SolverAlgorithm algorithm,
+   if (settings.use_gpu) {
+     switch (algorithm) {
+       case SolverAlgorithm::kDirectionIterative:
++        // The CUDA kernels only handle full 2x2 visibilities (buffers are
++        // sized with sizeof(VisMatrix)), so the MC2x2FDiag instantiation
++        // under-allocates and the kernels read past the end of it.
+         if (settings.solver_data_use == SolverDataUse::kFull)
+           return std::make_unique<
+-              IterativeDiagonalSolverCuda<aocommon::MC2x2FDiag>>(
++              IterativeDiagonalSolverCuda<aocommon::MC2x2F>>(
+               settings.keep_host_buffers);
+         break;
+       default:

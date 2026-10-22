@@ -1,6 +1,8 @@
+diff --git a/rapthor/lib/cwlrunner.py b/rapthor/lib/cwlrunner.py
+index 1012de96..16c4da56 100644
 --- a/rapthor/lib/cwlrunner.py
 +++ b/rapthor/lib/cwlrunner.py
-@@ -281,7 +281,7 @@
+@@ -329,7 +329,7 @@ class ToilRunner(CWLRunner):
          working directory as fall-back.
          """
          prefix = super()._get_tmp_outdir_prefix()
@@ -9,7 +11,7 @@
              prefix = os.path.join(
                  self.operation.pipeline_working_dir, "tmp-out", self.command + "."
              )
-@@ -295,7 +295,7 @@
+@@ -343,7 +343,7 @@ class ToilRunner(CWLRunner):
          `[cluster]` of the parset file, else use a temporary directory inside
          the pipeline working directory.
          """
@@ -18,7 +20,7 @@
              return os.path.join(
                  self.operation.global_scratch_dir
                  if self.operation.global_scratch_dir
-@@ -323,6 +323,13 @@
+@@ -371,6 +371,13 @@ class ToilRunner(CWLRunner):
              toil_env_variables["TOIL_SLURM_ARGS"] += " " + self._environment["TOIL_SLURM_ARGS"]
          os.environ.update(toil_env_variables)
  
@@ -32,7 +34,7 @@
      def _add_debug_options(self) -> None:
          """
          Add options specific for debugging a workflow. Debugging of workflows
-@@ -361,6 +368,8 @@
+@@ -409,6 +416,8 @@ class ToilRunner(CWLRunner):
              self.args.extend(["--restart"])
          if self.operation.batch_system.startswith("slurm"):
              self._add_slurm_options()
@@ -41,20 +43,11 @@
          elif self.operation.batch_system == "single_machine":
              if tmpdir_prefix := self._get_tmpdir_prefix():
                  # Toil requires that temporary directory exists
---- a/rapthor/lib/parset.py
-+++ b/rapthor/lib/parset.py
-@@ -410,7 +410,7 @@
-         options = settings["cluster"]
- 
-         for opt, valid_values in {
--            "batch_system": ("single_machine", "slurm", "slurm_static"),
-+            "batch_system": ("single_machine", "slurm", "slurm_static", "kubernetes"),
-             "cwl_runner": ("cwltool", "streamflow", "toil"),
-         }.items():
-             if options[opt] not in valid_values:
+diff --git a/rapthor/lib/operation.py b/rapthor/lib/operation.py
+index 03df1148..223cf529 100644
 --- a/rapthor/lib/operation.py
 +++ b/rapthor/lib/operation.py
-@@ -109,7 +109,7 @@
+@@ -143,7 +143,7 @@ class Operation(object):
          self.batch_system = self.parset["cluster_specific"]["batch_system"]
  
          # Get the maximum number of nodes to use
@@ -63,3 +56,16 @@
              self.max_nodes = 1
          else:
              self.max_nodes = self.parset["cluster_specific"]["max_nodes"]
+diff --git a/rapthor/lib/parset.py b/rapthor/lib/parset.py
+index 0127bdeb..b1c3d65f 100644
+--- a/rapthor/lib/parset.py
++++ b/rapthor/lib/parset.py
+@@ -410,7 +410,7 @@ class Parset:
+         options = settings["cluster"]
+ 
+         for opt, valid_values in {
+-            "batch_system": ("single_machine", "slurm", "slurm_static"),
++            "batch_system": ("single_machine", "slurm", "slurm_static", "kubernetes"),
+             "cwl_runner": ("cwltool", "streamflow", "toil"),
+         }.items():
+             if options[opt] not in valid_values:

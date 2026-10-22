@@ -1,7 +1,7 @@
 # build me with ./build_sp5505.sh
 
 # Global ARGs: defaults live here once. Stages redeclare without values.
-ARG PYTHON_VERSION=3.10
+ARG PYTHON_VERSION=3.11
 ARG CUDA_VERSION=12.2.2
 ARG CUDA_ARCH="75,80,86,89,90"
 # CUDA_ARCH covers T4/RTX2000, A100, RTX3000, L40, GH200. Empty => CPU-only.
@@ -22,6 +22,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && apt-get --no-install-recommends install -y \
+    python3-yaml \
     autoconf \
     automake \
     bison \
@@ -50,8 +51,9 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     ; # not required because of buildcache: rm -rf /var/lib/apt/lists/*
 
 # Install Rust before any Spack setup, because Spack rust is unbelievably slow.
-ARG RUST_VERSION=1.85.1
-# rust 1.86 cannot find -lcudart in hyperdrive on arm64
+# mypy 2 (via cwltool/schema-salad) needs py-ast-serialize, which needs rustc >= 1.93.
+# Rust 1.86+ couldn't find -lcudart for hyperdrive on arm64; recheck before a +cuda ARM build.
+ARG RUST_VERSION=1.93.0
 ENV CARGO_HOME=/opt/cargo \
     RUSTUP_HOME=/opt/rustup
 RUN set -o pipefail && \
@@ -60,19 +62,27 @@ RUN set -o pipefail && \
     ln -sf /opt/cargo/bin/* /usr/local/bin/ && \
     rustc --version | grep -Fq "$RUST_VERSION"
 
-# Install Spack v1.0.1 and detect compilers
+# Install Spack v1.2.2 (what ska-sdp-spack 2026.10.3 targets) and detect compilers
+# Keep the base image's conda off PATH while building: a conda python of the
+# same minor version gets picked up by spack's python build (libpython clash),
+# and spack 1.2 needs os.O_PATH, which conda's python lacks.
+ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 ENV SPACK_ROOT=/opt/spack \
-    SPACK_DISABLE_LOCAL_CONFIG=1
-RUN git clone --depth=1 --single-branch --branch=v1.1.0 https://github.com/spack/spack.git ${SPACK_ROOT} && \
+    SPACK_DISABLE_LOCAL_CONFIG=1 \
+    SPACK_PYTHON=/usr/bin/python3
+RUN git clone --depth=1 --single-branch --branch=v1.2.2 https://github.com/spack/spack.git ${SPACK_ROOT} && \
     cd ${SPACK_ROOT} && \
     rm -rf .git && \
-    # Spack v1.1.0 ships some dangling symlinks in docs assets which cause
+    # Spack v1.x ships some dangling symlinks in docs assets which cause
     # `fix-permissions` (from the Jupyter base image) to fail the build.
     # Remove any broken symlinks before running fix-permissions.
     find ${SPACK_ROOT}/lib/spack/docs -xtype l -delete || true && \
     . share/spack/setup-env.sh && \
+    # Pin the builtin package repo to the tag ska-sdp-spack 2026.10.3 uses.
+    spack repo set --scope site --destination /opt/spack-packages builtin && \
+    spack repo update --scope site --tag v2026.06.0 builtin && \
     spack env create --dir /opt/spack_env && \
-    fix-permissions ${SPACK_ROOT} /opt/spack_env
+    fix-permissions ${SPACK_ROOT} /opt/spack-packages /opt/spack_env
 
 RUN echo ". ${SPACK_ROOT}/share/spack/setup-env.sh 2>/dev/null || true" > /etc/profile.d/spack.sh && \
     echo "spack env activate -p /opt/spack_env 2>/dev/null || true" >> /etc/profile.d/spack.sh
@@ -96,15 +106,13 @@ RUN spack compiler find && \
     rust
 
 # Add SKA SDP Spack repo and overlay
-RUN git clone --depth=1 --single-branch --branch=2026.02.5 https://gitlab.com/ska-telescope/sdp/ska-sdp-spack.git /opt/ska-sdp-spack && \
-    python3 -c "p='/opt/ska-sdp-spack/packages/py-cwltool/package.py';s=open(p).read();s=s.replace('pypi = \"cwltool/cwltool-3.1.20221201130942.tar.gz\"','pypi = \"cwltool/cwltool-3.1.20260108082145.tar.gz\"');anchor='    depends_on(\"python@3.9:3\", type=(\"build\", \"run\"))';assert anchor in s;s=s.replace(anchor,'    version(\"3.1.20260108082145\", sha256=\"a12124fa8c1337539b8f291690a01e92f7ab12e4259cc062d40e50f60908bec3\")\n\n'+anchor);open(p,'w').write(s)" && \
+RUN git clone --depth=1 --single-branch --branch=2026.10.3 https://gitlab.com/ska-telescope/sdp/ska-sdp-spack.git /opt/ska-sdp-spack && \
     rm -rf /opt/ska-sdp-spack/.git && \
     spack repo add /opt/ska-sdp-spack
 COPY spack-overlay /opt/karabo-spack
-RUN rm -rf /opt/karabo-spack/packages/py-python-dateutil && \
-    spack repo add /opt/karabo-spack
+RUN spack repo add /opt/karabo-spack
 
-ARG NUMPY_VERSION=2.2.0
+ARG NUMPY_VERSION=2.3.5
 # numpy needed by pyuvdata montagepy numexpr scipy rascil scikit-image pywavelets astroml ducc0 imageio ska-sdp-func-python contourpy aratmospy bokeh astroplan coda harp astropy-healpix katbeam tensorboard h5py dask ml_dtypes ska-gridder-nifty-cuda libboost-python-devel python-casacore tifffile pytest-arraydiff shapely bdsf casacore finufft reproject numcodecs matplotlib-base tools21cm libboost-python numba gwcs tensorflow-base pyfftw boost xarray asdf pyside6 photutils astropy bottleneck pandas oskarpy ska-sdp-datamodels ska-sdp-func healpy keras scikit-learn pyerfa eidos asdf-astropy zarr bluebild
 # conda has numpy 1.26.4
 # numpy 1.23.5 worked with numpy1
@@ -116,94 +124,91 @@ ARG NUMPY_VERSION=2.2.0
 ARG CFITSIO_VERSION=4.6.3
 # conda has cfitsio 4.3.1
 # OSKAR >=2.11 requires CFITSIO >=4.6.2
-ARG PANDAS_VERSION=2.2.3
+ARG PANDAS_VERSION=3.0.3
 # pandas needed by rascil dask xarray ska-sdp-datamodels bluebild
 # conda has pandas 1.5.3
 # pandas@:2.2.1 caps numpy@:1 in builtin spack-packages; need >=2.2.2 for numpy 2
 # pandas 2.x supports numpy 2; previous: 1.5.3
 # conda-forge uses 2.2.x with numpy 2
-ARG XARRAY_VERSION=2024.10.0
+ARG XARRAY_VERSION=2026.2.0
 # xarray needed by pyuvdata bluebild rascil scikit-image astroml ska-sdp-func-python aratmospy bdsf reproject tools21cm gwcs photutils healpy scikit-learn eidos
 # conda has xarray 2023.2.0
 # xarray 2024+ supports numpy 2
 # xarray<2022.13,>=2022.12 required by rascil 1.0.0
 # xarray<2023.0.0,>=2022.10.0 required by ska-sdp-datamodels 0.1.3
 # xarray<2023.0.0,>=2022.11.0 required by ska-sdp-func-python 0.1.5
-ARG H5PY_VERSION=3.12.1
+ARG H5PY_VERSION=3.16.0
 # h5py needed by pyuvdata tensorflow-base ska-sdp-datamodels keras
 # conda has h5py 3.13.0
 # h5py 3.12+ supports numpy 2; previous: 3.7
 # conda-forge uses 3.13.0
-ARG HDF5_VERSION=1.14.3
+ARG HDF5_VERSION=1.14.6
 # conda has hdf5 1.14.3
 # hdf5 1.12.3 worked with numpy1
 # hdf5 1.14 needed by h5py 3.12+
-ARG DISTRIBUTED_VERSION=2024.8.0
+ARG DISTRIBUTED_VERSION=2025.7.0
 # distributed 2024+ supports numpy 2; previous: 2022.12.1
-ARG SCIPY_VERSION=1.14.1
+ARG SCIPY_VERSION=1.17.1
 # scipy 1.14+ supports numpy 2; previous: 1.9.3
 # conda-forge uses 1.13.1+
-ARG MATPLOTLIB_VERSION=3.9.2
+ARG MATPLOTLIB_VERSION=3.9.4
 # matplotlib 3.9+ supports numpy 2; previous: 3.6.3
-# 3.9.2 is the latest available in spack
-ARG ASTROPY_VERSION=6.1.0
+# 3.9.4 is what ska-sdp-spack 2026.10.3 concretises
+ARG ASTROPY_VERSION=7.1.1
 # astropy 6.1+ requires numpy 2; previous: 5.1.1
 # pyuvdata 3.2.0 requires astropy>=6.0
-ARG CASACORE_VERSION=3.7.1
+ARG CASACORE_VERSION=3.8.1
+ARG PY_CASACORE_VERSION=3.7.1
 # conda has 3.5.0
 # casacore 3.7.1 needed by DP3@6.4: (unchanged)
 ARG HEALPY_VERSION=1.17.3
 # healpy 1.17+ compatible with astropy 6; previous: 1.16.6
-ARG OSKAR_VERSION=2.12.0
+ARG OSKAR_VERSION=2.12.0.20260212
 ARG TOOLS21CM_VERSION=2.3.8
 ARG TABULATE_VERSION=0.9.0
 ARG BOOST_VERSION=1.88.0
 # boost 1.88 has numpy 2 compatible Boost.Python/NumPy; previous: 1.82.0
 # developer confirmed: libboost-python=1.88.0 resolves with numpy 2.2
-ARG SKIMAGE_VERSION=0.24.0
+ARG SKIMAGE_VERSION=0.26.0
 # scikit-image 0.24 supports numpy 2
-ARG SKLEARN_VERSION=1.5.2
+ARG SKLEARN_VERSION=1.9.0
 # scikit-learn 1.5+ supports numpy 2; previous: 1.3.2
-ARG TQDM_VERSION=4.66.3
+ARG TQDM_VERSION=4.67.3
 ARG PYUVDATA_VERSION=3.2.0
 # pyuvdata 3.2.0 supports numpy 2 + has MWA beam fix; previous: 2.4.2
-ARG BDSF_VERSION=1.13.0.20260409.1
-# 1.13.0.20260409 is the git commit required by py-rapthor@2.1.20260409:2.1.20260709;
-# pinning it avoids having two py-bdsf versions in the environment view
-ARG DASK_VERSION=2024.8.0
+ARG BDSF_VERSION=1.14.1.20260723
+# matches py-rapthor 2.1.20260917; pinning avoids two py-bdsf versions in the view
+ARG DASK_VERSION=2025.7.0
 # dask 2024+ supports numpy 2; previous: 2022.12.1
-ARG DUCC_VERSION=0.27
+ARG DUCC_VERSION=0.40.0
 # conda uses 0.27
-ARG PHOTUTILS_VERSION=2.0.2
+ARG PHOTUTILS_VERSION=2.3.0
 # conda uses 1.8.0
 # photutils 1.11.0 worked with numpy1
 # photutils 2.0+ supports numpy 2 and astropy 6
 ARG REPROJECT_VERSION=0.14.1
 # conda uses 0.14.1, supports numpy 2 and astropy 6
 # reproject 0.9.1 worked with numpy1
-ARG SDP_DATAMODELS_VERSION=0.2.10
+ARG SDP_DATAMODELS_VERSION=1.4.0
 # conda uses 0.1.3
 # sdp-datamodels 0.2+ supports numpy 2
-ARG SDP_FUNC_PYTHON_VERSION=0.2.0
+ARG SDP_FUNC_PYTHON_VERSION=1.0.4
 # conda uses 0.1.4
 # sdp-func-python 0.2+ supports numpy 2
 ARG ARATMOSPY_VERSION=1.0.0
 ARG EIDOS_VERSION=1.1.0
 ARG KATBEAM_VERSION=0.1.0
 
-ARG AOFLAGGER_VERSION=3.4.0
-ARG WSCLEAN_VERSION=3.6.20260109
-# karabo uses wsclean 3.4,
-# 3.5 best for everybeam 0.7.4 compatibility
-# 3.6.20260109 needed for compatibility with everybeam 0.8 for MWA support in DP3
-ARG EVERYBEAM_VERSION=0.8.3
-# The local Spack overlay provides EveryBeam 0.8.3 for DP3 6.6 MWA support.
-ARG DP3_VERSION=6.6
-# DP3 6.6 is compatible with EveryBeam 0.7.4 through 0.9.
+ARG AOFLAGGER_VERSION=3.6.0.dev1
+ARG WSCLEAN_VERSION=3.7.20260929
+ARG EVERYBEAM_VERSION=0.9.0
+# Overlay adds MWA beam thread-safety/caching on top of the sdp recipe.
+ARG DP3_VERSION=6.6.0.20260923
+# sdp pairs DP3 6.6.0.20260923 with EveryBeam 0.9.0.
 ARG HYPERDRIVE_VERSION=0.8.1.20261017
 # hyperdrive bmetrics branch; pinned so concretizer reuse doesn't keep a cached 0.7.0.
-ARG RAPTHOR_VERSION=2.1.20260630
-# Same rapthor as rapthor-lean/rapthor-jupyter/marimo. Built +mwa: the overlay's
+ARG RAPTHOR_VERSION=2.1.20260917
+# Same rapthor as rapthor-lean/rapthor-jupyter. Built +mwa: the overlay's
 # MWA beam support patch (DP3/WSClean pointed at /opt/mwa_full_embedded_element_pattern.h5,
 # flagged-tile and solar-model robustness fixes), which this image's MWA_BEAM_FILE serves.
 ARG RAPTHOR_MWA_VARIANT=+mwa
@@ -213,7 +218,7 @@ ARG SPACK_TARGET=""
 ARG SPACK_BUILDCACHE_LOCAL=""
 ARG SPACK_MIRROR_OCI=""
 
-RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=locked \
+RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache-2026.10.3,sharing=locked \
     --mount=type=cache,target=/opt/spack-source-cache,id=spack-source-cache,sharing=locked \
     --mount=type=cache,target=/opt/spack-misc-cache,id=spack-misc-cache,sharing=locked \
     --mount=type=secret,id=spack_oci_username,required=false \
@@ -239,13 +244,17 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     fi; \
     echo "SPACK_TARGET=${spack_target} <- (uname -m)=$arch"; \
     spack config add "config:install_tree:root:/opt/software"; \
+    # The new installer hands builds a fifo jobserver that system make 4.3
+    # (called by e.g. py-healpy's setup.py) rejects.
+    spack config add "config:installer:old"; \
     # DO NOT MODIFY CONCRETIZATION OR VIEW SETTINGS
     spack config add "concretizer:unify:when_possible"; \
     # Reused binaries keep the patches they were built with, so a changed
     # mwa-beam-support patch would be silently ignored if a +mwa py-rapthor
     # binary is already in the buildcache. py-rapthor is a cheap pure-python
     # build: always concretize it fresh (its deps are still reused).
-    spack config add "concretizer:reuse:exclude:[py-rapthor]"; \
+    # These overlays fix version metadata (git builds lack tags); a cached ska-sdp-spack build would still satisfy them.
+    spack config add "concretizer:reuse:exclude:[py-rapthor,py-casacore,py-bdsf,py-photutils,py-lsmtool,py-astropy-healpix]"; \
     # view config set via python3 yaml manipulation below (with py-mistune@:2 exclude) \
     spack config add "config:source_cache:/opt/spack-source-cache"; \
     spack config add "config:misc_cache:/opt/spack-misc-cache"; \
@@ -264,21 +273,20 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     [pkgs.setdefault(k,{}).update({'require':v}) for k,v in [\
         ('llvm','~clang~lldb~lld~polly~libomptarget'),\
         ('py-numpy','@2:'),\
-        ('py-zipp','@:3.17'),\
-        ('py-tables','@3.9.2'),\
+        ('py-tables','@3.10.2'),\
         ('py-numexpr','@2.10.2:'),\
         ('py-losoto','@2.6:'),\
         ('py-lsmtool','@1.6.2:'),\
-        ('dp3','@${DP3_VERSION}+idg'),\
+        ('dp3','@${DP3_VERSION}+idg+python'),\
         ('everybeam','@${EVERYBEAM_VERSION}+python'),\
         ('aoflagger','@${AOFLAGGER_VERSION}'),\
         ('casacore','@${CASACORE_VERSION}+python+data+dysco~hdf5~mpi~openmp'),\
-        ('py-casacore','@${CASACORE_VERSION}'),\
+        ('py-casacore','@${PY_CASACORE_VERSION}'),\
         ('py-astropy','@${ASTROPY_VERSION}'),\
         ('cfitsio','+bzip2+fortran+utils'),\
         ('boost','+test'),\
         ('wsclean',sys.argv[1])]];\
-    c['spack']['view']={'default':{'root':'/opt/view'}};\
+    c['spack']['view']={'default':{'root':'/opt/view','link_dirs':False}};\
     f=open(p,'w');yaml.dump(c,f,default_flow_style=False);f.close()" "${WSCLEAN_REQUIRE}"; \
     # Local buildcache persisted via BuildKit cache mount (fast retries / iterations).
     # Disable by setting SPACK_BUILDCACHE_LOCAL=0 or empty.
@@ -304,9 +312,9 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
             spack mirror add --unsigned oci-cache "${SPACK_MIRROR_OCI}"; \
         fi; \
     fi; \
-    spack mirror add v1.1.0 https://binaries.spack.io/v1.1.0; \
+    spack mirror add v1.2.2 https://binaries.spack.io/v1.2.2; \
     spack buildcache keys --install --trust || true; \
-    WSCLEAN_SPEC="wsclean@${WSCLEAN_VERSION}~mpi~python+portable"; \
+    WSCLEAN_SPEC="wsclean@${WSCLEAN_VERSION}~mpi~python"; \
     IDG_SPEC="idg"; \
     if [ -n "${CUDA_ARCH}" ]; then \
         CUDA_PKG="cuda@${CUDA_VERSION}"; \
@@ -320,8 +328,8 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
         WSCLEAN_SPEC="${WSCLEAN_SPEC}~cuda"; \
         IDG_SPEC="${IDG_SPEC}~cuda"; \
     fi; \
-    OSKAR_SPEC="oskar@${OSKAR_VERSION}+python~openmp${CUDA_SUFFIX}"; \
-    HYPERBEAM_SPEC="hyperbeam+python${CUDA_SUFFIX}"; \
+    OSKAR_SPEC="oskar@${OSKAR_VERSION}~openmp+hdf5${CUDA_SUFFIX}"; \
+    HYPERBEAM_SPEC="hyperbeam+python+hdf5-static${CUDA_SUFFIX}"; \
     HYPERDRIVE_SPEC="hyperdrive@${HYPERDRIVE_VERSION}${CUDA_SUFFIX}"; \
     spack add \
     'python@'$PYTHON_VERSION \
@@ -331,7 +339,7 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     ${CUDA_PKG:+"$CUDA_PKG"} \
     'boost@'$BOOST_VERSION'+python+numpy' \
     'hdf5@'$HDF5_VERSION'+hl~mpi+threadsafe' \
-    'py-maturin@1.6.0' \
+    'py-maturin@1.9.6' \
     'cfitsio@'$CFITSIO_VERSION \
     # 'py-astropy@'$ASTROPY_VERSION # transitive, py-rapthor \
     'py-bdsf@'$BDSF_VERSION \
@@ -360,6 +368,7 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     'py-tabulate@'$TABULATE_VERSION \
     'py-xarray@'$XARRAY_VERSION \
     "${OSKAR_SPEC}" \
+    'py-oskar@'$OSKAR_VERSION \
     'py-pyuvdata@'$PYUVDATA_VERSION'+casa' \
     'py-aratmospy@'$ARATMOSPY_VERSION \
     'py-eidos@'$EIDOS_VERSION \
@@ -373,7 +382,7 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     'py-requests' \
     'py-rfc3986' \
     # for testing karabo itself:
-    'py-pytest@8' \
+    'py-pytest@9' \
     # ---------
     # not karabo-related
     "${HYPERBEAM_SPEC}" \
@@ -432,7 +441,9 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     # @run_after("install") hook runs.  The binary cache has a broken build where
     # libhealpix_cxx.so ends up in a deleted temp dir.  Building from source lets the
     # hook copy the shared libs into prefix/lib so they survive at runtime.
-    ac_cv_lib_curl_curl_easy_init=no spack install --no-cache --no-checksum --show-log-on-error py-healpy && \
+    # Only healpy itself: its ~100 dependencies come from the cache as usual.
+    ac_cv_lib_curl_curl_easy_init=no spack install --use-cache --no-check-signature --no-checksum --show-log-on-error --only dependencies py-healpy && \
+    ac_cv_lib_curl_curl_easy_init=no spack install --no-cache --no-checksum --show-log-on-error --only package py-healpy && \
     ac_cv_lib_curl_curl_easy_init=no spack install --use-cache --no-check-signature --no-checksum --fail-fast --show-log-on-error && \
     spack gc -y && \
     # Strip build-only artifacts that never help a running container:
@@ -449,6 +460,8 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
                "${CUDA_ROOT}"/nsightee_plugins "${CUDA_ROOT}"/compute-sanitizer; \
     fi && \
     spack env view regenerate && \
+    # Drop view links into pruned dirs (e.g. CUDA's nsight/libnvvp); fix-permissions fails on them.
+    find /opt/view -xtype l -delete && \
     if [ -n "${SPACK_MIRROR_OCI}" ] && spack mirror list | awk '{print $1}' | grep -qx 'oci-push'; then \
         spack buildcache update-index -k oci-push || spack buildcache update-index oci-push || true; \
     fi && \
@@ -458,7 +471,7 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache,sharing=lock
     fix-permissions /opt/view /opt/spack_env /opt/software
 
 RUN /opt/view/bin/python -m pip install --no-cache-dir \
-        "python-dateutil==2.8.2" "jupyterlab>=4,<5" "notebook>=7,<8" && \
+        "jupyterlab>=4,<5" "notebook>=7,<8" && \
     /opt/view/bin/python -m pip install --no-cache-dir \
         "reproject==${REPROJECT_VERSION}" && \
     /opt/view/bin/python -c \
@@ -526,7 +539,6 @@ RUN git clone --depth=1 https://github.com/scaidermern/audria.git /opt/audria &&
 
 COPY --from=builder /opt/software /opt/software
 COPY --from=builder /opt/view /opt/view
-COPY --from=builder /opt/._view /opt/._view
 COPY --from=builder /opt/spack_env /opt/spack_env
 COPY --from=builder /opt/spack /opt/spack
 COPY --from=builder /opt/ska-sdp-spack /opt/ska-sdp-spack
@@ -561,6 +573,7 @@ RUN arch=$(uname -m) && \
 
 ENV SPACK_ROOT=/opt/spack \
     SPACK_DISABLE_LOCAL_CONFIG=1 \
+    SPACK_PYTHON=/usr/bin/python3 \
     CARGO_HOME=/opt/cargo \
     RUSTUP_HOME=/opt/rustup
 
@@ -643,7 +656,8 @@ RUN spack test run 'py-astropy-healpix' && \
     # hack: can't run tests for py-distributed due to circular dependency on py-dask
     # spack test run 'py-distributed' && \
     spack test run 'py-ducc' && \
-    spack test run 'py-h5py' && \
+    # spack test run 'py-h5py': h5py.tests imports pytest, which its test env lacks.
+    python -c "import h5py; print('h5py', h5py.__version__, h5py.version.hdf5_version)" && \
     spack test run 'py-numexpr' && \
     spack test run 'py-pandas' && \
     # RASCIL is now optional (abandoned project, incompatible with numpy 2)
@@ -816,7 +830,7 @@ RUN python -m pip install --no-cache-dir git+https://github.com/NERSC/slurm-magi
 
 USER ${NB_UID}
 # Register kernel for jovyan user using the Spack Python
-RUN python -m ipykernel install --user --name=karabo --display-name="Karabo (Spack Py3.10)"
+RUN python -m ipykernel install --user --name=karabo --display-name="Karabo (Spack Py3.11)"
 
 # Run tests during build to validate environment
 ARG SKIP_TESTS=0
@@ -827,18 +841,21 @@ RUN if [ "${SKIP_TESTS:-0}" = "1" ]; then exit 0; fi; \
     # known failing tests
     pytest -x -k "not test_source_detection_plot and not test_simulation_noise_meerkat" && \
     (pytest -x -k test_source_detection_plot || true) && \
-    # Aggressive cleanup of all caches and temporary files
-    rm -rf /home/${NB_USER}/.astropy/cache \
-    /home/${NB_USER}/.cache/* \
-    /tmp/* \
-    /home/${NB_USER}/.local/share/jupyter/runtime/* \
-    /opt/Karabo-Pipeline/.pytest_cache \
-    /opt/Karabo-Pipeline/**/__pycache__ && \
-    find /opt/Karabo-Pipeline -type d -name '__pycache__' -exec rm -rf {} + 2>/dev/null || true && \
-    find /opt/Karabo-Pipeline -type d -name '.pytest_cache' -exec rm -rf {} + 2>/dev/null || true
+    # Best-effort cleanup (e.g. root-owned OpenMPI session dirs in /tmp), braced so
+    # it can't mask a pytest failure the way a trailing bare `|| true` did.
+    { { rm -rf /home/${NB_USER}/.astropy/cache \
+        /home/${NB_USER}/.cache/* \
+        /tmp/* \
+        /home/${NB_USER}/.local/share/jupyter/runtime/* \
+        /opt/Karabo-Pipeline/.pytest_cache; \
+      find /opt/Karabo-Pipeline -type d \( -name '__pycache__' -o -name '.pytest_cache' \) -exec rm -rf {} + ; \
+    } 2>/dev/null || true; }
 
 # download latest Leap_Second.dat, IERS finals2000A.all
-RUN python -c "from astropy.time import Time; t=Time.now(); from astropy.utils.data import download_file; download_file('http://data.astropy.org/coordinates/sites.json', cache=True); print(t.gps, t.ut1)"
+# Cache prewarm only: IERS servers have outages (datacenter.iers.org 400s, USNO
+# down on 2026-10-21) and astropy retries at runtime, so don't fail the build.
+RUN python -c "from astropy.time import Time; t=Time.now(); from astropy.utils.data import download_file; download_file('http://data.astropy.org/coordinates/sites.json', cache=True); print(t.gps, t.ut1)" \
+    || echo "WARNING: astropy IERS/site prefetch failed; astropy will download at runtime" >&2
 
 # Verify CUDA runtime libraries are loadable, only if CUDA_VERSION and CUDA_ARCH are set as ARG or ENV
 # This ensures that the symlinks we created manually (libcudart.so -> libcudart.so.12 -> ...)

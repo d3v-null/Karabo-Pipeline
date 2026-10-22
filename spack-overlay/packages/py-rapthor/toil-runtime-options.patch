@@ -1,6 +1,8 @@
+diff --git a/rapthor/lib/cwlrunner.py b/rapthor/lib/cwlrunner.py
+index 16c4da56..311a52f5 100644
 --- a/rapthor/lib/cwlrunner.py
 +++ b/rapthor/lib/cwlrunner.py
-@@ -295,6 +295,9 @@
+@@ -343,6 +343,9 @@ class ToilRunner(CWLRunner):
          `[cluster]` of the parset file, else use a temporary directory inside
          the pipeline working directory.
          """
@@ -10,7 +12,7 @@
          if self.operation.batch_system.startswith("slurm") or self.operation.batch_system == "kubernetes":
              return os.path.join(
                  self.operation.global_scratch_dir
-@@ -360,6 +363,9 @@
+@@ -408,6 +411,9 @@ class ToilRunner(CWLRunner):
          self.args.extend(["--batchSystem", self.operation.batch_system])
          self.args.extend(["--maxLocalJobs", str(self.operation.max_nodes)])
          self.args.extend(["--maxJobs", str(self.operation.max_nodes)])

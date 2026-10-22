@@ -1,11 +1,17 @@
-from spack.package import *
+# Copyright Spack Project Developers. See COPYRIGHT file for details.
+#
+# SPDX-License-Identifier: (Apache-2.0 OR MIT)
+
 from spack_repo.builtin.build_systems.python import PythonPackage
 
+from spack.package import depends_on, license, version
 
+
+# Overrides the upstream package: We need a newer version than is made available
 class PyPhotutils(PythonPackage):
-    """Photometry tools for Python.
-
-    Astropy-affiliated package for image photometry.
+    """
+    Photutils is an Astropy package for detection and photometry of astronomical
+    sources.
     """
 
     homepage = "https://github.com/astropy/photutils"
@@ -13,44 +19,28 @@ class PyPhotutils(PythonPackage):
 
     license("BSD-3-Clause")
 
-    version("2.0.2", tag="2.0.2")
-    version("1.11.0", tag="1.11.0")
-    version("1.10.0", tag="1.10.0")
-    version("1.8.0", tag="1.8.0")
+    version(
+        "2.3.0",
+        tag="2.3.0",
+    )
 
-    # Build deps
-    depends_on("python@3.8:", type=("build", "run"))
-    depends_on("py-setuptools@61:", type="build")
-    depends_on("py-setuptools-scm@6:", type="build")
-    depends_on("py-cython@0.29:", type="build")
-    depends_on("py-extension-helpers@1.0:", type="build")
+    depends_on("c", type="build")  # generated
 
-    # Run deps
-    depends_on("py-astropy@5.1:", type=("build", "run"), when="@:1")
-    depends_on("py-astropy@6.0:", type=("build", "run"), when="@2:")
-    depends_on("py-numpy@1.22:", type=("build", "run"), when="@:1")
-    depends_on("py-numpy@2:", type=("build", "run"), when="@2:")
-    depends_on("py-pyyaml", type=("build", "run", "test"))
+    # From pyproject.toml
+    depends_on("py-numpy@2:", type=("build", "run"))
+    depends_on("py-astropy@5.3:", type=("build", "run"))
+    depends_on("py-scipy@1.11.1:", type=("build", "run"))
+    depends_on("py-setuptools@77:", type="build")
+    depends_on("py-setuptools-scm@8.0:", type="build")
+    depends_on("py-cython@3.1.0:3", type="build")
+    # pyproject.toml says the minimum version is 1.3, however, the
+    # latest version of the py-extension-helpers package is 1.2.
+    # As no 1.3 functionality actually seems to be required, using
+    # 1.2 as minimum version for now is fine.
+    depends_on("py-extension-helpers@1.2:2", type="build")
 
     def setup_build_environment(self, env):
-        env.set("SETUPTOOLS_SCM_PRETEND_VERSION_FOR_PHOTUTILS", self.spec.version.string)
-
-    def test_import(self):
-        python = self.spec["python"].command
-        if python:
-            python("-c", "import photutils; print(photutils.__version__)")
-
-    def test_segmentation_api(self):
-        python = self.spec["python"].command
-        if not python:
-            return
-        # photutils >= 1.11 stops re-exporting segmentation at the package top-level.
-        # Ensure the canonical module path remains importable for downstream users.
-        python(
-            "-c",
-            (
-                "import photutils; "
-                "import photutils.segmentation as segmentation; "
-                "print('segmentation', segmentation.__name__)"
-            ),
-        )
+        # Built from a shallow git commit without tags: give setuptools-scm the real
+        # version, or pip sees 0.1.dev1 and may "upgrade" it over the spack install.
+        if str(self.version)[0].isdigit():
+            env.set("SETUPTOOLS_SCM_PRETEND_VERSION_FOR_PHOTUTILS", str(self.version))

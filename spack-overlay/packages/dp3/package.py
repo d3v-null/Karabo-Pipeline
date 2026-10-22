@@ -1,14 +1,12 @@
-# https://gitlab.com/ska-telescope/sdp/ska-sdp-spack/-/raw/5c515ba11992398717151feed33fb74ddf314f2d/packages/dp3/package.py
-# remove all versions except 6.5.1.20260109 for MWA support
-# +cuda enables DP3 BUILD_WITH_CUDA (HAVE_CUDA_SOLVER). Off by default via CudaPackage.
+import os
+
 from spack_repo.builtin.build_systems.cmake import CMakePackage
 from spack_repo.builtin.build_systems.cuda import CudaPackage
 
 from spack.package import depends_on, join_path, patch, variant, version, which
-import os
-import re
 
 
+# Karabo overlay of ska-sdp-spack's recipe: adds +cuda (CudaPackage) and patches.
 class Dp3(CMakePackage, CudaPackage):
     """LOFAR preprocessing software, including averaging,
     flagging, various kinds of calibration and more."""
@@ -16,68 +14,115 @@ class Dp3(CMakePackage, CudaPackage):
     homepage = "https://dp3.readthedocs.io"
     git = "https://git.astron.nl/RD/DP3.git"
 
+    version("5.0", tag="v5.0", submodules=True)
+    version("5.1", tag="v5.1", submodules=True)
+    version("5.2", tag="v5.2", submodules=True)
+    version("5.3", tag="v5.3", submodules=True)
+    # 5.4 is not an actual DP3 version, however at this commit the DP3_VERSION
+    # was set to 5.4.0.
+    version(
+        "5.4", commit="548828e2fde1a5fc504042b6af384c398b484f79", submodules=True
+    )
+    version("6.0", tag="v6.0", submodules=True)
+    version("6.1", tag="v6.1", submodules=True)
+    version("6.2.1", tag="v6.2.1", submodules=True)
+    version("6.3", tag="v6.3", submodules=True)
+    version("6.4", tag="v6.4", submodules=True)
+    version("6.4.1", tag="v6.4.1", submodules=True)
+    version("6.5", tag="v6.5", submodules=True)
+    version("6.5.1", tag="v6.5.1", submodules=True)
     version(
         "6.5.1.20260109",
         commit="f4b51762b9971e4d5f51b5576a1cbf165c7e52bf",
         submodules=True,
         no_cache=True,
     )
-
     version(
-        "6.6",
+        "6.6.0",
+        tag="v6.6",
         commit="4a8f165a0f5683771cc3c84d041ffe98c14d5ceb",
         submodules=True,
-        no_cache=True,
+        preferred=True,
     )
-
-    # v6.6-130 (2026-08-19): FastPredict CMake-on, EveryBeam >=0.8.3.
     version(
-        "6.6.20260819",
-        commit="f4403baee12544eac167eb0d5e62d2289b7a15ed",
+        "6.6.0.20260630",
+        commit="1aca2a4762463668e238bff8ccf2d4dd03a1c27d",
         submodules=True,
         no_cache=True,
     )
-
-    # IterativeDiagonalSolverCuda was not updated when SolverBase
-    # dropped SolveResult/stat_stream from ApplyConstraints/Solve and
-    # renamed NSolutions() -> NSubSolutions() (76d6920 / 5168437).
-    # Without this, +cuda builds fail compiling CudaSolvers.
-    patch(
-        "cuda-solverbase-api.patch",
-        sha256="bd3411d07dbfe919e81fc3cca29519e891ccbff52660d447705fdb54e6d9c13f",
-        when="@6.6:+cuda",
+    version(
+        "6.6.0.20260722",
+        commit="48ca8dbb396b2f316039bae2b011fcefc8b97ea9",
+        submodules=True,
+        no_cache=True,
     )
-
-    # Source-parallel predict allocated a full model cube per thread for every
-    # time step (~200 MB each for MWA) and summed them one thread at a time
-    # under a single mutex. With 64 threads that is mostly kernel time and
-    # lock wait; pool the buffers and reduce in parallel over baselines.
-    patch("onepredict-parallel-reduction.patch", when="@6.6.20260819")
+    version(
+        "6.6.0.20260731",
+        commit="6c8846046df18a767e0e9cfdd2883677b01bcf7b",
+        submodules=True,
+        no_cache=True,
+    )
+    version(
+        "6.6.0.20260807",
+        commit="9743ec54bc5a01455d2a7b7646bace71a55e43a5",
+        submodules=True,
+        no_cache=True,
+    )
+    version(
+        "6.6.0.20260813",
+        commit="d87491b0378be26ef3c5a8ab79d6ceb331123bf1",
+        submodules=True,
+        no_cache=True,
+    )
+    version(
+        "6.6.0.20260915",
+        commit="6097e642b830be3c81a979ca16f13a6626b8cae2",
+        submodules=True,
+        no_cache=True,
+    )
+    version(
+        "6.6.0.20260923",
+        commit="03728e5301bcbf6be1b6b3ee1c7d6b0f2cc2c776",
+        submodules=True,
+        no_cache=True,
+    )
+    version("master", branch="master", submodules=True, no_cache=True)
 
     variant("python", default=True, description="Enable Python support")
     variant("idg", default=False, description="Enable IDG support")
-    # Release 6.6 defaults USE_FAST_PREDICT=OFF; later snapshots default ON.
-    # +fastpredict compiles the accelerated predict library.
-    variant(
-        "fastpredict",
-        default=True,
-        description="Enable FastPredict (USE_FAST_PREDICT / predict.usefastpredict)",
-    )
-    # CudaPackage provides +cuda / cuda_arch. BUILD_WITH_CUDA enables
-    # IterativeDiagonalSolverCuda; runtime still needs ddecal.usegpu=true, and
-    # that path only covers diagonal+directioniterative (not scalarphase).
+    variant("fast_predict", default=True, description="Enable FastPredict")
+    # +cuda builds IterativeDiagonalSolverCuda (ddecal.usegpu=true; diagonal and
+    # directioniterative solvers only).
+
+    # Source-parallel predict allocated a full model cube per thread for every
+    # time step (~200 MB each for MWA) and summed them one thread at a time
+    # under a single mutex. Pool the buffers and reduce in parallel over
+    # baselines.
+    patch("onepredict-parallel-reduction.patch", when="@6.6.0.20260923")
+
+    # IterativeDiagonalSolverCuda was not updated when SolverBase dropped
+    # SolveResult/stat_stream and renamed NSolutions() -> NSubSolutions().
+    patch("cuda-solverbase-api.patch", when="@6.6.0.20260923+cuda")
+    # cudawrappers caches BUILD_SHARED_LIBS=ON, so FastPredict's TrigDx is
+    # built shared and never installed: DP3 then fails with libtrigdx.so not found.
+    patch("cuda-static-trigdx.patch", when="@6.6.0.20260923+cuda+fast_predict")
+    # usegpu=true built the MC2x2FDiag CUDA solver, but the kernels only handle
+    # full 2x2 visibilities: half-sized buffers, out-of-bounds reads, garbage
+    # solutions. Use the MC2x2F instantiation (the one DP3's unit tests cover).
+    patch("cuda-solver-full-visibilities.patch", when="@6.6.0.20260923+cuda")
 
     depends_on("c", type="build", when="@:6.4.1")
     depends_on("cxx", type="build")
 
-    depends_on("aoflagger@3.4.0:", when="@latest,master")
-    depends_on("aoflagger@3.4.0:", when="@6")
+    depends_on("aoflagger@3.4.0:", when="@master")
+    depends_on("aoflagger@3.4.0:3.6.0", when="@6")
     depends_on("aoflagger@3.2.0", when="@5.3:5.4")
     depends_on("aoflagger@3.1.0", when="@5.0:5.2")
-    depends_on("casacore@3.7.1:", when="@6.4:,latest")
-    depends_on("everybeam@0.7.4:", when="@latest,master")
-    depends_on("everybeam@0.7.4:0.9", when="@6.5.1.20260109:")
-    depends_on("everybeam@0.8.3:0.9", when="@6.6.20260819:")
+    depends_on("casacore@3.7.1:", when="@6.4:")
+    depends_on("everybeam@0.9", when="@master")
+    depends_on("everybeam@0.9.0", when="@6.6.0.20260923")
+    depends_on("everybeam@0.8.3:0.8", when="@6.6.0.20260722:6.6.0.20260915")
+    depends_on("everybeam@0.7.4:0.8.2", when="@6.5.1.20260109:6.6.0.20260630")
     depends_on("everybeam@0.7.4:0.7", when="@6.3:6.5.1.0")
     depends_on("everybeam@0.6", when="@6.1:6.2")
     depends_on("everybeam@0.5.3", when="@6.0")
@@ -86,8 +131,8 @@ class Dp3(CMakePackage, CudaPackage):
     depends_on("everybeam@0.3.0", when="@5.2")
     depends_on("everybeam@0.1.3", when="@5.1")
     depends_on("everybeam@0.1.1", when="@5.0")
-    depends_on("idg@1.2.0:", when="+idg")
-    depends_on("idg@1.2.0:+cuda", when="+idg+cuda")
+    depends_on("idg@1.2.0:1.3", when="+idg")
+    depends_on("idg+cuda", when="+idg+cuda")
     depends_on("lofarstman", type="run")
     depends_on("openblas threads=pthreads")
     depends_on("boost+date_time+test+program_options")
@@ -96,157 +141,40 @@ class Dp3(CMakePackage, CudaPackage):
     depends_on("git")
     depends_on("python", when="+python")
 
-    # xtensor 0.26+ moved headers (xtensor/xtensor.hpp ->
-    # xtensor/containers/xtensor.hpp). DP3 6.6 already uses the new paths;
-    # the FastPredict submodule still uses the old ones.
-    _FASTPREDICT_XTENSOR_INCLUDES = (
-        ("#include <xtensor/xtensor_forward.hpp>", "#include <xtensor/core/xtensor_forward.hpp>"),
-        ("#include <xtensor/xtensor.hpp>", "#include <xtensor/containers/xtensor.hpp>"),
-        ("#include <xtensor/xarray.hpp>", "#include <xtensor/containers/xarray.hpp>"),
-        ("#include <xtensor/xadapt.hpp>", "#include <xtensor/containers/xadapt.hpp>"),
-        ("#include <xtensor/xview.hpp>", "#include <xtensor/views/xview.hpp>"),
-        ("#include <xtensor/xindex_view.hpp>", "#include <xtensor/views/xindex_view.hpp>"),
-        ("#include <xtensor/xcomplex.hpp>", "#include <xtensor/misc/xcomplex.hpp>"),
-        ("#include <xtensor/xmath.hpp>", "#include <xtensor/core/xmath.hpp>"),
-        ("#include <xtensor/xlayout.hpp>", "#include <xtensor/core/xlayout.hpp>"),
-        ("#include <xtensor/xshape.hpp>", "#include <xtensor/core/xshape.hpp>"),
-        ("#include <xtensor/xbuilder.hpp>", "#include <xtensor/generators/xbuilder.hpp>"),
-        ("#include <xtensor/xrandom.hpp>", "#include <xtensor/generators/xrandom.hpp>"),
-        ("#include <xtensor/xio.hpp>", "#include <xtensor/io/xio.hpp>"),
-        ("#include <xtensor/xcsv.hpp>", "#include <xtensor/io/xcsv.hpp>"),
-    )
-
-    def patch(self):
-        if "+fastpredict" not in self.spec:
-            return
-        predict = join_path(self.stage.source_path, "external", "predict")
-        if not os.path.isdir(predict):
-            return
-        for dirpath, _, filenames in os.walk(predict):
-            for name in filenames:
-                if not name.endswith((".h", ".hpp", ".cpp", ".cc")):
-                    continue
-                path = os.path.join(dirpath, name)
-                with open(path) as fh:
-                    text = fh.read()
-                new = text
-                for old, repl in self._FASTPREDICT_XTENSOR_INCLUDES:
-                    new = new.replace(old, repl)
-                if new != text:
-                    with open(path, "w") as fh:
-                        fh.write(new)
-
-        # Release 6.6 FastPredict.cc includes aocommon threading headers that
-        # are not in the pinned aocommon, and uses ThreadPool without including
-        # it. Later snapshots switched to schaapcommon threading — do not
-        # inject aocommon/threadpool.h there.
-        fast_predict = join_path(self.stage.source_path, "steps", "FastPredict.cc")
-        if str(self.spec.version) == "6.6" and os.path.isfile(fast_predict):
-            with open(fast_predict) as fh:
-                text = fh.read()
-            new = text
-            for inc in (
-                "#include <aocommon/barrier.h>\n",
-                "#include <aocommon/recursivefor.h>\n",
-                "#include <aocommon/staticfor.h>\n",
-            ):
-                new = new.replace(inc, "")
-            if "#include <aocommon/threadpool.h>" not in new:
-                new = new.replace(
-                    "#include <aocommon/logger.h>\n",
-                    "#include <aocommon/logger.h>\n#include <aocommon/threadpool.h>\n",
-                )
-            if new != text:
-                with open(fast_predict, "w") as fh:
-                    fh.write(new)
-
-        # 32-bit NEON has no double SIMD. On aarch64 xsimd still walks
-        # neon + neon64, so FastPredict's radec2lmn (batch<double>) fails.
-        # Restrict ARM to neon64 only; x86 is unchanged (this is target-gated).
-        if self.spec.satisfies("target=aarch64:") or self.spec.satisfies(
-            "target=arm:"
-        ):
-            self._patch_fastpredict_arm_xsimd(predict)
-
-    def _patch_fastpredict_arm_xsimd(self, predict):
-        arch_h = join_path(predict, "include", "predict", "XSimdArchitectures.h")
-        if os.path.isfile(arch_h):
-            with open(arch_h) as fh:
-                text = fh.read()
-            new = re.sub(
-                r"(xsimd::neon64),([^\n]*\n)\s*xsimd::neon\b[^\n]*\n(\s*)>>",
-                r"\1\2\3>>",
-                text,
-            )
-            if new != text:
-                with open(arch_h, "w") as fh:
-                    fh.write(new)
-
-        # 6.6 uses untemplated xsimd::dispatch(), which defaults to neon+neon64.
-        neon64 = "xsimd::dispatch<xsimd::arch_list<xsimd::neon64>>("
-        for dirpath, _, filenames in os.walk(predict):
-            for name in filenames:
-                if not name.endswith((".h", ".hpp", ".cpp", ".cc")):
-                    continue
-                path = os.path.join(dirpath, name)
-                with open(path) as fh:
-                    text = fh.read()
-                if "xsimd::dispatch(" not in text:
-                    continue
-                new = text.replace("xsimd::dispatch(", neon64)
-                if new != text:
-                    with open(path, "w") as fh:
-                        fh.write(new)
-
-        # PredictPlanExecCPU.cpp includes x86-only immintrin.h (unused).
-        cpu_cc = join_path(predict, "src", "PredictPlanExecCPU.cpp")
-        if os.path.isfile(cpu_cc):
-            with open(cpu_cc) as fh:
-                text = fh.read()
-            new = text.replace("#include <immintrin.h>\n", "")
-            if new != text:
-                with open(cpu_cc, "w") as fh:
-                    fh.write(new)
+    def cmake_args(self):
+        args = [
+            self.define(
+                "BLA_VENDOR", "OpenBLAS"
+            ),  # Avoid using the system BLAS/LAPACK
+            self.define("PORTABLE", True),  # let Spack determine arch build flags
+            self.define_from_variant("USE_FAST_PREDICT", "fast_predict"),
+        ]
+        if self.spec.satisfies("+cuda"):
+            args.append(self.define("BUILD_WITH_CUDA", True))
+            arches = self.spec.variants["cuda_arch"].value
+            if arches and "none" not in arches:
+                args.append(self.define("CMAKE_CUDA_ARCHITECTURES", ";".join(arches)))
+        stub = self._cuda_stub_dir()
+        if stub:
+            # Link against the driver stubs so +cuda builds without a GPU/driver.
+            flags = f"-L{stub} -Wl,-rpath-link,{stub}"
+            for kind in ("EXE", "SHARED", "MODULE"):
+                args.append(self.define(f"CMAKE_{kind}_LINKER_FLAGS", flags))
+        return args
 
     def _cuda_stub_dir(self):
-        if "+cuda" not in self.spec:
+        if not self.spec.satisfies("+cuda"):
             return None
-        cuda_prefix = self.spec["cuda"].prefix
-        for stub in (
-            os.path.join(cuda_prefix, "lib64", "stubs"),
-            os.path.join(cuda_prefix, "lib", "stubs"),
-        ):
+        for sub in ("lib64", "lib"):
+            stub = join_path(self.spec["cuda"].prefix, sub, "stubs")
             if os.path.isdir(stub):
                 return stub
         return None
 
-    def cmake_args(self):
-        args = [
-            self.define("PORTABLE", True),  # let Spack determine arch build flags
-            self.define_from_variant("USE_FAST_PREDICT", "fastpredict"),
-        ]
-
-        if "+cuda" in self.spec:
-            args.append(self.define("BUILD_WITH_CUDA", True))
-            arches = list(self.spec.variants["cuda_arch"].value)
-            if arches:
-                args.append(self.define("CMAKE_CUDA_ARCHITECTURES", ";".join(arches)))
-
-        stub = self._cuda_stub_dir()
-        if stub:
-            # Link against driver stubs so CUDA builds succeed without a GPU/driver.
-            flags = f"-L{stub} -Wl,-rpath-link,{stub}"
-            args.append(self.define("CMAKE_EXE_LINKER_FLAGS", flags))
-            args.append(self.define("CMAKE_SHARED_LINKER_FLAGS", flags))
-            args.append(self.define("CMAKE_MODULE_LINKER_FLAGS", flags))
-
-        return args
-
     def setup_build_environment(self, env):
         print(self.spec.version)
         if (
-            self.spec.satisfies("@latest")
-            or self.spec.satisfies("@master")
+            self.spec.satisfies("@master")
             or int(str(self.spec.version.joined)) >= 52
         ):
             env.set("OPENBLAS_NUM_THREADS", "1")
@@ -271,11 +199,9 @@ class Dp3(CMakePackage, CudaPackage):
         """Ensure the executables run."""
         dp3 = which(self.prefix.bin.DP3)
         msoverview = which(self.prefix.bin.msoverview)
-        showsourcedb = which(self.prefix.bin.showsourcedb)
         dp3("--version")
-        # --version and --help give exit code 1 for msoverview and showsourcedb
+        # --version and --help give exit code 1 for msoverview
         msoverview("help=exit")
-        showsourcedb("help=exit")
 
     def test_python_import(self):
         """Ensure the python module can be imported."""

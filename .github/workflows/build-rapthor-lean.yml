@@ -140,7 +140,7 @@ jobs:
             # one: rapthor-lean.Dockerfile concretises to the identical CPU-only
             # Spack spec, so sharing the mirror makes every package a binary hit
             # for both images instead of compiling the same stack twice.
-            SPACK_MIRROR_OCI=oci://${{ env.REGISTRY }}/${{ github.repository_owner }}/rapthor-jupyter-spack-buildcache
+            SPACK_MIRROR_OCI=oci://${{ env.REGISTRY }}/${{ github.repository_owner }}/rapthor-jupyter-spack-buildcache-2026.10.3
           secrets: |
             spack_oci_username=${{ github.actor }}
             spack_oci_password=${{ github.token }}

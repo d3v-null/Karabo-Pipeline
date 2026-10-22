@@ -1,40 +1,25 @@
+diff --git a/lsmtool/facet.py b/lsmtool/facet.py
+index d1837c3..87822bd 100644
 --- a/lsmtool/facet.py
 +++ b/lsmtool/facet.py
-@@ -85,7 +85,11 @@ class Facet:
-             self.polygon_ras, self.polygon_decs, WCS_ORIGIN
-         )
-         polygon_vertices = [(x, y) for x, y in zip(x_values, y_values)]
--        self.polygon = Polygon(polygon_vertices)
-+        # [rapthor-patch: lsmtool Facet polygon buffer + representative_point]
-+        polygon = Polygon(polygon_vertices)
+@@ -199,7 +199,12 @@ class Facet(object):
+     def polygon(self):
+         """Shapely Polygon object representing the facet's polygon in image
+         coordinates."""
+-        return Polygon(self.vertices_xy)
++        # [rapthor-patch: lsmtool Facet polygon buffer]
++        # Wide (e.g. MWA) fields can give self-intersecting facet polygons.
++        polygon = Polygon(self.vertices_xy)
 +        if not polygon.is_valid:
 +            polygon = polygon.buffer(0)
-+        self.polygon = polygon
++        return polygon
  
-         # Find the size and center coordinates of the facet
-         xmin, ymin, xmax, ymax = self.polygon.bounds
-@@ -103,11 +107,12 @@ class Facet:
-         )
- 
-         # Find the centroid of the facet
-+        reference_point = self.polygon.representative_point()
-         self.ra_centroid, self.dec_centroid = map(
-             float,
-             self.wcs.wcs_pix2world(
--                self.polygon.centroid.x,
--                self.polygon.centroid.y,
-+                reference_point.x,
-+                reference_point.y,
-                 WCS_ORIGIN,
-             ),
-         )
-@@ -424,6 +429,22 @@ def voronoi(cal_coords, bounding_box, eps=1e-6):
-     points_centre, points = prepare_points_for_tessellate(
+     @property
+     def x_center(self):
+@@ -584,6 +589,20 @@ def voronoi(cal_coords, bounding_box, eps=1e-6):
          cal_coords, bounding_box
      )
-+
-+    # [rapthor-patch: guard voronoi against empty points_centre]
-+    # [rapthor-patch: voronoi full-bbox fallback for out-of-box cals]
+ 
 +    # [rapthor-patch: voronoi fallback facet centers at bbox middle]
 +    # Calibrators outside the tessellation bbox leave no points for scipy's
 +    # Voronoi implementation. Keep one valid full-field facet per direction.
@@ -48,6 +33,7 @@
 +        regions = [list(range(4)) for _ in range(len(cal_coords))]
 +        center = np.array([[0.5 * (minx + maxx), 0.5 * (miny + maxy)]])
 +        return np.tile(center, (len(cal_coords), 1)), vertices, regions
- 
++
      # Compute Voronoi, sorting the output regions to match the order of the
      # input coordinates
+     vor = scipy.spatial.Voronoi(points)

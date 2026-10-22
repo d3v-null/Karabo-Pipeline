@@ -3,6 +3,8 @@ from spack_repo.builtin.build_systems.python import PythonPackage
 from spack.package import depends_on, license, patch, variant, version
 
 
+# Karabo overlay of ska-sdp-spack's recipe: Toil 9.3 for the Kubernetes/WES
+# deployment, an opt-in MWA variant, and runtime patches.
 class PyRapthor(PythonPackage):
     """Rapthor DDE pipeline.
 
@@ -93,27 +95,35 @@ class PyRapthor(PythonPackage):
         no_cache=True,
     )
     version(
-        "2.1.20260710",
-        commit="01a81e11d75ce94ddd1b395d23ea9dca6be3a7d1",
+        "2.1.20260805",
+        commit="e8873f1983847fe766aa8ff2a7f9ba84410d7ae1",
+        no_cache=True,
+    )
+    version(
+        "2.1.20260814",
+        commit="043c15d49ae2bf80ea7efcc218a1079bb33152c3",
+        no_cache=True,
+    )
+    version(
+        "2.1.20260917",
+        commit="23ed80e97b72c382716c17c1b34ba417d82859b4",
         no_cache=True,
     )
 
     version("master", branch="master", no_cache=True)
 
-    # MWA beam support (see mwa-beam-support-20260630.patch). Kept as a variant so the
-    # patched build gets its own spec hash: with concretizer reuse enabled, an
-    # unpatched py-rapthor already present in the install tree or a buildcache
-    # would otherwise be reused silently. Only offered for versions the patch
-    # is known to apply to.
+    # A variant so the patched build gets its own spec hash: with concretizer
+    # reuse, an unpatched binary would otherwise be reused silently.
     variant(
         "mwa",
         default=False,
         description="Apply the MWA beam support patch (EveryBeam MWA beam under /opt)",
-        when="@2.1.20260630",
+        when="@2.1.20260917",
     )
 
     depends_on("python@3.9:", type=("build", "run"))
-    depends_on("py-setuptools@45:70", type="build")
+    depends_on("py-setuptools@45:70", type="build", when="@:2.1.20260814")
+    depends_on("py-setuptools@77:", type="build", when="@2.1.20260917:")
     depends_on("py-setuptools-scm@6.2:+toml", type="build")
     depends_on("py-wheel", type="build")
 
@@ -125,12 +135,9 @@ class PyRapthor(PythonPackage):
         when="@2.0.20250915:2.1.20260320",
     )
     depends_on(
-        "py-bdsf@1.13.0.20260409",
+        "py-bdsf@1.13.0.20260409:",
         type=("build", "run"),
-        when="@2.1.20260409:2.1.20260709",
-    )
-    depends_on(
-        "py-bdsf@1.14.1.20260710", type=("build", "run"), when="@2.1.20260710:"
+        when="@2.1.20260409:",
     )
     depends_on("py-jinja2", type=("build", "run"))
     depends_on("py-losoto@2.4.3:", type=("build", "run"))
@@ -159,8 +166,15 @@ class PyRapthor(PythonPackage):
         "py-lsmtool@1.8.0.20260605", type=("build", "run"), when="@2.1.20260529"
     )
     depends_on(
-        "py-lsmtool@1.8.0.20260630", type=("build", "run"), when="@2.1.20260629:"
+        "py-lsmtool@1.8.0.20260630", type=("build", "run"), when="@2.1.20260630"
     )
+    depends_on(
+        "py-lsmtool@1.8.0.20260805", type=("build", "run"), when="@2.1.20260805"
+    )
+    depends_on(
+        "py-lsmtool@1.8.0.20260812:", type=("build", "run"), when="@2.1.20260814:"
+    )
+
     # matplotlib 3.10 removed the deprecated anchored_artists.AnchoredEllipse
     depends_on("py-matplotlib@:3.9", type=("build", "run"))
     depends_on("py-mocpy@0.18.0:", type=("build", "run"))
@@ -183,31 +197,37 @@ class PyRapthor(PythonPackage):
     depends_on("wsclean@3.6.20250630:", type="run")
     depends_on("cfitsio+utils", type="run")  # Rapthor uses 'fpack' from cfitsio.
 
-    # MWA support (gated by +mwa):
-    # - DP3 applybeam/predict/ddecal and WSClean pointed at the MWA
-    #   full-embedded-element beam (/opt/mwa_full_embedded_element_pattern.h5,
-    #   WSClean -mwa-path /opt); facet-beam options dropped (unsupported for
-    #   MWA in EveryBeam); no beam inversion in prepare-imaging-data; missing
-    #   h5parm tolerated in the imaging operation.
-    # - applycal missingantennabehavior=flag: fully flagged tiles have no
-    #   h5parm entries.
-    # - process_gains.py references slow-gain phases to the first unflagged
-    #   station (station 0 is often a flagged MWA tile -> all-NaN phases).
-    # - filter_skymodel.py: when PyBDSF finds no sources on a bright resolved
-    #   Sun, retry with global rms boxes, then fall back to a 5-sigma threshold
-    #   mask and the unfiltered (single-patch) WSClean model.
-    # - calc_theoretical_noise: clamp the LOFAR SEFD table (ends at 240 MHz;
-    #   MWA reaches 300 MHz) instead of raising.
-    # Verified with `patch -p1 --dry-run` against a clean checkout of 01a81e11
-    # (2.1.20260630); re-generate when moving to a newer rapthor commit.
-    patch("mwa-beam-support-20260630.patch", when="+mwa @2.1.20260630")
-    patch("kubernetes-batch-system.patch", when="@2.1.20260630")
-    patch("toil-runtime-options.patch", when="@2.1.20260630")
-    # StreamFlow is an alternate CWL runner; SKA images use Toil/WES. Keep it
-    # optional so `pip check` does not require an unused heavy dependency.
-    patch("streamflow-optional.patch", when="@2.1.20260630")
-
     import_modules = [
         "rapthor",
         "rapthor.process",
     ]
+
+    # MWA support (+mwa):
+    # - DP3 applybeam/predict/ddecal and WSClean pointed at the MWA
+    #   full-embedded-element beam (/opt/mwa_full_embedded_element_pattern.h5,
+    #   WSClean -mwa-path /opt), beammode=full, FastPredict off; facet-beam
+    #   options dropped (unsupported for MWA); no beam inversion before imaging;
+    #   uvfits-derived UVWs written uncompressed.
+    # - applycal missingantennabehavior=flag: fully flagged tiles have no
+    #   h5parm entries.
+    # - process_gains.py references phases to the first unflagged station.
+    # - filter_skymodel.py: when PyBDSF finds no sources on a bright resolved
+    #   Sun, retry with global rms boxes, then fall back to a 5-sigma threshold
+    #   mask and the unfiltered (single-patch) WSClean model.
+    # - field.py tolerates threshold-grouping / overview-facet failures on wide
+    #   fields; calc_theoretical_noise clamps the LOFAR SEFD table (MWA reaches
+    #   300 MHz).
+    patch("mwa-beam-support-20260917.patch", when="+mwa @2.1.20260917")
+    # batch_system=kubernetes for Toil (one node, shared work dir, pod sizing).
+    patch("kubernetes-batch-system.patch", when="@2.1.20260917")
+    # TOIL_WORKDIR / TOIL_MAX_CORES overrides for the Toil runner.
+    patch("toil-runtime-options.patch", when="@2.1.20260917")
+    # StreamFlow is an alternate CWL runner; SKA images use Toil/WES. Keep it
+    # optional so `pip check` does not require an unused heavy dependency.
+    patch("streamflow-optional.patch", when="@2.1.20260917")
+
+    def setup_build_environment(self, env):
+        # Built from a shallow git commit without tags: give setuptools-scm the real
+        # version, or pip sees 0.1.dev1 and may "upgrade" it over the spack install.
+        if str(self.version)[0].isdigit():
+            env.set("SETUPTOOLS_SCM_PRETEND_VERSION_FOR_RAPTHOR", str(self.version))

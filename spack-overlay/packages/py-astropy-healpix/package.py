@@ -1,67 +1,50 @@
-from spack.package import *
+# Copyright 2013-2024 Lawrence Livermore National Security, LLC and other
+# Spack Project Developers. See the Spack COPYRIGHT file for details.
+#
+# SPDX-License-Identifier: (Apache-2.0 OR MIT)
+
 from spack_repo.builtin.build_systems.python import PythonPackage
 
+from spack.package import depends_on, license, version
 
 
+# Overrides the upstream Spack package, adding new versions.
 class PyAstropyHealpix(PythonPackage):
-    """Python wrapper for HEALPix with Astropy integration.
+    """HEALPix (Hierarchical Equal Area isoLatitude Pixelisation) is
+    an algorithm for pixellizing a sphere that is sometimes used in
+    Astronomy to store data from all-sky surveys, but the general
+    algorithm can apply to any field that has to deal with
+    representing data on a sphere."""
 
-    This package provides HEALPix functionality with an interface compatible
-    with the Astropy ecosystem.
-    """
-
-    homepage = "https://github.com/astropy/astropy-healpix"
-    pypi = "astropy-healpix/astropy-healpix-1.0.0.tar.gz"
-    git = "https://github.com/astropy/astropy-healpix.git"
+    homepage = "https://astropy-healpix.readthedocs.io/en/latest/"
+    pypi = "astropy-healpix/astropy_healpix-1.0.3.tar.gz"
 
     license("BSD-3-Clause")
 
-    # Use git tag to avoid requiring an sdist checksum; docker build passes --no-checksum
-    version("1.0.0", tag="v1.0.0")
-    version("1.1.2", tag="v1.1.2")
+    version(
+        "1.0.3",
+        sha256="de5d2a7ec97b167045066971f25a150d1e4061f07159be23649634db36e79746",
+    )
+    version(
+        "1.0.2",
+        sha256="056fa6ed9396bedc771d374d877cde83d9460a3f62a78fe05dbf9ba03940323a",
+    )
+    version(
+        "0.5",
+        sha256="5ae15da796a840f221fb83e25de791e827b6921bc21a365d99bc1a59c7c0cdad",
+    )
 
-    # Ensure we use the pip/PEP-517 build backend consistently
-    build_system("python_pip")
-
-    # Python and runtime dependencies (aligned broadly with Astropy ecosystem)
-    depends_on("python@3.7:", type=("build", "run"))
-    depends_on("py-setuptools@61:", type="build")
-    # Required by astropy-healpix PEP517 build metadata (version inference)
-    depends_on("py-setuptools-scm@6:", type="build")
-    # Required by astropy-style builds to locate/compile extensions cleanly
-    depends_on("py-extension-helpers@1:", type="build")
-    # Make sure wheel/pip are present for PEP517 builds in this Spack release
-    depends_on("py-wheel", type="build")
-    depends_on("py-pip@21:", type="build")
-
-    depends_on("py-numpy@1.18:", type=("build", "run"))
-    depends_on("py-astropy@5:", type=("build", "run"))
-    depends_on("py-pyyaml", type=("build", "run", "test"))
-
-    import_modules = ["astropy_healpix"]
+    depends_on("py-setuptools", type=("build", "run"))
+    # pyproject build-requires it; without it the version silently falls back to 0.0.0
+    depends_on("py-setuptools-scm", type="build")
+    depends_on("python@3.6:", type=("build", "run"))
+    depends_on("py-astropy@2.0:", type=("build", "run"))
+    depends_on("py-extension-helpers@1:", type="build", when="@1.0:")
+    # https://github.com/astropy/astropy-healpix/pull/214
+    depends_on("py-numpy@:1", when="@:1.0.2", type=("build", "run"))
+    depends_on("py-numpy@2:", when="@1.0.3:", type=("build", "run"))
 
     def setup_build_environment(self, env):
-        # Let pip's build isolation pick the ideal setuptools version
-        env.set("SETUPTOOLS_SCM_PRETEND_VERSION_FOR_ASTROPY_HEALPIX", self.spec.version.string)
-
-    def patch(self):
-        if self.spec.satisfies("@1.1.2"):
-            filter_file("numpy>=2.0.0", "numpy>=1.20", "pyproject.toml")
-
-    def test_import(self):
-        """Verify the module imports after installation."""
-        python = self.spec["python"].command
-        if python:
-            python("-c", "import astropy_healpix as ah; print(ah.__version__) ")
-
-    def test_basic_api(self):
-        """Lightweight runtime check of a basic API call."""
-        python = self.spec["python"].command
-        if python:
-            code = (
-                "from astropy_healpix import HEALPix; from astropy import units as u; "
-                "hp=HEALPix(nside=1, order='nested', frame=None); print(hp.nside)"
-            )
-            python("-c", code)
-
-
+        # Without this the spack build reports 0.0.0, which fails `pip check`
+        # (reproject requires astropy-healpix>=1.0).
+        env.set("SETUPTOOLS_SCM_PRETEND_VERSION_FOR_ASTROPY_HEALPIX", str(self.version))
