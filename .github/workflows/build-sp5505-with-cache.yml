@@ -5,9 +5,9 @@ on:
   workflow_dispatch:
     inputs:
       cuda_arch:
-        description: "CUDA architectures (semicolon separated)"
+        description: "CUDA architectures (comma separated); empty = per-platform default (amd64 75,80,86,89,90; arm64 90)"
         required: false
-        default: "75,80,86,90"
+        default: ""
       cuda_version:
         description: "CUDA version"
         required: false
@@ -50,7 +50,6 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: sp5505
-  CUDA_ARCH: ${{ inputs.cuda_arch || '75,80,86,90' }}
   CUDA_VERSION: ${{ inputs.cuda_version || '12.2.2' }}
   PIP_EXTRAS: ${{ inputs.pip_extras || 'psrecord==1.4 click aoquality losoto kneed seaborn nest-asyncio==1.6.0' }}
   PIP_GIT_EXTRAS: ${{ inputs.pip_git_extras || 'git+https://github.com/d3v-null/SSINS.git@eavils-copilot git+https://github.com/d3v-null/mwa_qa.git@dev git+https://github.com/tjgalvin/fits_warp.git' }}
@@ -194,11 +193,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # H200 (sm_90) on both platforms (GH200 is arm64); older GPUs are x86 only.
         include:
           - os: ubuntu-22.04
             platform: linux/amd64
+            cuda_arch: "75,80,86,89,90"
           - os: ubuntu-22.04-arm
             platform: linux/arm64
+            cuda_arch: "90"
     steps:
       - name: Prepare
         run: |
@@ -292,7 +294,7 @@ jobs:
             # This makes repeat CI builds much faster even when binaries.spack.io has no matches
             # for our overlay / pinned specs.
             SPACK_MIRROR_OCI=oci://${{ env.REGISTRY }}/${{ github.repository_owner }}/sp5505-spack-buildcache-2026.10.3
-            CUDA_ARCH=${{ env.CUDA_ARCH }}
+            CUDA_ARCH=${{ inputs.cuda_arch || matrix.cuda_arch }}
             CUDA_VERSION=${{ env.CUDA_VERSION }}
             PIP_EXTRAS=${{ env.PIP_EXTRAS }}
             PIP_GIT_EXTRAS=${{ env.PIP_GIT_EXTRAS }}
