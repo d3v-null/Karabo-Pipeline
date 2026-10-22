@@ -106,7 +106,11 @@ RUN spack compiler find && \
     rust
 
 # Add SKA SDP Spack repo and overlay
-RUN git clone --depth=1 --single-branch --branch=2026.10.3 https://gitlab.com/ska-telescope/sdp/ska-sdp-spack.git /opt/ska-sdp-spack && \
+# ska-sdp-spack 2026.10.4 release commit (MR 446; not tagged yet, switch to the tag once cut).
+ARG SDP_SPACK_REF=7bc44cf1e1f4bec316b018a3e27db28b693d8d59
+RUN git init -q /opt/ska-sdp-spack && \
+    git -C /opt/ska-sdp-spack fetch -q --depth=1 https://gitlab.com/ska-telescope/sdp/ska-sdp-spack.git "${SDP_SPACK_REF}" && \
+    git -C /opt/ska-sdp-spack checkout -q FETCH_HEAD && \
     rm -rf /opt/ska-sdp-spack/.git && \
     spack repo add /opt/ska-sdp-spack
 COPY spack-overlay /opt/karabo-spack
@@ -146,7 +150,7 @@ ARG HDF5_VERSION=1.14.6
 # conda has hdf5 1.14.3
 # hdf5 1.12.3 worked with numpy1
 # hdf5 1.14 needed by h5py 3.12+
-ARG DISTRIBUTED_VERSION=2025.7.0
+ARG DISTRIBUTED_VERSION=2026.3.0
 # distributed 2024+ supports numpy 2; previous: 2022.12.1
 ARG SCIPY_VERSION=1.17.1
 # scipy 1.14+ supports numpy 2; previous: 1.9.3
@@ -178,7 +182,7 @@ ARG PYUVDATA_VERSION=3.2.0
 # pyuvdata 3.2.0 supports numpy 2 + has MWA beam fix; previous: 2.4.2
 ARG BDSF_VERSION=1.14.1.20260723
 # matches py-rapthor 2.1.20260917; pinning avoids two py-bdsf versions in the view
-ARG DASK_VERSION=2025.7.0
+ARG DASK_VERSION=2026.3.0
 # dask 2024+ supports numpy 2; previous: 2022.12.1
 ARG DUCC_VERSION=0.40.0
 # conda uses 0.27
@@ -189,17 +193,17 @@ ARG PHOTUTILS_VERSION=2.3.0
 ARG REPROJECT_VERSION=0.14.1
 # conda uses 0.14.1, supports numpy 2 and astropy 6
 # reproject 0.9.1 worked with numpy1
-ARG SDP_DATAMODELS_VERSION=1.4.0
+ARG SDP_DATAMODELS_VERSION=2.1.0
 # conda uses 0.1.3
 # sdp-datamodels 0.2+ supports numpy 2
-ARG SDP_FUNC_PYTHON_VERSION=1.0.4
+ARG SDP_FUNC_PYTHON_VERSION=1.2.1
 # conda uses 0.1.4
 # sdp-func-python 0.2+ supports numpy 2
 ARG ARATMOSPY_VERSION=1.0.0
 ARG EIDOS_VERSION=1.1.0
 ARG KATBEAM_VERSION=0.1.0
 
-ARG AOFLAGGER_VERSION=3.6.0.dev1
+ARG AOFLAGGER_VERSION=3.6.0.dev2
 ARG WSCLEAN_VERSION=3.7.20260929
 ARG EVERYBEAM_VERSION=0.9.0
 # Overlay adds MWA beam thread-safety/caching on top of the sdp recipe.

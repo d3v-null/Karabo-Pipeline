@@ -119,7 +119,11 @@ RUN spack compiler find && \
 # generation. Let spack build bzip2 from source like everything else.
 
 # SKA SDP Spack repo (healpy, reproject, tables, …) + Karabo overlay (ps_eor stack)
-RUN git clone --depth=1 --single-branch --branch=2026.10.3 https://gitlab.com/ska-telescope/sdp/ska-sdp-spack.git /opt/ska-sdp-spack && \
+# ska-sdp-spack 2026.10.4 release commit (MR 446; not tagged yet, switch to the tag once cut).
+ARG SDP_SPACK_REF=7bc44cf1e1f4bec316b018a3e27db28b693d8d59
+RUN git init -q /opt/ska-sdp-spack && \
+    git -C /opt/ska-sdp-spack fetch -q --depth=1 https://gitlab.com/ska-telescope/sdp/ska-sdp-spack.git "${SDP_SPACK_REF}" && \
+    git -C /opt/ska-sdp-spack checkout -q FETCH_HEAD && \
     rm -rf /opt/ska-sdp-spack/.git && \
     spack repo add /opt/ska-sdp-spack
 COPY --link spack-overlay /opt/karabo-spack
