@@ -267,10 +267,19 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache-2026.10.3,sh
     # Force numpy-2-compatible versions of transitive deps globally via
     # packages.yaml require. Constrains ALL instances
     # including transitive deps under when_possible concretization.
+    # CUDA builds also pin py-rdflib/py-isodate (cwltool -> schema-salad) to what the
+    # optimal solution picks anyway: unpinned, spack 1.2's when_possible solver
+    # finds the solution in ~1 min but never proves it optimal (6 h CI timeouts).
+    # The pins make the +cuda solve ~80 s; the CPU solve is ~80 s without them
+    # and hangs with them, so they are CUDA-only.
     if [ -n "${CUDA_ARCH}" ]; then \
         WSCLEAN_REQUIRE="~mpi+cuda"; \
+        RDFLIB_REQUIRE="@6.3.2"; \
+        ISODATE_REQUIRE="@0.6.1"; \
     else \
         WSCLEAN_REQUIRE="~mpi~cuda"; \
+        RDFLIB_REQUIRE=""; \
+        ISODATE_REQUIRE=""; \
     fi; \
     python3 -c "import yaml,sys;p='/opt/spack_env/spack.yaml';f=open(p);c=yaml.safe_load(f);f.close();\
     pkgs=c.setdefault('spack',{}).setdefault('packages',{});\
@@ -289,9 +298,11 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache-2026.10.3,sh
         ('py-astropy','@${ASTROPY_VERSION}'),\
         ('cfitsio','+bzip2+fortran+utils'),\
         ('boost','+test'),\
-        ('wsclean',sys.argv[1])]];\
+        ('wsclean',sys.argv[1]),\
+        ('py-rdflib',sys.argv[2]),\
+        ('py-isodate',sys.argv[3])] if v];\
     c['spack']['view']={'default':{'root':'/opt/view','link_dirs':False}};\
-    f=open(p,'w');yaml.dump(c,f,default_flow_style=False);f.close()" "${WSCLEAN_REQUIRE}"; \
+    f=open(p,'w');yaml.dump(c,f,default_flow_style=False);f.close()" "${WSCLEAN_REQUIRE}" "${RDFLIB_REQUIRE}" "${ISODATE_REQUIRE}"; \
     # Local buildcache persisted via BuildKit cache mount (fast retries / iterations).
     # Disable by setting SPACK_BUILDCACHE_LOCAL=0 or empty.
     if [ "${SPACK_BUILDCACHE_LOCAL:-0}" != "0" ] && [ -n "${SPACK_BUILDCACHE_LOCAL:-}" ]; then \
