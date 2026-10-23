@@ -69,10 +69,19 @@ def test_source_detection_plot(
         max_dist=10,
         top_k=3,
     )
+    # indices must match exactly; distances only to rounding, which differs
+    # between architectures (arm64 differs by ~1e-14 px)
+    gt_assignment = np.load(tobject.gt_assignment)
     np.testing.assert_array_equal(
-        assignments,
-        np.load(tobject.gt_assignment),
+        assignments[:, :2],
+        gt_assignment[:, :2],
         err_msg="The assignment has changed!",
+    )
+    np.testing.assert_allclose(
+        assignments[:, 2],
+        gt_assignment[:, 2],
+        rtol=1e-9,
+        err_msg="The assignment distances have changed!",
     )
     mapping = SourceDetectionEvaluation(
         sky=sky,
