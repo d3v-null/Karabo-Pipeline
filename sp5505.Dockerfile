@@ -216,6 +216,8 @@ ARG RAPTHOR_VERSION=2.1.20260917
 # MWA beam support patch (DP3/WSClean pointed at /opt/mwa_full_embedded_element_pattern.h5,
 # flagged-tile and solar-model robustness fixes), which this image's MWA_BEAM_FILE serves.
 ARG RAPTHOR_MWA_VARIANT=+mwa
+ARG FACETSELFCAL_VERSION=21.0.0.20261030
+# lofar_facet_selfcal (facetselfcal, h5_merger, ds9facetgenerator); upstream has no tags.
 
 # Create Spack environment and install deps
 ARG SPACK_TARGET=""
@@ -406,6 +408,7 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache-2026.10.3,sh
     'dp3@'$DP3_VERSION'+idg' \
     "${IDG_SPEC}" \
     'py-rapthor@'$RAPTHOR_VERSION$RAPTHOR_MWA_VARIANT \
+    'py-lofar-facet-selfcal@'$FACETSELFCAL_VERSION \
     && \
     spack concretize --force && \
     # Guard against stale reused py-rapthor binaries: the lock must reference
@@ -759,6 +762,14 @@ RUN rapthor --version && \
     grep -q -- '-mwa-path' "${rapthor_dir}/pipeline/steps/wsclean_image_no_dde.cwl" && \
     grep -q 'rapthor-mwa' "${rapthor_dir}/scripts/filter_skymodel.py" && \
     echo "rapthor +mwa patch present"
+
+# facetselfcal: --help imports everything it loads at start-up; it finds its
+# aoflagger strategies and data files next to the installed package.
+RUN facetselfcal --help > /dev/null && \
+    h5_merger --help > /dev/null && \
+    fsc_dir="$(python -c 'import facetselfcal, os; print(os.path.dirname(facetselfcal.__file__))')" && \
+    ls "${fsc_dir}"/flagging_strategies/default_StokesI.lua "${fsc_dir}"/data/MeerKATlayout.csv && \
+    echo "facetselfcal OK"
 
 # This fixture is EveryBeam's upstream MWA regression MS.  The probe uses the
 # same PointResponse::Response(kFull, station, frequency, ITRF direction)
