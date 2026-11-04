@@ -269,6 +269,9 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache-2026.10.3,sh
     # Force numpy-2-compatible versions of transitive deps globally via
     # packages.yaml require. Constrains ALL instances
     # including transitive deps under when_possible concretization.
+    # py-typeguard/antlr4/pydantic/rich/dill (breizorro -> scabha) are pinned to the
+    # versions the solver picks anyway: unpinned, the sm_75-90 solve again finds the
+    # answer but never proves it optimal (CPU and sm_90 were fine).
     # CUDA builds also pin py-rdflib/py-isodate (cwltool -> schema-salad) to what the
     # optimal solution picks anyway: unpinned, spack 1.2's when_possible solver
     # finds the solution in ~1 min but never proves it optimal (6 h CI timeouts).
@@ -300,6 +303,11 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache-2026.10.3,sh
         ('py-astropy','@${ASTROPY_VERSION}'),\
         ('cfitsio','+bzip2+fortran+utils'),\
         ('boost','+test'),\
+        ('py-typeguard','@4.4.4'),\
+        ('py-antlr4-python3-runtime','@4.9.3'),\
+        ('py-pydantic','@2.12.5'),\
+        ('py-rich','@15.0.0'),\
+        ('py-dill','@0.4.1'),\
         ('wsclean',sys.argv[1]),\
         ('py-rdflib',sys.argv[2]),\
         ('py-isodate',sys.argv[3])] if v];\
@@ -767,6 +775,9 @@ RUN rapthor --version && \
 # aoflagger strategies and data files next to the installed package.
 RUN facetselfcal --help > /dev/null && \
     h5_merger --help > /dev/null && \
+    # --help exits before inputchecker(), which needs these commands on PATH
+    for c in breizorro taql DP3 wsclean aoflagger; do which "$c" || exit 1; done && \
+    breizorro --help > /dev/null && \
     fsc_dir="$(python -c 'import facetselfcal, os; print(os.path.dirname(facetselfcal.__file__))')" && \
     ls "${fsc_dir}"/flagging_strategies/default_StokesI.lua "${fsc_dir}"/data/MeerKATlayout.csv && \
     echo "facetselfcal OK"

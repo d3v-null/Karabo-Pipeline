@@ -54,6 +54,10 @@ class PyLofarFacetSelfcal(PythonPackage):
     depends_on("wsclean", type="run")
     depends_on("everybeam+python", type="run")
     depends_on("aoflagger", type="run")
+    # input_checks.inputchecker() refuses to start unless `breizorro` (mask making),
+    # `taql` (casacore), `DP3` and `wsclean` are on PATH
+    depends_on("py-breizorro", type="run")
+    depends_on("casacore", type="run")
 
     def patch(self):
         # main.py and submods look up <package>/flagging_strategies/*.lua and
