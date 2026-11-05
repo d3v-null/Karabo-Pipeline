@@ -60,6 +60,55 @@ def main() -> None:
         f"stations={telescope.nr_stations}",
         f"max_abs={np.abs(jones).max():.8g}",
     )
+    check_time_dependent_pointing()
+
+
+def check_time_dependent_pointing() -> None:
+    """A MeasurementSet whose MWA_TILE_POINTING has two rows (two pointings,
+    each with its own INTERVAL) must get each pointing's beam in its interval
+    (the overlay's mwa-time-dependent-pointing patch; stock EveryBeam reads
+    row 0 only)."""
+    import shutil
+    import tempfile
+
+    from casacore.tables import table
+
+    tilted = np.array([3, 2, 1, 0] * 4, dtype=np.int32)  # an east-west tilt
+    tmp = tempfile.mkdtemp(prefix="mwa_pointing_")
+    try:
+
+        def copy_with_pointings(name, rows):
+            path = os.path.join(tmp, name)
+            shutil.copytree(MS_PATH, path)
+            pointing = table(path + "/MWA_TILE_POINTING", readonly=False, ack=False)
+            pointing.addrows(len(rows) - pointing.nrows())
+            for row, (interval, delays) in enumerate(rows):
+                pointing.putcell("INTERVAL", row, np.asarray(interval, dtype=float))
+                pointing.putcell("DELAYS", row, delays)
+            pointing.close()
+            return path
+
+        pointing = table(MS_PATH + "/MWA_TILE_POINTING", ack=False)
+        start, end = pointing.getcell("INTERVAL", 0)
+        zenith = pointing.getcell("DELAYS", 0)
+        pointing.close()
+        middle = 0.5 * (start + end)
+        two = copy_with_pointings(
+            "two.ms", [((middle, end), tilted), ((start, middle), zenith)]
+        )
+        only_tilted = copy_with_pointings("tilted.ms", [((start, end), tilted)])
+
+        def response(path, time):
+            telescope = everybeam.load_telescope(path, coeff_path=COEFF_PATH)
+            return telescope.station_response(time, 0, FREQUENCY_HZ, SOURCE_DIRECTION_ITRF)
+
+        early, late = start + 10.0, end - 10.0
+        assert not np.allclose(response(MS_PATH, late), response(only_tilted, late))
+        np.testing.assert_array_equal(response(two, early), response(MS_PATH, early))
+        np.testing.assert_array_equal(response(two, late), response(only_tilted, late))
+        print("EveryBeam MWA time-dependent pointing OK: two MWA_TILE_POINTING rows")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 if __name__ == "__main__":

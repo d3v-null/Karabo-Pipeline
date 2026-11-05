@@ -84,6 +84,11 @@ class Everybeam(CMakePackage):
     # beam across time steps, cache modes per frequency, and evaluate the beam
     # outside the casacore lock (else ~1.5 cores busy, races on lazy init).
     patch("mwa-beam-thread-scaling.patch", when="@0.9.0")
+    # Time-dependent MWA pointings: use the MWA_TILE_POINTING row whose INTERVAL
+    # contains the time (nearest otherwise) instead of row 0 for the whole MS,
+    # so a MeasurementSet combining several pointings gets each one's beam.
+    # Applies on top of the patch above.
+    patch("mwa-time-dependent-pointing.patch", when="@0.9.0")
     # Python dependency checkers (pip check) need dist-info for the extension.
     patch("install-python-metadata.patch", when="@0.9.0 +python")
 

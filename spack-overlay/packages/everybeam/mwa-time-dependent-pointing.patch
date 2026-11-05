@@ -1,0 +1,376 @@
+diff --git a/cpp/griddedresponse/mwagrid.cc b/cpp/griddedresponse/mwagrid.cc
+index d528071..c053878 100644
+--- a/cpp/griddedresponse/mwagrid.cc
++++ b/cpp/griddedresponse/mwagrid.cc
+@@ -35,9 +35,12 @@ void MWAGrid::Response(BeamMode /* beam_mode */, std::complex<float>* buffer,
+       mwatelescope.GetArrayPosition(), casacore::MPosition::WGS84)();
+   const double arr_latitude = wgs.getValue().getLat();
+ 
+-  if (!tile_beam_) {
+-    tile_beam_.reset(
+-        new TileBeam2016(mwatelescope.GetDelays().data(),
++  // The tile beam of the pointing in effect at this time.
++  std::unique_ptr<TileBeam2016>& tile_beam =
++      tile_beams_[mwatelescope.DelaysIndex(time)];
++  if (!tile_beam) {
++    tile_beam.reset(
++        new TileBeam2016(mwatelescope.GetDelays(time).data(),
+                          mwatelescope.GetOptions().frequency_interpolation,
+                          mwatelescope.GetOptions().coeff_path));
+   }
+@@ -51,7 +54,7 @@ void MWAGrid::Response(BeamMode /* beam_mode */, std::complex<float>* buffer,
+       aocommon::ImageCoordinates::LMToRaDec(l, m, ra_, dec_, ra, dec);
+ 
+       aocommon::MC2x2 gain;
+-      tile_beam_->ArrayResponse(ra, dec, j2000_ref, j2000_to_hadecref,
++      tile_beam->ArrayResponse(ra, dec, j2000_ref, j2000_to_hadecref,
+                                 j2000_to_azelgeoref, arr_latitude, frequency,
+                                 gain);
+       gain.AssignTo(buffer_ptr);
+diff --git a/cpp/griddedresponse/mwagrid.h b/cpp/griddedresponse/mwagrid.h
+index 74b1d4e..dacf7c8 100644
+--- a/cpp/griddedresponse/mwagrid.h
++++ b/cpp/griddedresponse/mwagrid.h
+@@ -9,6 +9,7 @@
+ #include "griddedresponse.h"
+ #include "../mwabeam/tilebeam2016.h"
+ 
++#include <map>
+ #include <memory>
+ 
+ namespace everybeam {
+@@ -29,7 +30,10 @@ class MWAGrid final : public GriddedResponse {
+   }
+ 
+  private:
+-  std::unique_ptr<everybeam::mwabeam::TileBeam2016> tile_beam_;
++  // This response's own tile beam per distinct pointing of the telescope
++  // (MWA_TILE_POINTING row), created when first needed.
++  std::map<size_t, std::unique_ptr<everybeam::mwabeam::TileBeam2016>>
++      tile_beams_;
+ 
+   // Override MakeIntegrated snapshot for efficiency
+   void MakeIntegratedCorrectionSnapshot(BeamMode beam_mode,
+diff --git a/cpp/pointresponse/mwapoint.cc b/cpp/pointresponse/mwapoint.cc
+index f2b8ca5..88b8384 100644
+--- a/cpp/pointresponse/mwapoint.cc
++++ b/cpp/pointresponse/mwapoint.cc
+@@ -18,9 +18,10 @@ void MWAPoint::Response(BeamMode /* beam_mode */, std::complex<float>* buffer,
+                         double ra, double dec, double freq,
+                         size_t /* station_idx */, size_t /* field_id */) {
+   double zenith_angle, azimuth;
+-  ZenithAzimuth(ra, dec, zenith_angle, azimuth);
++  const std::shared_ptr<TileBeam2016> tile_beam =
++      ZenithAzimuth(ra, dec, zenith_angle, azimuth);
+   aocommon::MC2x2 gains;
+-  tile_beam_->ArrayResponse(zenith_angle, azimuth, std::span(&freq, 1), &gains);
++  tile_beam->ArrayResponse(zenith_angle, azimuth, std::span(&freq, 1), &gains);
+   gains.AssignTo(buffer);
+ }
+ 
+@@ -29,26 +30,29 @@ void MWAPoint::ResponseDouble(BeamMode beam_mode,
+                               double dec, std::span<const double> frequencies,
+                               size_t station_id, size_t field_id) {
+   double zenith_angle, azimuth;
+-  ZenithAzimuth(ra, dec, zenith_angle, azimuth);
+-  tile_beam_->ArrayResponse(zenith_angle, azimuth, frequencies,
+-                            response_matrices);
++  const std::shared_ptr<TileBeam2016> tile_beam =
++      ZenithAzimuth(ra, dec, zenith_angle, azimuth);
++  tile_beam->ArrayResponse(zenith_angle, azimuth, frequencies,
++                           response_matrices);
+ }
+ 
+-TileBeam2016& MWAPoint::TileBeam() {
++std::shared_ptr<TileBeam2016> MWAPoint::TileBeam() {
+   if (!tile_beam_) {
+-    tile_beam_ =
+-        static_cast<const telescope::MWA&>(GetTelescope()).GetTileBeam();
++    tile_beam_ = static_cast<const telescope::MWA&>(GetTelescope())
++                     .GetTileBeamForDelays(delays_index_);
+   }
+-  return *tile_beam_;
++  return tile_beam_;
+ }
+ 
+-void MWAPoint::ZenithAzimuth(double ra, double dec, double& zenith_angle,
+-                             double& azimuth) {
++std::shared_ptr<TileBeam2016> MWAPoint::ZenithAzimuth(double ra, double dec,
++                                                      double& zenith_angle,
++                                                      double& azimuth) {
+   std::lock_guard lock(mutex_);
+-  TileBeam();
++  std::shared_ptr<TileBeam2016> tile_beam = TileBeam();
+   TileBeam2016::ZenithAzimuth(ra, dec, j2000_ref_, j2000_to_hadecref_,
+                               j2000_to_azelgeoref_, arr_latitude_,
+                               zenith_angle, azimuth);
++  return tile_beam;
+ }
+ 
+ void MWAPoint::Response(BeamMode beam_mode, aocommon::MC2x2F* response_matrices,
+@@ -80,9 +84,10 @@ void MWAPoint::Response(aocommon::MC2x2* result, BeamMode beam_mode,
+   // to get Dp3 to work with the MWA beam. It is quite slow because it does a
+   // itrf->j2000->hadec. Only the conversions hold mutex_.
+   double zenith_angle, azimuth;
++  std::shared_ptr<TileBeam2016> tile_beam;
+   {
+     std::lock_guard lock(mutex_);
+-    TileBeam();
++    tile_beam = TileBeam();
+     const casacore::MEpoch time_epoch(casacore::Quantity(time_, "s"));
+     const telescope::MWA& mwatelescope =
+         static_cast<const telescope::MWA&>(GetTelescope());
+@@ -99,7 +104,7 @@ void MWAPoint::Response(aocommon::MC2x2* result, BeamMode beam_mode,
+                                 j2000_to_hadecref_, j2000_to_azelgeoref_,
+                                 arr_latitude_, zenith_angle, azimuth);
+   }
+-  tile_beam_->ArrayResponse(zenith_angle, azimuth, freqs, result);
++  tile_beam->ArrayResponse(zenith_angle, azimuth, freqs, result);
+ }
+ 
+ void MWAPoint::UpdateTime(double time) {
+@@ -108,6 +113,14 @@ void MWAPoint::UpdateTime(double time) {
+ 
+   const telescope::MWA& mwatelescope =
+       static_cast<const telescope::MWA&>(GetTelescope());
++  // A MeasurementSet can have several pointings (MWA_TILE_POINTING rows); use
++  // the tile beam of the one in effect at this time.
++  const size_t delays_index = mwatelescope.DelaysIndex(time);
++  if (delays_index != delays_index_ || !tile_beam_) {
++    std::lock_guard lock(mutex_);
++    delays_index_ = delays_index;
++    tile_beam_.reset();
++  }
+   casacore::MEpoch time_epoch(casacore::Quantity(time, "s"));
+   casacore::MeasFrame frame(mwatelescope.GetArrayPosition(), time_epoch);
+ 
+diff --git a/cpp/pointresponse/mwapoint.h b/cpp/pointresponse/mwapoint.h
+index 3d94b88..ac036c4 100644
+--- a/cpp/pointresponse/mwapoint.h
++++ b/cpp/pointresponse/mwapoint.h
+@@ -76,16 +76,20 @@ class MWAPoint final : public PointResponse {
+ 
+  private:
+   void UpdateTime(double time) override;
+-  // Returns the shared tile beam. Requires mutex_ to be held.
+-  everybeam::mwabeam::TileBeam2016& TileBeam();
+-  // Converts a J2000 direction to zenith angle and azimuth. Requires mutex_.
+-  void ZenithAzimuth(double ra, double dec, double& zenith_angle,
+-                     double& azimuth);
++  // Returns the shared tile beam of the pointing at time_. Requires mutex_ to
++  // be held; callers keep the returned pointer while evaluating the beam.
++  std::shared_ptr<everybeam::mwabeam::TileBeam2016> TileBeam();
++  // Converts a J2000 direction to zenith angle and azimuth, and returns the
++  // tile beam to evaluate them with. Takes mutex_.
++  std::shared_ptr<everybeam::mwabeam::TileBeam2016> ZenithAzimuth(
++      double ra, double dec, double& zenith_angle, double& azimuth);
+   void ResponseDouble(BeamMode beam_mode, aocommon::MC2x2* response_matrix,
+                       double ra, double dec, std::span<const double> freqs,
+                       size_t station_id, size_t field_id);
+ 
+   std::shared_ptr<everybeam::mwabeam::TileBeam2016> tile_beam_;
++  // Which of the telescope's distinct pointings tile_beam_ belongs to.
++  size_t delays_index_ = 0;
+ 
+   casacore::MDirection::Ref j2000_ref_;
+   casacore::MDirection::Convert j2000_to_hadecref_;
+diff --git a/cpp/telescope/mwa.cc b/cpp/telescope/mwa.cc
+index 519c6de..d86b3be 100644
+--- a/cpp/telescope/mwa.cc
++++ b/cpp/telescope/mwa.cc
+@@ -7,6 +7,11 @@
+ #include "../mwabeam/tilebeam2016.h"
+ 
+ #include <casacore/tables/Tables/TableRecord.h>
++
++#include <algorithm>
++#include <limits>
++#include <optional>
++#include <string>
+ #include <casacore/measures/TableMeasures/ArrayMeasColumn.h>
+ 
+ using everybeam::griddedresponse::GriddedResponse;
+@@ -26,15 +31,70 @@ MWA::MWA(const casacore::MeasurementSet& ms, const Options& options)
+       antenna, antenna.columnName(casacore::MSAntennaEnums::POSITION));
+   array_position_ = antenna_pos_col(0);
+ 
++  // MWA_TILE_POINTING has one row per pointing, each with the dipole delays
++  // in effect over its INTERVAL (start and end time). Observations usually
++  // have a single row, but a MeasurementSet combining several pointings has
++  // one row per pointing.
+   casacore::Table mwa_tile_pointing =
+       ms.keywordSet().asTable("MWA_TILE_POINTING");
++  if (mwa_tile_pointing.nrow() == 0) {
++    throw std::runtime_error("The MWA_TILE_POINTING table has no rows");
++  }
+   casacore::ArrayColumn<int> delays_col(mwa_tile_pointing, "DELAYS");
+-  casacore::Array<int> delays_arr = delays_col(0);
+-  casacore::Array<int>::contiter delays_arr_ptr = delays_arr.cbegin();
+-  for (auto& delay : delays_) {
+-    delay = *delays_arr_ptr;
+-    ++delays_arr_ptr;
++  const bool has_interval =
++      mwa_tile_pointing.tableDesc().isColumn("INTERVAL");
++  std::optional<casacore::ArrayColumn<double>> interval_col;
++  if (has_interval) interval_col.emplace(mwa_tile_pointing, "INTERVAL");
++
++  for (casacore::rownr_t row = 0; row != mwa_tile_pointing.nrow(); ++row) {
++    const casacore::Array<int> delays_arr = delays_col(row);
++    if (delays_arr.nelements() != 16) {
++      throw std::runtime_error(
++          "MWA_TILE_POINTING row " + std::to_string(row) + " has " +
++          std::to_string(delays_arr.nelements()) +
++          " dipole delays, but must have 16");
++    }
++    std::array<double, 16> delays;
++    std::copy(delays_arr.cbegin(), delays_arr.cend(), delays.begin());
++
++    Pointing pointing{-std::numeric_limits<double>::infinity(),
++                      std::numeric_limits<double>::infinity(), 0};
++    if (has_interval) {
++      const casacore::Array<double> interval = (*interval_col)(row);
++      if (interval.nelements() == 2) {
++        pointing.start_time = *interval.cbegin();
++        pointing.end_time = *(interval.cbegin() + 1);
++      }
++    }
++    const auto found = std::find(delays_.begin(), delays_.end(), delays);
++    pointing.delays_index = found - delays_.begin();
++    if (found == delays_.end()) delays_.push_back(delays);
++    pointings_.push_back(pointing);
++  }
++  std::stable_sort(pointings_.begin(), pointings_.end(),
++                   [](const Pointing& a, const Pointing& b) {
++                     return a.start_time < b.start_time;
++                   });
++  tile_beams_.resize(delays_.size());
++}
++
++size_t MWA::DelaysIndex(double time) const {
++  if (pointings_.size() == 1) return pointings_.front().delays_index;
++  // The pointing whose interval contains the time; otherwise the nearest one.
++  size_t best = 0;
++  double best_distance = std::numeric_limits<double>::infinity();
++  for (size_t i = 0; i != pointings_.size(); ++i) {
++    const Pointing& p = pointings_[i];
++    const double distance = time < p.start_time ? p.start_time - time
++                            : time > p.end_time ? time - p.end_time
++                                                : 0.0;
++    if (distance < best_distance) {
++      best_distance = distance;
++      best = i;
++      if (distance == 0.0) break;
++    }
+   }
++  return pointings_[best].delays_index;
+ }
+ 
+ std::unique_ptr<GriddedResponse> MWA::GetGriddedResponse(
+@@ -46,15 +106,18 @@ std::unique_ptr<PointResponse> MWA::GetPointResponse(double time) const {
+   return std::make_unique<MWAPoint>(this, time);
+ }
+ 
+-std::shared_ptr<everybeam::mwabeam::TileBeam2016> MWA::GetTileBeam() const {
++std::shared_ptr<everybeam::mwabeam::TileBeam2016> MWA::GetTileBeamForDelays(
++    size_t delays_index) const {
+   std::lock_guard lock(tile_beam_mutex_);
+-  if (!tile_beam_) {
++  std::shared_ptr<everybeam::mwabeam::TileBeam2016>& tile_beam =
++      tile_beams_.at(delays_index);
++  if (!tile_beam) {
+     if (GetOptions().coeff_path.empty()) {
+       throw std::runtime_error("Missing path for MWA coefficients h5 file");
+     }
+-    tile_beam_ = std::make_shared<everybeam::mwabeam::TileBeam2016>(
+-        delays_.data(), GetOptions().frequency_interpolation,
++    tile_beam = std::make_shared<everybeam::mwabeam::TileBeam2016>(
++        delays_[delays_index].data(), GetOptions().frequency_interpolation,
+         GetOptions().coeff_path);
+   }
+-  return tile_beam_;
++  return tile_beam;
+ }
+diff --git a/cpp/telescope/mwa.h b/cpp/telescope/mwa.h
+index c36afbb..7d07138 100644
+--- a/cpp/telescope/mwa.h
++++ b/cpp/telescope/mwa.h
+@@ -8,6 +8,7 @@
+ #define EVERYBEAM_TELESCOPE_MWA_H_
+ 
+ #include <array>
++#include <vector>
+ #include <memory>
+ #include <mutex>
+ 
+@@ -57,20 +58,64 @@ class EVERYBEAM_PUBLIC_API MWA final : public Telescope {
+     // Construct from MVPosition so there are no shared frames
+     return casacore::MPosition(array_position_.getValue());
+   }
+-  const std::array<double, 16>& GetDelays() const { return delays_; }
++  /**
++   * Dipole delays of the first pointing in the MWA_TILE_POINTING table.
++   */
++  const std::array<double, 16>& GetDelays() const {
++    return delays_[pointings_.front().delays_index];
++  }
+ 
+   /**
+-   * Tile beam shared by all point responses of this telescope, so that the
+-   * coefficient file is read and the modes are calculated only once instead
+-   * of for every time step. Thread-safe.
++   * Dipole delays of the pointing in effect at @p time (MJD seconds, as in the
++   * MS TIME column): the MWA_TILE_POINTING row whose INTERVAL contains it, or
++   * the nearest row if none does.
+    */
+-  std::shared_ptr<mwabeam::TileBeam2016> GetTileBeam() const;
++  const std::array<double, 16>& GetDelays(double time) const {
++    return delays_[DelaysIndex(time)];
++  }
++
++  /**
++   * Index of the distinct set of dipole delays in effect at @p time; equal
++   * indices mean equal beams.
++   */
++  size_t DelaysIndex(double time) const;
++
++  /**
++   * Tile beam for the first pointing (see GetTileBeam(double)).
++   */
++  std::shared_ptr<mwabeam::TileBeam2016> GetTileBeam() const {
++    return GetTileBeamForDelays(pointings_.front().delays_index);
++  }
++
++  /**
++   * Tile beam for the pointing in effect at @p time, shared by all point
++   * responses of this telescope, so that the coefficient file is read and the
++   * modes are calculated only once per distinct pointing instead of for every
++   * time step. Thread-safe.
++   */
++  std::shared_ptr<mwabeam::TileBeam2016> GetTileBeam(double time) const {
++    return GetTileBeamForDelays(DelaysIndex(time));
++  }
++
++  std::shared_ptr<mwabeam::TileBeam2016> GetTileBeamForDelays(
++      size_t delays_index) const;
+ 
+  private:
++  /// One row of the MWA_TILE_POINTING table.
++  struct Pointing {
++    double start_time;  ///< MJD seconds
++    double end_time;    ///< MJD seconds
++    size_t delays_index;
++  };
++
+   casacore::MPosition array_position_;
+-  std::array<double, 16> delays_;
++  /// Time-ordered pointings; never empty.
++  std::vector<Pointing> pointings_;
++  /// Distinct dipole delays used by the pointings.
++  std::vector<std::array<double, 16>> delays_;
+   mutable std::mutex tile_beam_mutex_;
+-  mutable std::shared_ptr<mwabeam::TileBeam2016> tile_beam_;
++  /// One lazily created tile beam per entry of delays_.
++  mutable std::vector<std::shared_ptr<mwabeam::TileBeam2016>> tile_beams_;
+ };
+ 
+ }  // namespace telescope
