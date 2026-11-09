@@ -260,7 +260,9 @@ RUN --mount=type=cache,target=/opt/buildcache,id=spack-binary-cache-2026.10.3,sh
     # binary is already in the buildcache. py-rapthor is a cheap pure-python
     # build: always concretize it fresh (its deps are still reused).
     # These overlays fix version metadata (git builds lack tags); a cached ska-sdp-spack build would still satisfy them.
-    spack config add "concretizer:reuse:exclude:[py-rapthor,py-casacore,py-bdsf,py-photutils,py-lsmtool,py-astropy-healpix]"; \
+    # everybeam: likewise, a cached binary would silently drop new overlay patches
+    # (it did for mwa-time-dependent-pointing); its dependents rebuild against it.
+    spack config add "concretizer:reuse:exclude:[py-rapthor,py-casacore,py-bdsf,py-photutils,py-lsmtool,py-astropy-healpix,everybeam]"; \
     # view config set via python3 yaml manipulation below (with py-mistune@:2 exclude) \
     spack config add "config:source_cache:/opt/spack-source-cache"; \
     spack config add "config:misc_cache:/opt/spack-misc-cache"; \
