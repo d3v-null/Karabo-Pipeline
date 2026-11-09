@@ -785,16 +785,16 @@ RUN facetselfcal --help > /dev/null && \
 # This fixture is EveryBeam's upstream MWA regression MS.  The probe uses the
 # same PointResponse::Response(kFull, station, frequency, ITRF direction)
 # primitive as DP3 Predict, then removes the MS so it is not shipped in the image.
+# The fixture is vendored from support.astron.nl/software/ci_data/EveryBeam, whose
+# outages otherwise fail the build; bind-mounted so it adds nothing to the image.
 COPY everybeam_mwa_predict_test.py /opt/everybeam_mwa_predict_test.py
-RUN --mount=type=cache,target=/opt/everybeam-test-cache,id=everybeam-mwa-test-data,sharing=locked \
-    cp /opt/everybeam-test-cache/MWA-single-timeslot.tar.bz2 /tmp/ 2>/dev/null || \
-    wget -q -P /tmp https://support.astron.nl/software/ci_data/EveryBeam/MWA-single-timeslot.tar.bz2; \
-    tar -xf /tmp/MWA-single-timeslot.tar.bz2 -C /tmp --one-top-level=MWA_MOCK.ms --strip-components=1 && \
-    cp /tmp/MWA-single-timeslot.tar.bz2 /opt/everybeam-test-cache/ && \
+RUN --mount=type=bind,source=test_data/everybeam,target=/opt/everybeam-test-data \
+    echo "39cb9f656582c97f403883e1befe50745d8a86c4ce4dfee55d087f437a46e5dc  /opt/everybeam-test-data/MWA-single-timeslot.tar.bz2" | sha256sum -c - && \
+    tar -xf /opt/everybeam-test-data/MWA-single-timeslot.tar.bz2 -C /tmp --one-top-level=MWA_MOCK.ms --strip-components=1 && \
     python /opt/everybeam_mwa_predict_test.py && \
     DP3 --version && \
     python -c "import dp3; print('dp3 Python import OK')" && \
-    rm -rf /tmp/MWA_MOCK.ms /tmp/MWA-single-timeslot.tar.bz2
+    rm -rf /tmp/MWA_MOCK.ms
 
 # tests
 RUN python -c "import ska_sdp_func_python" || exit 1 && \
