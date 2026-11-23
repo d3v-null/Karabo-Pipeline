@@ -117,10 +117,13 @@ RUN --mount=type=cache,target=/opt/spack-source-cache,id=spack-source-cache,shar
     mkdir -p /opt/cuda-stub; \
     cp -L "$(ls -d ${CUDA_ROOT}/lib64/stubs ${CUDA_ROOT}/lib/stubs 2>/dev/null | head -1)/libcuda.so" /opt/cuda-stub/libcuda.so.1
 
-# Jupyter server + kernel run from the spack python, not the base image's conda.
+# Jupyter server, JupyterHub single-user server and kernel all run from the
+# spack python, not the base image's conda. jupyterhub matches the base image's
+# 4.0.2 so the single-user server stays compatible with the same hub.
+ARG JUPYTERHUB_VERSION=4.0.2
 RUN /opt/view/bin/python -m pip install --no-cache-dir \
-        "jupyterlab>=4,<5" "notebook>=7,<8" ipykernel && \
-    /opt/view/bin/python -c "import jupyterlab, notebook, ipykernel; print('jupyter OK')"
+        "jupyterhub==${JUPYTERHUB_VERSION}" "jupyterlab>=4,<5" "notebook>=7,<8" ipykernel && \
+    /opt/view/bin/python -c "import jupyterhub, jupyterlab, notebook, ipykernel; print('jupyter OK')"
 
 FROM ${BASE_IMAGE}
 
@@ -161,4 +164,6 @@ RUN rm -f /usr/local/bin/before-notebook.d/10activate-conda-env.sh && \
 
 USER ${NB_UID}
 RUN python -m ipykernel install --user --name=wsclean --display-name="WSClean (Spack Py${PYTHON_VERSION})" && \
-    jupyter kernelspec list
+    jupyter kernelspec list && \
+    test "$(command -v jupyterhub-singleuser)" = /opt/view/bin/jupyterhub-singleuser && \
+    jupyterhub-singleuser --version
