@@ -20,8 +20,8 @@ class Hyperdrive(Package, ROCmPackage, CudaPackage):
 
     # Versions
     version("main", branch="main")
-    # bmetrics branch tip (2026-10-17): 0.8.1 + bmetrics subcommand.
-    version("0.8.1.20261017", commit="a75deeb73dd717dcb6bcaf6e0c774e2a4f6521f9")
+    # bmetrics branch tip (PR #102, 2026-11-23): 0.11.0 + bmetrics subcommand.
+    version("0.11.0.20261123", commit="735c8e871498fe70d04ff99024dbc11325a9a0ea")
     version("0.7.0", tag="v0.7.0")
 
     # Variants
@@ -30,13 +30,14 @@ class Hyperdrive(Package, ROCmPackage, CudaPackage):
     variant(
         "bmetrics",
         default=True,
-        when="@0.8.1.20261017",
+        when="@0.11.0.20261123",
         description="Build the bmetrics subcommand (links aoflagger)",
     )
 
     # Build dependencies
     depends_on("rust@1.64:", type="build")
     depends_on("rust@1.85:", type="build", when="@0.8:")
+    depends_on("rust@1.88:", type="build", when="@0.11:")
     depends_on("pkgconfig", type="build")
 
     # Fontconfig and its dependencies for yeslogic-fontconfig-sys

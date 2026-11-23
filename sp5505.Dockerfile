@@ -209,7 +209,7 @@ ARG EVERYBEAM_VERSION=0.9.0
 # Overlay adds MWA beam thread-safety/caching on top of the sdp recipe.
 ARG DP3_VERSION=6.6.0.20260923
 # sdp pairs DP3 6.6.0.20260923 with EveryBeam 0.9.0.
-ARG HYPERDRIVE_VERSION=0.8.1.20261017
+ARG HYPERDRIVE_VERSION=0.11.0.20261123
 # hyperdrive bmetrics branch; pinned so concretizer reuse doesn't keep a cached 0.7.0.
 ARG RAPTHOR_VERSION=2.1.20260917
 # Same rapthor as rapthor-lean/rapthor-jupyter. Built +mwa: the overlay's
