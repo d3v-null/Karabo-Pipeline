@@ -218,6 +218,11 @@ class PyRapthor(PythonPackage):
     #   fields; calc_theoretical_noise clamps the LOFAR SEFD table (MWA reaches
     #   300 MHz).
     patch("mwa-beam-support-20260917.patch", when="+mwa @2.1.20260917")
+    # MWA images are made without PB correction, so the "true-sky" model from
+    # filter_skymodel equals the apparent one and DDECal (usebeammodel=True)
+    # attenuates image-derived sources twice; slow gains then absorb the missing
+    # flux. Rebuild true sky = apparent / beam (needs py-lsmtool's MWA apply_beam).
+    patch("mwa-true-sky-from-apparent.patch", when="+mwa @2.1.20260917")
     # batch_system=kubernetes for Toil (one node, shared work dir, pod sizing).
     patch("kubernetes-batch-system.patch", when="@2.1.20260917")
     # TOIL_WORKDIR / TOIL_MAX_CORES overrides for the Toil runner.

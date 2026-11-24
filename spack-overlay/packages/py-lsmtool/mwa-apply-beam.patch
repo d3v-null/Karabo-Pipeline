@@ -1,0 +1,42 @@
+diff --git a/lsmtool/operations_lib.py b/lsmtool/operations_lib.py
+index cc1f127..9bc3e5b 100644
+--- a/lsmtool/operations_lib.py
++++ b/lsmtool/operations_lib.py
+@@ -160,14 +160,31 @@ def apply_beam(beamMS, fluxes, RADeg, DecDeg, timeIndx=0.5, invert=False):
+     source_dec = Angle(DecDeg, unit=u.deg)
+     source_xyz = radec_to_xyz(source_ra, source_dec, time)
+ 
+-    # Load the beam model.
+-    sr = eb.load_telescope(beamMS)
+-
+     # Evaluate beam for the center frequency only, ...
+     freq = startfreq + (numchannels // 2) * channelwidth
+-    beam = abs(sr.array_factor(time, ant1, freq, source_xyz, pointing_xyz))
+-    # ...take XX only (XX and YY should be equal) and square it, ...
+-    beam = beam[:, 0, 0] ** 2
++
++    # Load the beam model.
++    with pt.table(f"{beamMS}::OBSERVATION", ack=False) as obs_table:
++        telescope_name = obs_table.col("TELESCOPE_NAME")[0]
++    if telescope_name == "MWA":
++        # MWA tiles have no separate array factor in EveryBeam (everybeam.MWA
++        # has no array_factor()): use the full element+tile Jones response,
++        # which is normalised to ~1 at the tile pointing, and convert it to a
++        # Stokes I power gain for unpolarised sources: 0.5 * sum |J_ij|^2.
++        import os
++        coeff_path = os.environ.get(
++            "EVERYBEAM_MWA_COEFF_PATH", "/opt/mwa_full_embedded_element_pattern.h5"
++        )
++        sr = eb.load_telescope(beamMS, coeff_path=coeff_path)
++        beam = np.array([
++            0.5 * np.sum(np.abs(sr.station_response(time, int(ant1), freq, np.asarray(xyz, dtype=float))) ** 2)
++            for xyz in np.atleast_2d(source_xyz)
++        ])
++    else:
++        sr = eb.load_telescope(beamMS)
++        beam = abs(sr.array_factor(time, ant1, freq, source_xyz, pointing_xyz))
++        # ...take XX only (XX and YY should be equal) and square it, ...
++        beam = beam[:, 0, 0] ** 2
+     # ...and invert if necessary.
+     if invert:
+         beam = 1 / beam

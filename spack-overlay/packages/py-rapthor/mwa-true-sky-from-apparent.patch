@@ -1,0 +1,50 @@
+--- a/rapthor/scripts/filter_skymodel.py
++++ b/rapthor/scripts/filter_skymodel.py
+@@ -284,6 +284,16 @@
+                     shutil.copy(src, dst)
+             print(f"[rapthor-mwa] mask {mask_file}: {int(mask.sum())} pixels above 5 sigma (mad {mad:.3g})")
+ 
++    # [rapthor-mwa: true sky from apparent / beam] The MWA images are made without
++    # primary-beam correction, so the "true-sky" model written above is really the
++    # apparent-sky model. Calibration predicts it through the full MWA beam again
++    # (usebeammodel=True), which attenuates image-derived sources twice; amplitude
++    # solves then absorb the missing flux. Rebuild the true-sky model as apparent / beam
++    # (EveryBeam full Jones Stokes I gain via lsmtool apply_beam), with the gain floored
++    # at MWA_MIN_BEAM_GAIN (default 0.02) so sources in sidelobe nulls do not blow up.
++    if nsources > 0 and not blanked:
++        _mwa_true_sky_from_apparent(beamMS, f"{output_root}.apparent_sky.txt", f"{output_root}.true_sky.txt")
++
+     # Write out number of sources found by PyBDSF for later use
+     output_diagnostics = f"{output_root}.image_diagnostics.json"
+     cwl_output = {"nsources": nsources}
+@@ -291,6 +301,30 @@
+         json.dump(cwl_output, fp)
+ 
+ 
++
++def _mwa_true_sky_from_apparent(beam_ms, apparent_file, true_file):
++    """[rapthor-mwa] Write true_file = apparent_file / MWA beam (Stokes I gain)."""
++    import casacore.tables as pt
++    import lsmtool
++    from lsmtool.operations_lib import apply_beam
++    iers.conf.auto_max_age = None  # offline: allow stale IERS predictions (as rapthor does elsewhere)
++    ms = beam_ms[0] if isinstance(beam_ms, (list, tuple)) else beam_ms
++    if not ms or not os.path.exists(str(apparent_file)):
++        return
++    with pt.table(f"{ms}::OBSERVATION", ack=False) as obs:
++        if obs.col("TELESCOPE_NAME")[0] != "MWA":
++            return
++    sm = lsmtool.load(str(apparent_file))
++    if len(sm) == 0:
++        return
++    flux = sm.getColValues("I")
++    gain = apply_beam(ms, np.ones(len(flux)), sm.getColValues("Ra"), sm.getColValues("Dec"))
++    gain = np.maximum(gain, float(os.environ.get("MWA_MIN_BEAM_GAIN", "0.02")))
++    sm.setColValues("I", flux / gain)
++    sm.write(str(true_file), clobber=True)
++    print(f"[rapthor-mwa] true sky = apparent / beam for {len(flux)} components "
++          f"(gain {gain.min():.3f}-{gain.max():.3f}; {flux.sum():.1f} -> {(flux / gain).sum():.1f} Jy)")
++
+ if __name__ == "__main__":
+     descriptiontext = "Filter and group a sky model with an image.\n"
+ 

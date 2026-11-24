@@ -117,6 +117,11 @@ class PyLsmtool(PythonPackage):
     # keep one full-field facet per direction when no calibrator falls inside
     # the tessellation box (scipy's Voronoi fails on an empty point set).
     patch("rapthor-facet-robustness.patch", when="@1.9.0")
+    # apply_beam(): everybeam.MWA has no array_factor(), so beam-weighted
+    # grouping / apparent fluxes (Rapthor regroup_model with an image-derived
+    # sky model) crashed on MWA data. Use the full Jones station_response
+    # (Stokes I power gain) for TELESCOPE_NAME == MWA; LOFAR path unchanged.
+    patch("mwa-apply-beam.patch", when="@1.9.0")
 
     def setup_build_environment(self, env):
         # Built from a shallow git commit without tags: give setuptools-scm the real
