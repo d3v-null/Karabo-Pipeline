@@ -3,8 +3,9 @@
 # Global ARGs: defaults live here once. Stages redeclare without values.
 ARG PYTHON_VERSION=3.11
 ARG CUDA_VERSION=12.2.2
-ARG CUDA_ARCH="75,80,86,89,90"
-# CUDA_ARCH covers T4/RTX2000, A100, RTX3000, L40, GH200. Empty => CPU-only.
+ARG CUDA_ARCH="70,75,80,86,89,90"
+# CUDA_ARCH covers V100, T4/RTX2000, A100, RTX3000, L40, GH200. Empty => CPU-only.
+# A GPU whose capability is missing fails at run time with "named symbol not found".
 
 FROM quay.io/jupyter/minimal-notebook:notebook-7.0.6 AS builder
 

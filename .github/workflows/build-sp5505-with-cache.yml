@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
     inputs:
       cuda_arch:
-        description: "CUDA architectures (comma separated); empty = per-platform default (amd64 75,80,86,89,90; arm64 90)"
+        description: "CUDA architectures (comma separated); empty = per-platform default (amd64 70,75,80,86,89,90; arm64 90)"
         required: false
         default: ""
       cuda_version:
@@ -197,7 +197,7 @@ jobs:
         include:
           - os: ubuntu-22.04
             platform: linux/amd64
-            cuda_arch: "75,80,86,89,90"
+            cuda_arch: "70,75,80,86,89,90"
           - os: ubuntu-22.04-arm
             platform: linux/arm64
             cuda_arch: "90"

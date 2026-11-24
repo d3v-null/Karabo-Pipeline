@@ -12,7 +12,7 @@
 # Optional DP3/IDG/WSClean CUDA (OFF by default). Leave CUDA_ARCH empty for CPU-only.
 # GPU build example:
 # DOCKER_BUILDKIT=1 docker build -f rapthor-jupyter.Dockerfile \
-#   --build-arg CUDA_ARCH=75,80,86,89,90 --build-arg CUDA_VERSION=12.2.2 \
+#   --build-arg CUDA_ARCH=70,75,80,86,89,90 --build-arg CUDA_VERSION=12.2.2 \
 #   --tag rapthor-jupyter:cuda --progress=plain .
 # Runtime: docker run --gpus all ... and ddecal.usegpu=true (diagonal+directioniterative).
 #

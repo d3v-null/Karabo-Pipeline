@@ -4,8 +4,9 @@
 
 ARG PYTHON_VERSION=3.11
 ARG CUDA_VERSION=12.2.2
-# T4/RTX2000, A100, RTX3000, L40, GH200.
-ARG CUDA_ARCH="75,80,86,89,90"
+# V100, T4/RTX2000, A100, RTX3000, L40, GH200. A GPU whose capability is missing
+# here fails at run time with "named symbol not found".
+ARG CUDA_ARCH="70,75,80,86,89,90"
 ARG BASE_IMAGE=quay.io/jupyter/minimal-notebook:notebook-7.0.6
 
 FROM ${BASE_IMAGE} AS builder
@@ -145,6 +146,7 @@ USER root
 SHELL ["/bin/bash", "-lc"]
 
 ARG PYTHON_VERSION
+ARG CUDA_ARCH
 
 ENV DEBIAN_FRONTEND=noninteractive
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
@@ -171,6 +173,11 @@ ENV PATH="/opt/view/bin:${PATH}"
 RUN hyperdrive --version && \
     ! ldd "$(command -v hyperdrive)" | grep 'not found' && \
     ldd "$(command -v hyperdrive)" | grep -q libeverybeam
+
+# Every requested GPU architecture must be compiled into the binary.
+RUN archs="$(/opt/software/linux-*/cuda-*/bin/cuobjdump -lelf "$(readlink -f "$(command -v hyperdrive)")" | grep -oE 'sm_[0-9]+' | sort -u | tr '\n' ' ')" && \
+    echo "GPU architectures in hyperdrive: ${archs}" && \
+    for a in $(echo "${CUDA_ARCH}" | tr ',' ' '); do echo "${archs}" | grep -qw "sm_${a}" || { echo "missing sm_${a}" >&2; exit 1; }; done
 
 # Keep conda from shadowing /opt/view in the notebook start-up hook and shells.
 RUN rm -f /usr/local/bin/before-notebook.d/10activate-conda-env.sh && \
