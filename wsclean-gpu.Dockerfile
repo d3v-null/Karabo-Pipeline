@@ -136,8 +136,11 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && apt-get --no-install-recommends install -y \
+    build-essential \
     ca-certificates \
     libgomp1
+# build-essential is a runtime dependency: IDG compiles its CUDA kernels with
+# nvcc (which calls gcc) the first time a GPU mode is used.
 
 COPY --from=builder /opt/software /opt/software
 COPY --from=builder /opt/view /opt/view
@@ -156,7 +159,8 @@ ENV PATH="/opt/view/bin:${PATH}"
 ENV OPENBLAS_NUM_THREADS=1
 
 RUN wsclean --version && \
-    ! ldd "$(command -v wsclean)" | grep 'not found'
+    ! ldd "$(command -v wsclean)" | grep 'not found' && \
+    nvcc --version && gcc --version | head -1
 
 # Keep conda from shadowing /opt/view in the notebook start-up hook and shells.
 RUN rm -f /usr/local/bin/before-notebook.d/10activate-conda-env.sh && \
